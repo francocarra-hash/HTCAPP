@@ -1,0 +1,48 @@
+# Evidence references cited by standards. Only citations that appear in the
+# source documents.
+
+references:
+  - id: "REF_IGRIPS_2024"
+    title: "iGRIPS 2024 Database — Handgrip strength norms"
+    detail: "≈2.4 million measurements, 69 countries. Percentile-based (P5, P25, P75)."
+    type: "NORMATIVE_DATABASE"
+    verification_status: "VERIFIED"
+    source: "HTC_Strength_Assessment_Standards §1 Test 1"
+
+  - id: "REF_LEONG_2023"
+    title: "Leong DP, et al. Association of Grip Strength and Life-Course Socioeconomic Status. JAMA Network Open. 2023."
+    type: "PEER_REVIEWED"
+    verification_status: "VERIFIED"
+    source: "HTC_Strength_Assessment_Standards §1 Test 1"
+
+  - id: "REF_RIKLI_JONES_2013"
+    title: "Rikli RE, Jones CJ. Senior Fitness Test. Human Kinetics. 2013."
+    detail: "Normative database for 30-Second Chair Stand (ACSM standard)."
+    type: "PEER_REVIEWED"
+    verification_status: "VERIFIED"
+    source: "HTC_Strength_Assessment_Standards §1 Test 2"
+
+  - id: "REF_BIERING_1983"
+    title: "Biering-Sørensen F. A prospective study of low back pain in a general population. Scand J Rehabil Med. 1983."
+    type: "PEER_REVIEWED"
+    verification_status: "VERIFIED"
+    source: "HTC_Strength_Assessment_Standards §2 Test 3"
+
+  - id: "REF_ACSM"
+    title: "ACSM criterion-based VO2 classification (Rockport Walk Test)"
+    type: "CRITERION_STANDARD"
+    verification_status: "VERIFIED"
+    source: "HTC MASTER TABLES T3"
+
+  - id: "REF_COLE_1999"
+    title: "Cole CR, et al. Heart-rate recovery immediately after exercise as a predictor of mortality. N Engl J Med. 1999;341(18):1351-1357."
+    type: "PEER_REVIEWED"
+    verification_status: "VERIFIED"
+    source: "HTC Aerobic Capacity System REFINED v1.1 — Scientific References #1"
+
+  - id: "REF_HTC_OPERATIONAL"
+    title: "HTC Operational Standard (Magnetia Growth / HTC methodology)"
+    detail: "Thresholds defined operationally by the HTC methodology documents."
+    type: "HTC_OPERATIONAL"
+    verification_status: "VERIFIED"
+    source: "HTC domain standards documents"

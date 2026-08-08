@@ -1,0 +1,36 @@
+# Success criteria & reassessment windows.
+# Sources: HTC MASTER TABLES T8 + PLATFORM DATA §26 + MOBILITY STANDARD §6.
+
+reassessment_windows:
+  - { capacity_id: "CAP_JOINT_WORKSPACE",     weeks: 6, exit_criteria: "Reaches FUNCTIONAL", verification_status: "VERIFIED", source: "MASTER TABLES T8" }
+  - { capacity_id: "CAP_WORKSPACE_OWNERSHIP", weeks: 6, exit_criteria: "AROM/PROM >= 90%",   verification_status: "VERIFIED", source: "MASTER TABLES T8" }
+  - { capacity_id: "CAP_STABILITY",           weeks: 6, exit_criteria: "Reaches FUNCTIONAL", verification_status: "VERIFIED", source: "MASTER TABLES T8" }
+  - { capacity_id: "CAP_AEROBIC_BASE",        weeks: 8, exit_criteria: "Reaches FUNCTIONAL", verification_status: "VERIFIED", source: "MASTER TABLES T8" }
+  - { capacity_id: "CAP_DYNAMIC_CONTROL",     weeks: 6, exit_criteria: "Reaches FUNCTIONAL", verification_status: "VERIFIED", source: "MASTER TABLES T8" }
+
+classification_based_windows:
+  # Mobility Standard §6 (by classification, domain Mobility)
+  - { domain_id: "DOMAIN_MOBILITY", classification: "CRITICAL",   weeks_min: 2, weeks_max: 3, verification_status: "VERIFIED", source: "MOBILITY STANDARD §6" }
+  - { domain_id: "DOMAIN_MOBILITY", classification: "EMERGING",   weeks_min: 4, weeks_max: 6, verification_status: "VERIFIED", source: "MOBILITY STANDARD §6" }
+  - { domain_id: "DOMAIN_MOBILITY", classification: "FUNCTIONAL", weeks_min: 8, weeks_max: 8, verification_status: "VERIFIED", source: "MOBILITY STANDARD §6" }
+
+success_criteria_template:
+  # PLATFORM DATA §26 — every P1 and P2 must carry these fields
+  required_fields:
+    - "baseline_result"
+    - "baseline_classification"
+    - "target_result"
+    - "target_classification"
+    - "functional_target"
+    - "symptom_target"
+    - "reassessment_weeks"
+    - "early_exit_rule"
+    - "failure_rule"
+  default_target_classification: "FUNCTIONAL"
+  verification_status: "VERIFIED"
+  source: "PLATFORM DATA §26; DECISION GRAPH Node 14"
+
+# MISSING CANONICAL: reassessment windows for capacities not listed in T8
+# (Force Production/Endurance/Expression, Threshold, Recovery, Movement caps
+# other than Dynamic Control). Engine falls back to requiring the coach to set
+# the window manually; it never invents one.

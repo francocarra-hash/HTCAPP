@@ -1,0 +1,269 @@
+# Source: HTC MASTER TABLES — Table 1 (Capacity Master Table) + HTC Platform
+# Data §5 (Capacity Master Table, incl. subcapacities) + Operating System cap. 6-9.
+# hierarchy_level 0 = Health markers layer; development proceeds 0 → 4.
+# capacity_type values per Platform Data §4.5: Health / Foundation / Development /
+# Integration / Expression.
+# conflict_tier / impact_factor only present where OS cap.10.2-10.3 assigns one
+# explicitly (General Health, Movement, Stability, Mobility, Strength-rest, Aerobic
+# inherit from their domain unless overridden here).
+
+capacities:
+  # ── GENERAL HEALTH ─────────────────────────────────────────────────────────
+  - id: "CAP_GENERAL_HEALTH_STATUS"
+    domain_id: "DOMAIN_GENERAL_HEALTH"
+    name: "General Health Status"
+    hierarchy_level: 0
+    capacity_type: "Health"
+    parent_capacity_id: null
+    required_predecessor_id: null
+    description: "Gate-keeper systemic health state. Aggregates clinical intake (pain, injury, medical/surgical history, medication, red flags) and Health Markers biomarker areas (cardiovascular, metabolic, inflammatory, organ function, endocrine)."
+    active: true
+    verification_status: "VERIFIED"
+    sources: ["HTC_Health_Markers_Standard §2, §5, §8", "HTC PLATFORM DATA §4.2"]
+
+  # ── STRENGTH (Master Tables T1 + Platform Data §5.1) ───────────────────────
+  - id: "CAP_HEALTH_STRENGTH_MARKERS"
+    domain_id: "DOMAIN_STRENGTH"
+    name: "Health Strength Markers"
+    hierarchy_level: 0
+    capacity_type: "Health"
+    parent_capacity_id: null
+    required_predecessor_id: null
+    description: "General neuromuscular health markers (Handgrip + 30-Second Chair Stand)."
+    active: true
+    verification_status: "VERIFIED"
+    sources: ["HTC MASTER TABLES T1", "HTC_OPERATING_SYSTEM cap.7.1"]
+
+  - id: "CAP_STABILITY"
+    domain_id: "DOMAIN_STRENGTH"
+    name: "Stability"
+    hierarchy_level: 1
+    capacity_type: "Foundation"
+    parent_capacity_id: "CAP_HEALTH_STRENGTH_MARKERS"
+    required_predecessor_id: "CAP_HEALTH_STRENGTH_MARKERS"
+    description: "Produce stable base for force (Front Plank, Side Plank, Biering-Sørensen, Single-Leg Isometric Squat)."
+    conflict_tier: 3
+    impact_factor: 2.0
+    active: true
+    verification_status: "VERIFIED"
+    sources: ["HTC MASTER TABLES T1", "HTC_OPERATING_SYSTEM cap.10.2 (TIER 3B, ×2.0)"]
+
+  - id: "CAP_FORCE_PRODUCTION"
+    domain_id: "DOMAIN_STRENGTH"
+    name: "Force Production"
+    hierarchy_level: 2
+    capacity_type: "Development"
+    parent_capacity_id: "CAP_STABILITY"
+    required_predecessor_id: "CAP_STABILITY"
+    description: "Produce force across 4 spectrums (Upper Push, Upper Pull, Knee-Dominant, Hip-Dominant). CRITICAL RULE: only Force Production classification changes exercise level."
+    active: true
+    verification_status: "VERIFIED"
+    sources: ["HTC MASTER TABLES T1", "HTC_Strength_Assessment_Standards §3"]
+    subcapacities: ["Upper Push", "Upper Pull", "Knee-Dominant", "Hip-Dominant"]
+
+  - id: "CAP_FORCE_ENDURANCE"
+    domain_id: "DOMAIN_STRENGTH"
+    name: "Force Endurance"
+    hierarchy_level: 3
+    capacity_type: "Development"
+    parent_capacity_id: "CAP_FORCE_PRODUCTION"
+    required_predecessor_id: "CAP_FORCE_PRODUCTION"
+    description: "Sustain force without degradation (Dead Hang + endurance patterns at the same level/load as Force Production). NEVER determines exercise progression."
+    active: true
+    verification_status: "VERIFIED"
+    sources: ["HTC MASTER TABLES T1", "HTC_Strength_Assessment_Standards §4"]
+    subcapacities: ["Upper Push Endurance", "Upper Pull Endurance", "Knee-Dominant Endurance", "Hip-Dominant Endurance"]
+
+  - id: "CAP_FORCE_EXPRESSION"
+    domain_id: "DOMAIN_STRENGTH"
+    name: "Force Expression"
+    hierarchy_level: 4
+    capacity_type: "Expression"
+    parent_capacity_id: "CAP_FORCE_ENDURANCE"
+    required_predecessor_id: "CAP_FORCE_ENDURANCE"
+    description: "Express force rapidly (CMJ, Broad Jump, RSI, Drop Landing)."
+    active: true
+    verification_status: "VERIFIED"
+    sources: ["HTC MASTER TABLES T1", "HTC_OPERATING_SYSTEM cap.7.1"]
+    subcapacities: ["Vertical Force Expression", "Horizontal Force Expression", "Reactive Strength", "Force Absorption"]
+
+  # ── MOBILITY (Master Tables T1 + Platform Data §5.2) ───────────────────────
+  - id: "CAP_HEALTH_MOBILITY_MARKERS"
+    domain_id: "DOMAIN_MOBILITY"
+    name: "Health Mobility Markers"
+    hierarchy_level: 0
+    capacity_type: "Health"
+    parent_capacity_id: null
+    required_predecessor_id: null
+    description: "General mobility health markers."
+    active: true
+    verification_status: "VERIFIED"
+    sources: ["HTC MASTER TABLES T1"]
+
+  - id: "CAP_JOINT_WORKSPACE"
+    domain_id: "DOMAIN_MOBILITY"
+    name: "Joint Workspace"
+    hierarchy_level: 1
+    capacity_type: "Foundation"
+    parent_capacity_id: "CAP_HEALTH_MOBILITY_MARKERS"
+    required_predecessor_id: "CAP_HEALTH_MOBILITY_MARKERS"
+    description: "Available joint range. Components: Workspace Quantity (passive ROM vs norm) and Workspace Quality (CARs, 5 variables)."
+    active: true
+    verification_status: "VERIFIED"
+    sources: ["HTC MASTER TABLES T1", "HTC_OPERATING_SYSTEM cap.8.1"]
+    subcapacities: ["Workspace Quantity", "Workspace Quality"]
+
+  - id: "CAP_WORKSPACE_OWNERSHIP"
+    domain_id: "DOMAIN_MOBILITY"
+    name: "Workspace Ownership"
+    hierarchy_level: 2
+    capacity_type: "Development"
+    parent_capacity_id: "CAP_JOINT_WORKSPACE"
+    required_predecessor_id: "CAP_JOINT_WORKSPACE"
+    description: "Percentage of passive range controlled actively (AROM/PROM ratio, end-range force, positional control, load tolerance)."
+    active: true
+    verification_status: "VERIFIED"
+    sources: ["HTC MASTER TABLES T1", "HTC PLATFORM DATA §5.2"]
+    subcapacities: ["Active-Passive Ratio", "End-Range Force", "Positional Control", "Load Tolerance"]
+
+  - id: "CAP_MOBILITY_INTEGRATION"
+    domain_id: "DOMAIN_MOBILITY"
+    name: "Mobility Integration"
+    hierarchy_level: 3
+    capacity_type: "Integration"
+    parent_capacity_id: "CAP_WORKSPACE_OWNERSHIP"
+    required_predecessor_id: "CAP_WORKSPACE_OWNERSHIP"
+    description: "Use controlled ranges in functional tasks (Lower/Upper/Posterior/Axial chain integration)."
+    active: true
+    verification_status: "VERIFIED"
+    sources: ["HTC MASTER TABLES T1", "HTC PLATFORM DATA §5.2"]
+    subcapacities: ["Lower Chain Integration", "Upper Chain Integration", "Posterior Chain Integration", "Axial Chain Integration"]
+
+  - id: "CAP_MOBILITY_EXPRESSION"
+    domain_id: "DOMAIN_MOBILITY"
+    name: "Mobility Expression"
+    hierarchy_level: 4
+    capacity_type: "Expression"
+    parent_capacity_id: "CAP_MOBILITY_INTEGRATION"
+    required_predecessor_id: "CAP_MOBILITY_INTEGRATION"
+    description: "Express mobility in complex movement."
+    active: true
+    verification_status: "VERIFIED"
+    sources: ["HTC MASTER TABLES T1"]
+
+  # ── AEROBIC (Master Tables T1 + Platform Data §5.3) ────────────────────────
+  - id: "CAP_HEALTH_AEROBIC_MARKERS"
+    domain_id: "DOMAIN_AEROBIC"
+    name: "Health Aerobic Markers"
+    hierarchy_level: 0
+    capacity_type: "Health"
+    parent_capacity_id: null
+    required_predecessor_id: null
+    description: "Resting HR, HR Recovery."
+    active: true
+    verification_status: "VERIFIED"
+    sources: ["HTC MASTER TABLES T1", "HTC_OPERATING_SYSTEM cap.3.2 D5"]
+
+  - id: "CAP_AEROBIC_BASE"
+    domain_id: "DOMAIN_AEROBIC"
+    name: "Aerobic Base"
+    hierarchy_level: 1
+    capacity_type: "Foundation"
+    parent_capacity_id: "CAP_HEALTH_AEROBIC_MARKERS"
+    required_predecessor_id: "CAP_HEALTH_AEROBIC_MARKERS"
+    description: "Aerobic base efficiency (HR drift, pace variability)."
+    active: true
+    verification_status: "VERIFIED"
+    sources: ["HTC MASTER TABLES T1"]
+
+  - id: "CAP_THRESHOLD_CAPACITY"
+    domain_id: "DOMAIN_AEROBIC"
+    name: "Threshold Capacity"
+    hierarchy_level: 2
+    capacity_type: "Development"
+    parent_capacity_id: "CAP_AEROBIC_BASE"
+    required_predecessor_id: "CAP_AEROBIC_BASE"
+    description: "Threshold intensity tolerance (sustainability 3-7 min)."
+    active: true
+    verification_status: "VERIFIED"
+    sources: ["HTC MASTER TABLES T1"]
+
+  - id: "CAP_RECOVERY_CAPACITY"
+    domain_id: "DOMAIN_AEROBIC"
+    name: "Recovery Capacity"
+    hierarchy_level: 3
+    capacity_type: "Development"
+    parent_capacity_id: "CAP_THRESHOLD_CAPACITY"
+    required_predecessor_id: "CAP_THRESHOLD_CAPACITY"
+    description: "Speed of return to homeostasis."
+    active: true
+    verification_status: "VERIFIED"
+    sources: ["HTC MASTER TABLES T1"]
+
+  - id: "CAP_AEROBIC_EXPRESSION"
+    domain_id: "DOMAIN_AEROBIC"
+    name: "Aerobic Expression"
+    hierarchy_level: 4
+    capacity_type: "Expression"
+    parent_capacity_id: "CAP_RECOVERY_CAPACITY"
+    required_predecessor_id: "CAP_RECOVERY_CAPACITY"
+    description: "Application in context (sport/task-specific)."
+    active: true
+    verification_status: "VERIFIED"
+    sources: ["HTC MASTER TABLES T1"]
+
+  # ── MOVEMENT (Master Tables T1 + Platform Data §5.4) ───────────────────────
+  - id: "CAP_INTERNAL_BODY_MAPPING"
+    domain_id: "DOMAIN_MOVEMENT"
+    name: "Internal Body Mapping"
+    hierarchy_level: 1
+    capacity_type: "Foundation"
+    parent_capacity_id: null
+    required_predecessor_id: null
+    description: "Perceive position and movement of one's own body."
+    active: true
+    verification_status: "VERIFIED"
+    sources: ["HTC MASTER TABLES T1", "HTC_OPERATING_SYSTEM cap.9.1"]
+
+  - id: "CAP_DYNAMIC_CONTROL"
+    domain_id: "DOMAIN_MOVEMENT"
+    name: "Dynamic Control"
+    hierarchy_level: 2
+    capacity_type: "Development"
+    parent_capacity_id: "CAP_INTERNAL_BODY_MAPPING"
+    required_predecessor_id: "CAP_INTERNAL_BODY_MAPPING"
+    description: "Voluntarily organize movement of body segments."
+    active: true
+    verification_status: "VERIFIED"
+    sources: ["HTC MASTER TABLES T1"]
+
+  - id: "CAP_MOVEMENT_COORDINATION"
+    domain_id: "DOMAIN_MOVEMENT"
+    name: "Movement Coordination"
+    hierarchy_level: 3
+    capacity_type: "Integration"
+    parent_capacity_id: "CAP_DYNAMIC_CONTROL"
+    required_predecessor_id: "CAP_DYNAMIC_CONTROL"
+    description: "Synchronize multiple segments within a motor task."
+    active: true
+    verification_status: "VERIFIED"
+    sources: ["HTC MASTER TABLES T1"]
+
+  - id: "CAP_MOTOR_PROBLEM_SOLVING"
+    domain_id: "DOMAIN_MOVEMENT"
+    name: "Motor Problem Solving"
+    hierarchy_level: 4
+    capacity_type: "Expression"
+    parent_capacity_id: "CAP_MOVEMENT_COORDINATION"
+    required_predecessor_id: "CAP_MOVEMENT_COORDINATION"
+    description: "Adapt motor strategies as task/environment conditions change."
+    active: true
+    verification_status: "VERIFIED"
+    sources: ["HTC MASTER TABLES T1"]
+
+# DOCUMENTED DISCREPANCY (flagged for HTC validation, not resolved here):
+# HTC_OPERATING_SYSTEM cap.9.1 lists a fifth Movement component "Coordination
+# Integration" between Movement Coordination and Motor Problem Solving, but
+# OS cap.3.2 D1, MASTER TABLES T1, PLATFORM DATA §5.4 and the DECISION GRAPH
+# §3.3/§7 all use the 4-component model. The 4-component model is transcribed;
+# Coordination Integration is NOT created (never invent). HTC must confirm.

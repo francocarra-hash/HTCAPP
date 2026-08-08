@@ -1,0 +1,447 @@
+# Source: HTC MASTER TABLES — Table 2 (Test Master Table) + HTC Strength
+# Assessment Standards v2 + HTC Mobility Standard v2 + Platform Data §6.
+# Only tests that appear in a source document exist here. Nothing inferred.
+
+tests:
+  # ── STRENGTH ───────────────────────────────────────────────────────────────
+  - id: "TEST_HANDGRIP"
+    name: "Handgrip Strength"
+    measurement_type: "Numeric"
+    unit: "kg"
+    equipment: "Hand dynamometer"
+    core_test: true
+    deep_dive: false
+    protocol_source: "HTC_Strength_Assessment_Standards §1 Test 1 (iGRIPS 2024 protocol)"
+    reassessment_weeks: null
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_CHAIR_STAND_30S"
+    name: "30-Second Chair Stand Test"
+    measurement_type: "Numeric"
+    unit: "reps"
+    equipment: "Chair"
+    core_test: true
+    deep_dive: false
+    protocol_source: "HTC_Strength_Assessment_Standards §1 Test 2 (Rikli & Jones / ACSM)"
+    reassessment_weeks: null
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_FRONT_PLANK"
+    name: "Front Plank"
+    measurement_type: "Numeric"
+    unit: "seconds"
+    equipment: "None"
+    core_test: true
+    deep_dive: false
+    protocol_source: "HTC_Strength_Assessment_Standards §2 Test 1 (time until loss of alignment)"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_SIDE_PLANK"
+    name: "Side Plank (Bilateral)"
+    measurement_type: "Numeric"
+    unit: "seconds"
+    equipment: "None"
+    core_test: true
+    deep_dive: false
+    sided: true
+    asymmetry_rule: "Use WORSE side for classification. Asymmetry >10-15% = flag for programming."
+    protocol_source: "HTC_Strength_Assessment_Standards §2 Test 2"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_BIERING_SORENSEN"
+    name: "Biering-Sørensen Test"
+    measurement_type: "Numeric"
+    unit: "seconds"
+    equipment: "Bench"
+    core_test: true
+    deep_dive: false
+    protocol_source: "HTC_Strength_Assessment_Standards §2 Test 3"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_SINGLE_LEG_ISO_SQUAT"
+    name: "Single-Leg Isometric Squat"
+    measurement_type: "Numeric"
+    unit: "seconds"
+    equipment: "None"
+    core_test: true
+    deep_dive: false
+    sided: true
+    asymmetry_rule: "Use WORSE leg for classification. Asymmetry >10-15% = flag for programming."
+    protocol_source: "HTC_Strength_Assessment_Standards §2 Test 4 (~90° knee flexion)"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_SINGLE_LEG_SIT_TO_STAND"
+    name: "Single Leg Sit to Stand"
+    measurement_type: "Numeric"
+    unit: "reps"
+    equipment: "Box"
+    core_test: true
+    deep_dive: false
+    protocol_source: "HTC MASTER TABLES T2"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_SINGLE_LEG_WALL_SIT"
+    name: "Single Leg Wall Sit"
+    measurement_type: "Numeric"
+    unit: "seconds"
+    equipment: "Wall"
+    core_test: false
+    deep_dive: true
+    protocol_source: "HTC MASTER TABLES T2"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_FORCE_PRODUCTION_SPECTRUM"
+    name: "Force Production Spectrum Test (max reps at ≥85% relative intensity)"
+    measurement_type: "Numeric"
+    unit: "reps"
+    equipment: "Per spectrum (Upper Push / Upper Pull / Knee-Dominant / Hip-Dominant progressions)"
+    core_test: true
+    deep_dive: false
+    protocol_source: "HTC_Strength_Assessment_Standards §3 (zone ≥85% = 2-8 max reps; universal rep classification)"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_DEAD_HANG"
+    name: "Dead Hang"
+    measurement_type: "Numeric"
+    unit: "seconds"
+    equipment: "Bar"
+    core_test: true
+    deep_dive: false
+    protocol_source: "HTC_Strength_Assessment_Standards §4 Component 1 (grip on bar, arms extended)"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  # ── MOBILITY ───────────────────────────────────────────────────────────────
+  - id: "TEST_CAR_ASSESSMENT"
+    name: "CAR Assessment (Controlled Articular Rotation)"
+    measurement_type: "Numeric"
+    unit: "degrees"
+    equipment: "None"
+    core_test: true
+    deep_dive: true
+    protocol_source: "HTC MASTER TABLES T2; HTC_Mobility_Standard §2"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_AROM_PROM_RATIO"
+    name: "AROM/PROM Ratio"
+    measurement_type: "Numeric"
+    unit: "percent"
+    equipment: "Goniometer"
+    core_test: true
+    deep_dive: true
+    sided: true
+    protocol_source: "HTC MASTER TABLES T2"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_END_RANGE_DYNAMOMETRY"
+    name: "End Range Dynamometry"
+    measurement_type: "Numeric"
+    unit: "kg"
+    equipment: "Dynamometer"
+    core_test: false
+    deep_dive: true
+    sided: true
+    protocol_source: "HTC MASTER TABLES T2"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_MOBILITY_REGIONAL_SCREEN"
+    name: "Mobility Regional Screen (Spine / Hip / Shoulder / Ankle)"
+    measurement_type: "Observation"
+    unit: "region_interpretation"
+    equipment: "None"
+    core_test: true
+    deep_dive: false
+    protocol_source: "HTC_Mobility_Standard §2 (4 regions × interpretations CLEAR/LIMITED/ASYMMETRICAL/PAINFUL/NEEDS_DEEPER, 10 minutes)"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  # ── AEROBIC ────────────────────────────────────────────────────────────────
+  - id: "TEST_ROCKPORT_WALK"
+    name: "Rockport Walk Test (VO2 estimate)"
+    measurement_type: "Numeric"
+    unit: "ml/kg/min"
+    equipment: "Track"
+    core_test: true
+    deep_dive: false
+    protocol_source: "HTC MASTER TABLES T2/T3"
+    reassessment_weeks: 8
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_TALK_TEST"
+    name: "Talk Test"
+    measurement_type: "Ordinal"
+    unit: "stage"
+    equipment: "Treadmill"
+    core_test: true
+    deep_dive: false
+    protocol_source: "HTC MASTER TABLES T2"
+    reassessment_weeks: 8
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_HR_RECOVERY"
+    name: "HR Recovery"
+    measurement_type: "Numeric"
+    unit: "bpm"
+    equipment: "HR Monitor"
+    core_test: true
+    deep_dive: false
+    protocol_source: "HTC MASTER TABLES T2"
+    reassessment_weeks: 8
+    active: true
+    verification_status: "VERIFIED"
+
+  # ── MOVEMENT ───────────────────────────────────────────────────────────────
+  - id: "TEST_SINGLE_LEG_SQUAT_SCORE"
+    name: "Single Leg Squat (HTC Score)"
+    measurement_type: "Ordinal"
+    unit: "htc_score"
+    equipment: "None"
+    core_test: true
+    deep_dive: false
+    protocol_source: "HTC MASTER TABLES T2"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_CROSS_CRAWL_MATRIX"
+    name: "Cross Crawl Matrix (HTC Score)"
+    measurement_type: "Ordinal"
+    unit: "htc_score"
+    equipment: "None"
+    core_test: true
+    deep_dive: false
+    protocol_source: "HTC MASTER TABLES T2"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  # ── STANDARD EXISTS BUT LINK MISSING (blocked, see test_capacity_links) ────
+  - id: "TEST_SINGLE_LEG_BALANCE"
+    name: "Single Leg Balance"
+    measurement_type: "Numeric"
+    unit: "seconds"
+    equipment: "None"
+    core_test: false
+    deep_dive: false
+    protocol_source: "HTC MASTER TABLES T3 (standard only; no capacity link in any source)"
+    reassessment_weeks: null
+    active: false
+    verification_status: "DRAFT"
+    notes: "MISSING CANONICAL: no test↔capacity link documented. Inactive until HTC provides the link. Never inferred from name."
+
+  # ── v3.1.0 — mined from HTC_SCORING_RUBRIC, HTC_MASTER_ASSESSMENT_FORM,
+  # ── HTC Aerobic Capacity System REFINED v1.1, HTC Movement Standard FINAL ──
+  - id: "TEST_RHR"
+    name: "Resting Heart Rate"
+    measurement_type: "Numeric"
+    unit: "bpm"
+    equipment: "HR monitor (after 5+ min seated rest)"
+    core_test: true
+    deep_dive: false
+    protocol_source: "HTC_SCORING_RUBRIC §5; Aerobic System REFINED v1.1; MASTER_ASSESSMENT_FORM Domain 5"
+    reassessment_weeks: 8
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_HR_DRIFT"
+    name: "Heart Rate Drift (12-min Aerobic Base test)"
+    measurement_type: "Numeric"
+    unit: "percent"
+    equipment: "HR monitor (min-3 HR vs min-10 HR at same pace)"
+    core_test: true
+    deep_dive: false
+    protocol_source: "Aerobic System REFINED v1.1 (12-min test: 2 min warm + 10 min steady)"
+    reassessment_weeks: 8
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_PACE_VARIABILITY"
+    name: "Pace/Power Variability (12-min Aerobic Base test)"
+    measurement_type: "Numeric"
+    unit: "percent"
+    equipment: "Pace/power meter"
+    core_test: false
+    deep_dive: false
+    protocol_source: "Aerobic System REFINED v1.1 (min-to-min variability)"
+    reassessment_weeks: 8
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_ROM_PERCENT_NORM"
+    name: "Joint Workspace Quantity (% of normative ROM)"
+    measurement_type: "Numeric"
+    unit: "percent"
+    equipment: "Goniometer / ROM tool"
+    core_test: true
+    deep_dive: false
+    sided: true
+    protocol_source: "HTC_SCORING_RUBRIC §4 (passive ROM vs norm; norms: Thoracic Rotation 45-90°, Hip Flexion 120-135°, Hip Abduction 45-50°); MASTER_ASSESSMENT_FORM Mobility C1"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_CARS_SCORE"
+    name: "CARs Score (Joint Workspace Quality, 0-10)"
+    measurement_type: "Ordinal"
+    unit: "score_0_10"
+    equipment: "None (5 variables × 0-2 pts: smoothness, compensation, pain, congruency, control)"
+    core_test: true
+    deep_dive: false
+    sided: true
+    protocol_source: "HTC_SCORING_RUBRIC §4; MASTER_ASSESSMENT_FORM Mobility C2"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_MOBILITY_INTEGRATION_FUNCTIONAL"
+    name: "Mobility Integration (functional use of ranges)"
+    measurement_type: "Ordinal"
+    unit: "ordinal_level"
+    equipment: "None"
+    core_test: true
+    deep_dive: false
+    protocol_source: "MASTER_ASSESSMENT_FORM Mobility C4 (complex movement without compensation: Yes/Mostly/Some/Cannot)"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_PUSHUPS_ENDURANCE"
+    name: "Push-Ups (max reps at sustainable pace)"
+    measurement_type: "Numeric"
+    unit: "reps"
+    equipment: "None"
+    core_test: true
+    deep_dive: false
+    protocol_source: "HTC_SCORING_RUBRIC §3 Force Endurance; STRENGTH Assessment Sheet §4"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_SQUATS_ENDURANCE"
+    name: "Bodyweight Squats (max reps at sustainable pace)"
+    measurement_type: "Numeric"
+    unit: "reps"
+    equipment: "None"
+    core_test: true
+    deep_dive: false
+    protocol_source: "HTC_SCORING_RUBRIC §3 Force Endurance; STRENGTH Assessment Sheet §4"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_ROWS_ENDURANCE"
+    name: "Rows/Pull-Ups (max reps at sustainable pace)"
+    measurement_type: "Numeric"
+    unit: "reps"
+    equipment: "Bar / rings"
+    core_test: true
+    deep_dive: false
+    protocol_source: "HTC_SCORING_RUBRIC §3 Force Endurance; STRENGTH Assessment Sheet §4"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_CMJ"
+    name: "Countermovement Jump (CMJ)"
+    measurement_type: "Numeric"
+    unit: "cm"
+    equipment: "Jump mat / wall measure"
+    core_test: true
+    deep_dive: false
+    protocol_source: "HTC_SCORING_RUBRIC §3 Force Expression; STRENGTH Assessment Sheet §5"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_BROAD_JUMP"
+    name: "Standing Broad Jump"
+    measurement_type: "Numeric"
+    unit: "cm"
+    equipment: "Measuring tape"
+    core_test: true
+    deep_dive: false
+    protocol_source: "HTC_SCORING_RUBRIC §3 Force Expression; STRENGTH Assessment Sheet §5"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  # Movement levels — coach classifies directly per official criteria
+  # (Movement Standard FINAL: observational output F/Fn/E/C per level).
+  - id: "TEST_MOVEMENT_L1_BODY_MAPPING"
+    name: "Movement L1 — Internal Body Mapping (observational)"
+    measurement_type: "Observation"
+    unit: "classification"
+    equipment: "None (Breath & Tension Scan · Joint Isolation · Quadruped Shift · Eyes Closed Position Match)"
+    core_test: true
+    deep_dive: false
+    protocol_source: "MOVEMENT Standard FINAL Level 1 (10-12 min, 5 observation variables)"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_MOVEMENT_L2_DYNAMIC_CONTROL"
+    name: "Movement L2 — Dynamic Control (observational)"
+    measurement_type: "Observation"
+    unit: "classification"
+    equipment: "None (Bear Hold→Crawl · Single Leg Reach · HTC Transition Flow)"
+    core_test: true
+    deep_dive: false
+    protocol_source: "MOVEMENT Standard FINAL Level 2 (12-15 min)"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_MOVEMENT_L3_COORDINATION"
+    name: "Movement L3 — Movement Coordination (observational)"
+    measurement_type: "Observation"
+    unit: "classification"
+    equipment: "None (5-level rhythm progression)"
+    core_test: true
+    deep_dive: false
+    protocol_source: "MOVEMENT Standard FINAL Level 3 (15-20 min)"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+  - id: "TEST_MOVEMENT_L4_PROBLEM_SOLVING"
+    name: "Movement L4 — Motor Problem Solving (observational)"
+    measurement_type: "Observation"
+    unit: "classification"
+    equipment: "None (Constraint · Environment · Object · Open Motor Challenge)"
+    core_test: true
+    deep_dive: false
+    protocol_source: "MOVEMENT Standard FINAL Level 4 (15-20 min)"
+    reassessment_weeks: 6
+    active: true
+    verification_status: "VERIFIED"
+
+# NOT TRANSCRIBED (no source definition — requested from HTC):
+#   - flexibility_cm (sit-and-reach?) — used by BUILD PACKAGE demo cases, undefined.
+#   - 5xsts_seconds (5x Sit-to-Stand timed) — undefined; system defines TEST_CHAIR_STAND_30S instead.
+#   - inverted_row_reps — appears only as a progression level of Upper Pull spectrum, not a standalone test.

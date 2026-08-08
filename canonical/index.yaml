@@ -1,0 +1,62 @@
+system:
+  name: "HTC Canonical System"
+  canonical_version: "3.1.0"
+  schema_version: "3.1.0"
+  created: "2026-07-18"
+  modified: "2026-07-19"
+
+# ── Component versions (HTC Platform Development Principles, Principio 6) ────
+# Every assessment freezes these five versions. Historical assessments are NEVER
+# recalculated: they render with the versions in force when they were produced.
+component_versions:
+  os_version: "HTC_OS_v2.0 + Decision Graph v1.0"
+  canonical_version: "3.1.0"
+  standards_version: "3.1.0"
+  decision_rules_version: "3.1.0"
+  report_version: "1.0.0"
+  note: >
+    os_version reflects the methodology actually implemented today (OS v2.0 +
+    Decision Graph). The v3.0 package (BLOCK_1 8 decisions, 2026-07-21) is NOT
+    implemented — its Canonical is not yet populated and 5 conflicts remain open.
+    See ANALISIS_PAQUETE_NUEVO_v3.md.
+  author: "Transcribed from HTC source documents (Magnetia Growth / HTC)"
+  organization: "Magnetia Growth"
+
+description: |
+  Hit The Climax (HTC) canonical data structure.
+  Faithful transcription of HTC source documents. Nothing invented.
+  Source hierarchy applied (per HTC AI Master Instructions):
+    1. Canonical Source of Truth
+    2. HTC Operating System v2.0 (FINAL CLEAN)
+    3. HTC Domain Documents (Strength/Aerobic/Mobility/Movement/Health Markers)
+    4. HTC Decision Rules v1.0
+    5. HTC Decision Graph Specification v1.0
+    6. HTC Platform Data & Logic Specification v1.0
+  Approved resolutions (2026-07-18, project owner):
+    - Decision model = full Decision Graph (5 pathways, hierarchical bottleneck)
+    - Domains = 5 (Operating System model). BUILD PACKAGE domains.yaml superseded.
+    - Grip standard = iGRIPS 2024 percentile model (Strength Standards v2)
+    - Interventions / dosage / daily missions = OUT OF SCOPE (MVP)
+  Every entry carries verification_status:
+    VERIFIED  = threshold/rule appears explicitly in a source document
+    DRAFT     = transcribed but requires HTC/Magnetia validation (gaps noted)
+    PLACEHOLDER = structure only; MUST NOT be used for real decisions (engine blocks)
+
+files:
+  - domains.yaml
+  - capacities.yaml
+  - tests.yaml
+  - test_capacity_links.yaml
+  - standards.yaml
+  - relationships.yaml
+  - decision_rules.yaml
+  - safety_rules.yaml
+  - criteria.yaml
+  - language_mapping.yaml
+  - references.yaml
+
+out_of_scope_files:
+  # Excluded from MVP by HTC AI Master Instructions (approved 2026-07-18).
+  # Any engine reaching for these must return MODULE NOT IMPLEMENTED.
+  - interventions.yaml
+  - dosage_rules.yaml

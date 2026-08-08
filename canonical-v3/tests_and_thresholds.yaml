@@ -1,0 +1,439 @@
+# tests_and_thresholds.yaml
+# Transcripción literal de HTC_YAML_SCHEMA_UPDATED_POST_C5_v1.0.md — FILE 3,
+# contrastada con HTC_THRESHOLDS_CANONICAL_v1.0.md (misma tabla, C-5 resuelto).
+version: "1.0"
+last_updated: "2026-07-25"
+effective_date: "2026-07-25"
+source_document: "HTC_THRESHOLDS_CANONICAL_v1.0 + YAML SCHEMA POST-C5 FILE 3"
+canonical: true
+
+metadata:
+  description: "Single canonical table of all numeric thresholds"
+  rationale: "C-5: Resolved all threshold conflicts into unified table"
+
+# ── Fórmula de clasificación (C-2) ──────────────────────────────────────────
+# Score_0_3 = ((value - umbral_critical) / (umbral_foundation - umbral_critical)) × 3
+# Clamped a [0.0, 3.0]. Vale igual para tests inversos: usando los valores
+# numéricos de los umbrales, la fórmula del schema
+#   ((umbral_critical - value) / (umbral_critical - umbral_foundation)) × 3
+# es algebraicamente idéntica (verificado con RHR 75 → 1.5).
+scoring:
+  formula: "((value - umbral_critical) / (umbral_foundation - umbral_critical)) * 3"
+  clamp: [0.0, 3.0]
+  note: |
+    Sólo umbral_critical y umbral_foundation entran en la fórmula.
+    umbral_emerging y umbral_functional se conservan como referencia clínica
+    declarada por HTC; ver OBSERVACION_OBS-1 en OBSERVACIONES_PAQUETE_C5.md
+    (en tests donde umbral_functional == umbral_foundation la interpolación
+    clasifica FOUNDATION en parte del rango que la tabla rotula FUNCTIONAL).
+  verification_status: "VERIFIED"
+
+tests:
+  # ══════════════════ STRENGTH (6 tests, peso total 11.5) ══════════════════
+  - test_id: "GRIP_001"
+    key: "HANDGRIP"
+    name: "Handgrip Strength"
+    domain: "STRENGTH"
+    unit: "kilograms"
+    weight: 3
+    is_inverse: false
+    source: "Authoritative v1.0 §3.2 — iGRIPS 2024, N=2.4M"
+    populations:
+      # ── v1.2 PROPUESTA — 18-20 años ───────────────────────────────────────
+      # La fuerza de agarre sigue creciendo hasta los 25-35 años; entre 19 y 20
+      # la diferencia no es clínicamente relevante. Se extiende la banda 20-30
+      # sin crear valores nuevos (opción conservadora).
+      # NO se cubren menores de 18: evaluar menores implica consentimiento
+      # parental y curvas de crecimiento; requiere decisión explícita de HTC.
+      - id: "MALE_18_20"
+        sex: "MALE"
+        age_min: 18
+        age_max: 20
+        umbral_critical: 30
+        umbral_emerging: 38
+        umbral_functional: 48
+        umbral_foundation: 57
+        approval_status: "PROPOSED"
+        source: "Wang YC, et al. Hand-Grip Strength: Normative Reference Values and Equations for Individuals 18 to 85 Years of Age Residing in the United States. JOSPT 2018;48(9):685-693."
+        evidence: "El pico de fuerza se alcanza a los 25-35 años; 18-19 está en la misma fase ascendente que 20-24."
+        rationale: "Se extiende la banda 20-30 en lugar de derivar umbrales propios."
+
+      - id: "FEMALE_18_20"
+        sex: "FEMALE"
+        age_min: 18
+        age_max: 20
+        umbral_critical: 20
+        umbral_emerging: 24
+        umbral_functional: 30
+        umbral_foundation: 36
+        approval_status: "PROPOSED"
+        source: "Wang YC, et al. JOSPT 2018;48(9):685-693."
+        evidence: "Ídem, banda femenina 20-30."
+        rationale: "Se extiende la banda 20-30 en lugar de derivar umbrales propios."
+
+      - id: "MALE_20_30"
+        sex: "MALE"
+        age_min: 20
+        age_max: 30
+        umbral_critical: 30
+        umbral_emerging: 38
+        umbral_functional: 48
+        umbral_foundation: 57
+        approval_status: "APPROVED"
+      - id: "MALE_30_50"
+        sex: "MALE"
+        age_min: 30
+        age_max: 50
+        umbral_critical: 30
+        umbral_emerging: 40
+        umbral_functional: 50
+        umbral_foundation: 60
+      - id: "FEMALE_20_30"
+        sex: "FEMALE"
+        age_min: 20
+        age_max: 30
+        umbral_critical: 20
+        umbral_emerging: 24
+        umbral_functional: 30
+        umbral_foundation: 36
+      - id: "FEMALE_30_50"
+        sex: "FEMALE"
+        age_min: 30
+        age_max: 50
+        umbral_critical: 18
+        umbral_emerging: 22
+        umbral_functional: 28
+        umbral_foundation: 34
+      # ── v1.1 (2026-08-02) — HANDGRIP_THRESHOLDS_AGE_50PLUS_v1.0 ────────────
+      # Opción A (dos bandas) aprobada por Magnetia. Extrapolación por declive
+      # etario: ~5% de 30-50 a 50-60; ~10% adicional después de 60.
+      - id: "MALE_50_60"
+        sex: "MALE"
+        age_min: 50
+        age_max: 60
+        umbral_critical: 28
+        umbral_emerging: 38
+        umbral_functional: 47
+        umbral_foundation: 57
+        source: "Age-extrapolated (HANDGRIP_THRESHOLDS_AGE_50PLUS_v1.0) — Bohannon, Inouye, Sañudo"
+      - id: "MALE_60_PLUS"
+        sex: "MALE"
+        age_min: 60
+        age_max: null
+        umbral_critical: 25
+        umbral_emerging: 34
+        umbral_functional: 42
+        umbral_foundation: 51
+        source: "Age-extrapolated (HANDGRIP_THRESHOLDS_AGE_50PLUS_v1.0) — declive acelerado post-60"
+      - id: "FEMALE_50_60"
+        sex: "FEMALE"
+        age_min: 50
+        age_max: 60
+        umbral_critical: 17
+        umbral_emerging: 21
+        umbral_functional: 26
+        umbral_foundation: 32
+        source: "Age-extrapolated (HANDGRIP_THRESHOLDS_AGE_50PLUS_v1.0)"
+      - id: "FEMALE_60_PLUS"
+        sex: "FEMALE"
+        age_min: 60
+        age_max: null
+        umbral_critical: 15
+        umbral_emerging: 19
+        umbral_functional: 23
+        umbral_foundation: 29
+        source: "Age-extrapolated (HANDGRIP_THRESHOLDS_AGE_50PLUS_v1.0) — declive acelerado post-60"
+
+  - test_id: "5xSTS_001"
+    key: "SIT_TO_STAND_5X"
+    name: "5x Sit-to-Stand (Timed)"
+    domain: "STRENGTH"
+    unit: "seconds"
+    weight: 2
+    is_inverse: true
+    source: "Authoritative v1.0 §3.3"
+    populations:
+      # 18-19 va en banda propia para no marcar como provisional a los adultos
+      # de 20-65, cuya banda ya está aprobada. Mismos umbrales.
+      - id: "GENERAL_18_20"
+        sex: null
+        age_min: 18
+        age_max: 20
+        umbral_critical: 24
+        umbral_emerging: 18
+        umbral_functional: 12
+        umbral_foundation: 12
+        approval_status: "PROPOSED"
+        source: "Extensión del límite inferior de la banda aprobada 20-65."
+        rationale: "Mismos umbrales que 20-65: no hay razón fisiológica para excluir a 18-19 ni para asignarles valores distintos."
+
+      - id: "GENERAL_20_65"
+        sex: null
+        age_min: 20
+        age_max: 65
+        umbral_critical: 24
+        umbral_emerging: 18
+        umbral_functional: 12
+        umbral_foundation: 12
+        approval_status: "APPROVED"
+
+      # ── v1.2 PROPUESTA — 65+ años ─────────────────────────────────────────
+      # Bohannon RW (2006), meta-análisis de 14 estudios en adultos mayores:
+      # rendimiento peor que el promedio a partir de 11.4 s (60-69), 12.6 s
+      # (70-79) y 14.8 s (80-89). Un tiempo > 15 s se asocia a CAÍDAS
+      # RECURRENTES en ≥65 años.
+      # Por eso esta banda es MÁS ESTRICTA que la de adultos (crítico 20 vs 24):
+      # en mayores la lentitud predice caídas, un evento clínicamente grave, y
+      # con los umbrales de adulto un cliente con riesgo quedaría FUNCTIONAL.
+      - id: "GENERAL_65_PLUS"
+        sex: null
+        age_min: 65
+        age_max: null
+        umbral_critical: 20
+        umbral_emerging: 15
+        umbral_functional: 12
+        umbral_foundation: 12
+        approval_status: "PROPOSED"
+        source: "Bohannon RW. Reference Values for the Five-Repetition Sit-to-Stand Test: A Descriptive Meta-Analysis of Data from Elders. Percept Mot Skills 2006;103(1):215-222."
+        evidence: "Norma por edad: 11.4 s (60-69), 12.6 s (70-79), 14.8 s (80-89). Corte de riesgo de caídas recurrentes: >15 s."
+        rationale: "El corte de caídas (15 s) queda en el límite Functional/Emerging, de modo que un cliente en riesgo se marca como EMERGING y no como FUNCTIONAL. Verificación: 13 s → 2.63 FOUNDATION; 16 s → 1.5 EMERGING; 21 s → 0 CRITICAL."
+
+  - test_id: "DH_001"
+    key: "DEAD_HANG"
+    name: "Dead Hang"
+    domain: "STRENGTH"
+    unit: "seconds"
+    weight: 1.5
+    is_inverse: false
+    source: "OS v3.0 §2.1"
+    populations:
+      - id: "GENERAL_ALL_AGES"
+        sex: null
+        age_min: null
+        age_max: null
+        umbral_critical: 10
+        umbral_emerging: 20
+        umbral_functional: 40
+        umbral_foundation: 40
+
+  - test_id: "WS_001"
+    key: "WALL_SIT"
+    name: "Wall Sit (Isometric Hold)"
+    domain: "STRENGTH"
+    unit: "seconds"
+    weight: 1.5
+    is_inverse: false
+    source: "OS v3.0 §2.1"
+    populations:
+      - id: "GENERAL_ALL_AGES"
+        sex: null
+        age_min: null
+        age_max: null
+        umbral_critical: 20
+        umbral_emerging: 40
+        umbral_functional: 60
+        umbral_foundation: 60
+
+  - test_id: "PU_001"
+    key: "PUSHUP"
+    name: "Push-Up (Max Reps)"
+    domain: "STRENGTH"
+    unit: "repetitions"
+    weight: 2
+    is_inverse: false
+    source: "OS v3.0 §2.1"
+    populations:
+      - id: "MALE"
+        sex: "MALE"
+        age_min: null
+        age_max: null
+        umbral_critical: 5
+        umbral_emerging: 15
+        umbral_functional: 30
+        umbral_foundation: 30
+      - id: "FEMALE"
+        sex: "FEMALE"
+        age_min: null
+        age_max: null
+        umbral_critical: 2
+        umbral_emerging: 8
+        umbral_functional: 15
+        umbral_foundation: 15
+
+  - test_id: "IR_001"
+    key: "INVERTED_ROW"
+    name: "Inverted Row (Max Reps)"
+    domain: "STRENGTH"
+    unit: "repetitions"
+    weight: 1.5
+    is_inverse: false
+    source: "OS v3.0 §2.1"
+    populations:
+      - id: "GENERAL_UNISEX"
+        sex: null
+        age_min: null
+        age_max: null
+        umbral_critical: 5
+        umbral_emerging: 10
+        umbral_functional: 20
+        umbral_foundation: 20
+
+  # ══════════════════ MOBILITY (4 tests, peso total 6.5) ═══════════════════
+  - test_id: "HIP_001"
+    key: "HIP_AROM"
+    name: "Hip Active Range of Motion"
+    domain: "MOBILITY"
+    unit: "degrees"
+    weight: 2
+    is_inverse: false
+    source: "OS v3.0 §2.2"
+    populations:
+      - id: "GENERAL_ALL_AGES"
+        sex: null
+        age_min: null
+        age_max: null
+        umbral_critical: 40
+        umbral_emerging: 60
+        umbral_functional: 90
+        umbral_foundation: 90
+
+  - test_id: "ANKLE_001"
+    key: "ANKLE_DF"
+    name: "Ankle Dorsiflexion"
+    domain: "MOBILITY"
+    unit: "degrees"
+    weight: 1.5
+    is_inverse: false
+    source: "OS v3.0 §2.2"
+    populations:
+      - id: "GENERAL_ALL_AGES"
+        sex: null
+        age_min: null
+        age_max: null
+        umbral_critical: 5
+        umbral_emerging: 10
+        umbral_functional: 15
+        umbral_foundation: 15
+
+  - test_id: "SHOULDER_001"
+    key: "SHOULDER_ER"
+    name: "Shoulder External Rotation"
+    domain: "MOBILITY"
+    unit: "degrees"
+    weight: 1.5
+    is_inverse: false
+    source: "OS v3.0 §2.2"
+    populations:
+      - id: "GENERAL_ALL_AGES"
+        sex: null
+        age_min: null
+        age_max: null
+        umbral_critical: 30
+        umbral_emerging: 50
+        umbral_functional: 70
+        umbral_foundation: 70
+
+  - test_id: "THORACIC_001"
+    key: "THORACIC_ROT"
+    name: "Thoracic Rotation"
+    domain: "MOBILITY"
+    unit: "degrees"
+    weight: 1.5
+    is_inverse: false
+    source: "OS v3.0 §2.2"
+    populations:
+      - id: "GENERAL_ALL_AGES"
+        sex: null
+        age_min: null
+        age_max: null
+        umbral_critical: 20
+        umbral_emerging: 40
+        umbral_functional: 60
+        umbral_foundation: 60
+
+  # ══════════════════ AEROBIC (RHR obligatorio; VO2 opcional) ══════════════
+  - test_id: "RHR_001"
+    key: "RHR"
+    name: "Resting Heart Rate"
+    domain: "AEROBIC"
+    unit: "beats_per_minute"
+    weight: 1          # MVP: RHR solo. En v2.0 pasa a 2 (con VO2 en 1).
+    weight_v2: 2
+    is_inverse: true
+    required_in_mvp: true
+    source: "Authoritative v1.0 §3.4"
+    populations:
+      # ── v1.2 PROPUESTA (2026-08-02) — pendiente de aprobación clínica ──────
+      # NHANES 1999-2008 (CDC, n=35.302 sin medicación ni condición que altere
+      # el pulso, medido tras ~4 min sentado — mismo protocolo que HTC) reporta
+      # para adultos 20-39: media 71 bpm, P5 52, P95 89.
+      # El umbral crítico vigente de 30-50 (90 bpm) coincide con ese P95, y la
+      # encuesta NO separa 20-29 de 30-39: no hay evidencia de una diferencia
+      # clínicamente relevante. Por eso se extiende la misma banda hacia abajo
+      # en lugar de inventar valores nuevos.
+      - id: "AGE_18_30"
+        sex: null
+        age_min: 18
+        age_max: 30
+        umbral_critical: 90
+        umbral_emerging: 75
+        umbral_functional: 60
+        umbral_foundation: 60
+        approval_status: "PROPOSED"
+        source: "Ostchega Y, et al. Resting pulse rate reference data for children, adolescents, and adults: United States, 1999-2008. National Health Statistics Reports No. 41. CDC/NCHS, 2011."
+        evidence: "NHANES 20-39 años: media 71 bpm, P5 52, P95 89. El corte crítico vigente (90) ≈ P95."
+        rationale: "Misma banda que 30-50: NHANES agrupa 20-39 y no evidencia diferencia relevante. Alternativa conservadora a crear umbrales sin respaldo."
+
+      - id: "AGE_30_50"
+        sex: null
+        age_min: 30
+        age_max: 50
+        umbral_critical: 90
+        umbral_emerging: 75
+        umbral_functional: 60
+        umbral_foundation: 60
+        approval_status: "APPROVED"
+      - id: "AGE_50_PLUS"
+        sex: null
+        age_min: 50
+        age_max: null
+        umbral_critical: 100
+        umbral_emerging: 85
+        umbral_functional: 70
+        umbral_foundation: 70
+
+  - test_id: "VO2_001"
+    key: "VO2MAX_ESTIMATE"
+    name: "VO2 Max Estimate (Submaximal)"
+    domain: "AEROBIC"
+    unit: "ml_kg_min"
+    weight_v2: 1
+    is_inverse: false
+    optional_in_mvp: true
+    requires_medical_clearance: true
+    source: "OS v3.0 §2.3"
+    populations:
+      - id: "GENERAL_ALL_AGES"
+        sex: null
+        age_min: null
+        age_max: null
+        umbral_critical: 20
+        umbral_emerging: 30
+        umbral_functional: 40
+        umbral_foundation: 40
+
+# ── Cobertura de poblaciones ────────────────────────────────────────────────
+# RESUELTO en v1.1 (Magnetia, APPROVED): Handgrip 50-60 y 60+ (ambos sexos).
+# RESUELTO en v1.2 (PROPUESTA del equipo, pendiente de aprobación clínica):
+#   · RHR 18-30        → banda AGE_18_30       (NHANES 1999-2008)
+#   · Handgrip 18-20   → MALE/FEMALE_18_20     (JOSPT 2018)
+#   · 5xSTS 18-19      → GENERAL_18_65         (extensión del límite inferior)
+#   · 5xSTS 65+        → GENERAL_65_PLUS       (Bohannon 2006, riesgo de caídas)
+#
+# NO cubierto deliberadamente (el motor sigue fallando fuerte):
+#   · Menores de 18 años en cualquier test. Evaluar menores exige consentimiento
+#     parental y curvas de crecimiento, no extrapolación de normas adultas.
+#     Requiere decisión explícita de HTC sobre alcance etario de la plataforma.
+#
+# Toda población con approval_status: PROPOSED emite advertencia al cargar el
+# canonical y se marca en la interfaz. Ver PROPUESTA_POBLACIONES_v1.2.md.

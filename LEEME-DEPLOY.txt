@@ -1,0 +1,90 @@
+============================================================
+ HTC PLATFORM - PAQUETE PARA DEPLOY
+ OS v3.0 · Thresholds v1.1 · 274 tests en verde
+============================================================
+
+QUE ES ESTO
+-----------
+El codigo fuente completo de la plataforma HTC, sin node_modules
+ni compilados (se regeneran con npm install).
+
+COMO USARLO EN LA OTRA COMPUTADORA
+-----------------------------------
+1. Descomprimi este ZIP.
+2. Abri Claude Code en la carpeta que se creo.
+3. Pegale el prompt que esta mas abajo.
+
+REQUISITOS EN ESA MAQUINA
+-------------------------
+  · Node.js 18 o superior
+  · Docker (para levantar PostgreSQL local)   ... o bien
+  · Una cuenta en Railway / Render / Fly.io   ... para hostear
+
+------------------------------------------------------------
+ PROMPT PARA PEGARLE A CLAUDE EN LA OTRA COMPU
+------------------------------------------------------------
+
+Copia todo lo que esta entre las lineas:
+
+--- INICIO ---
+
+Sos el Lead Software Architect de la plataforma HTC. El codigo ya
+esta completo y con 274 tests en verde. Tu tarea ahora es UNICAMENTE
+el deploy y la validacion contra PostgreSQL real.
+
+Contexto critico que tenes que saber:
+El repositorio de PostgreSQL (src/db/pg-repository.ts y
+src/v3/repository.ts) esta ESCRITO PERO NUNCA SE EJECUTO contra una
+base real. Los 274 tests corren contra el repositorio in-memory.
+Ese es el riesgo principal y lo primero que hay que validar.
+
+Empeza leyendo DEPLOY.md, que tiene la guia completa y un checklist
+de validacion de 7 pasos.
+
+Pasos:
+1. npm install y npm run build (backend), despues lo mismo en web/
+2. Levantar PostgreSQL (Docker local o el servicio del hosting)
+3. Arrancar con DATABASE_URL y HTC_AUTH_PASSWORD seteadas
+4. Correr el checklist de DEPLOY.md ENTERO, en orden
+5. Si algo falla en los pasos 1 a 4 del checklist, arreglalo: es
+   codigo que nunca corrio, los puntos fragiles estan documentados
+   al final de DEPLOY.md
+6. Cuando todo pase, escribi un resumen de que se valido y que quedo
+   pendiente
+
+Reglas del proyecto (no negociables):
+- Nunca inventes umbrales, reglas ni textos clinicos. Todo el
+  conocimiento vive en canonical-v3/*.yaml
+- Si un dato canonico falta, el sistema DEBE fallar con error
+  explicito, nunca extrapolar
+- No toques la logica de decision: ya esta validada contra la
+  documentacion clinica de HTC
+- Verifica lo que afirmes: si decis que la persistencia funciona,
+  probala reiniciando el servidor
+
+El modelo vigente es OS v3.0 (carpeta canonical-v3, API en /api/v3).
+La carpeta canonical y /api son el modelo v2 anterior, que se
+conserva porque las evaluaciones historicas nunca se recalculan.
+
+--- FIN ---
+
+------------------------------------------------------------
+
+QUE NO VIENE EN ESTE ZIP (y por que)
+------------------------------------
+  node_modules/     -> se regenera con npm install
+  web/node_modules/ -> idem
+  dist/             -> se regenera con npm run build
+  web/dist/         -> idem
+
+Sin eso el zip pesa menos de 1 MB en vez de 140 MB.
+
+ARCHIVOS IMPORTANTES
+--------------------
+  DEPLOY.md                    Guia de deploy + checklist (LEER PRIMERO)
+  README.md                    Que es la plataforma y como esta armada
+  canonical-v3/                Todo el conocimiento clinico (OS v3.0)
+  src/v3/                      Motor de decision vigente
+  migrations/                  Schema SQL (se aplica solo al arrancar)
+  OBSERVACIONES_PAQUETE_C5.md  Observaciones abiertas con HTC
+============================================================

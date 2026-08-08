@@ -1,0 +1,17 @@
+# dependencias
+node_modules/
+web/node_modules/
+
+# artefactos de build (Render los regenera en cada deploy)
+dist/
+web/dist/
+
+# entorno / secretos — NUNCA commitear
+.env
+.env.*
+!.env.example
+
+# logs / os
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,26 @@
+# Blueprint de Render para HTC Platform v3.0
+# Deploy: https://render.com -> New -> Blueprint -> conectar este repo.
+# Render lee este archivo y crea el servicio con todo configurado.
+services:
+  - type: web
+    name: htc-platform
+    runtime: node
+    plan: free
+    region: oregon
+    # Instala + compila backend (tsc) y frontend (vite). --include=dev porque
+    # typescript/vite viven en devDependencies.
+    buildCommand: npm install --include=dev && npm run build && npm --prefix web install --include=dev && npm --prefix web run build
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "22.15.0"
+      # Neon Postgres (pooled connection string, con ?sslmode=require).
+      - key: DATABASE_URL
+        sync: false
+      # Password del coach para entrar a la app. Se lo pasás a Nico.
+      - key: HTC_AUTH_PASSWORD
+        sync: false
+      # Secreto para firmar los tokens de sesión. Render lo genera solo.
+      - key: HTC_AUTH_SECRET
+        generateValue: true

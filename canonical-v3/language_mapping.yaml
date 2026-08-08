@@ -1,0 +1,129 @@
+# language_mapping.yaml (v3)
+# La lógica de decisión emite IDs; este archivo los renderiza.
+# Los textos derivan de los rationale explícitos de los documentos C-1..C-5.
+version: "1.0"
+last_updated: "2026-07-25"
+effective_date: "2026-07-25"
+source_document: "Derived from CLINICAL_SPECIFICATION v1.0 + PRIORITY ENGINE v1.0 rationale"
+canonical: true
+verification_status: "DRAFT"   # wording pendiente de validación por HTC
+
+default_language: "es"
+languages: ["es", "en"]
+audiences: ["COACH", "CLIENT"]
+
+labels:
+  classifications:
+    CRITICAL:   { es: "Critical (Crítico)",      en: "Critical" }
+    EMERGING:   { es: "Emerging (En desarrollo)", en: "Emerging" }
+    FUNCTIONAL: { es: "Functional (Funcional)",   en: "Functional" }
+    FOUNDATION: { es: "Foundation (Sólido)",      en: "Foundation" }
+  domains:
+    STRENGTH: { es: "Fuerza",    en: "Strength" }
+    MOBILITY: { es: "Movilidad", en: "Mobility" }
+    AEROBIC:  { es: "Aeróbico",  en: "Aerobic" }
+    MOVEMENT: { es: "Movimiento", en: "Movement" }
+  roles:
+    P1:            { es: "P1 — Prioridad crítica",         en: "P1 — Critical priority" }
+    P1_PRIMARY:    { es: "P1 primario",                    en: "P1 primary" }
+    P1_SECONDARY:  { es: "P1 secundario (compartido)",     en: "P1 secondary (shared)" }
+    P2:            { es: "P2 — Prioridad primaria",        en: "P2 — Primary priority" }
+    SUPPORT:       { es: "Soporte",                        en: "Support" }
+    MAINTAIN:      { es: "Mantener",                       en: "Maintain" }
+    MONITOR:       { es: "Monitorear",                     en: "Monitor" }
+    DEFER:         { es: "Diferir",                        en: "Defer" }
+  health_states:
+    PASS:    { es: "Sin hallazgos", en: "Pass" }
+    FLAGGED: { es: "Con alertas",   en: "Flagged" }
+    BLOCKED: { es: "Bloqueado",     en: "Blocked" }
+
+reasons:
+  REASON_V3_GATE_PARQ:
+    COACH: { es: "PAR-Q+ con respuesta afirmativa: se detiene la evaluación y se requiere autorización médica.", en: "PAR-Q+ positive: assessment stopped, physician clearance required." }
+    CLIENT: { es: "Tu cuestionario de salud marcó algo que un médico debe revisar antes de evaluarte.", en: "Your health questionnaire flagged something a physician should review before assessing you." }
+    source: "Authoritative v1.0 §9.1"
+  REASON_V3_GATE_BP:
+    COACH: { es: "Presión arterial en rango de parada (PAS ≥180 o PAD ≥110): se detiene la evaluación y se deriva a médico.", en: "Blood pressure in stop range (SBP ≥180 or DBP ≥110): assessment stopped, medical referral." }
+    CLIENT: { es: "Tu presión arterial está por encima del rango seguro para evaluar hoy.", en: "Your blood pressure is above the safe range to assess today." }
+    source: "Authoritative v1.0 §9.1"
+  REASON_V3_GATE_CHEST_PAIN:
+    COACH: { es: "Dolor torácico presente: se detiene la evaluación y se deriva a médico.", en: "Chest pain present: assessment stopped, medical referral." }
+    CLIENT: { es: "Reportaste dolor en el pecho. Antes de seguir, tiene que verte un médico.", en: "You reported chest pain. A physician must see you before we continue." }
+    source: "Authoritative v1.0 §9.1"
+  REASON_V3_GATE_RED_FLAG:
+    COACH: { es: "Red flag clínica de severidad STOP: se detiene la evaluación y se deriva a médico.", en: "Clinical red flag with STOP severity: assessment stopped, medical referral." }
+    CLIENT: { es: "Encontramos una señal clínica que requiere revisión médica antes de continuar.", en: "We found a clinical sign that requires medical review before continuing." }
+    source: "Authoritative v1.0 §9.1; YAML SCHEMA FILE 6"
+  REASON_V3_FLAG_PAIN:
+    COACH: { es: "Dolor ≥6/10: la evaluación continúa, pero queda marcada para revisión del coach y genera restricción de programación.", en: "Pain ≥6/10: assessment continues, flagged for coach review and generates a programming constraint." }
+    CLIENT: { es: "Registramos dolor durante la evaluación. Vamos a adaptar el plan.", en: "We recorded pain during the assessment. We will adapt the plan." }
+    source: "Authoritative v1.0 §9.2"
+  REASON_V3_FLAG_PAIN_MONITOR:
+    COACH: { es: "Dolor 4-5/10: se registra y se consideran ajustes.", en: "Pain 4-5/10: recorded; adjustments considered." }
+    CLIENT: { es: "Registramos molestias moderadas; las vamos a seguir de cerca.", en: "We recorded moderate discomfort; we will monitor it." }
+    source: "HTC_THRESHOLDS_CANONICAL v1.0 Flag 1"
+  REASON_V3_FLAG_RED_FLAG:
+    COACH: { es: "Red flag clínica de severidad ALERT: la evaluación continúa con revisión del coach.", en: "Clinical red flag with ALERT severity: assessment continues with coach review." }
+    CLIENT: { es: "Anotamos un antecedente de salud a tener en cuenta en tu plan.", en: "We noted a health history item to consider in your plan." }
+    source: "YAML SCHEMA FILE 6"
+  REASON_V3_HEALTH_PASS:
+    COACH: { es: "Gates de salud superados: se continúa con la evaluación de dominios.", en: "Health gates passed: proceeding to domain assessment." }
+    CLIENT: { es: "Tu chequeo de seguridad está en orden.", en: "Your safety screening is clear." }
+    source: "YAML SCHEMA FILE 6 assessment_flow"
+  REASON_V3_CRITICAL_COMPONENT:
+    COACH: { es: "Componente crítico detectado: el dominio pasa a CRITICAL por override (C-3), independientemente del promedio ponderado.", en: "Critical component detected: domain overridden to CRITICAL (C-3), regardless of the weighted average." }
+    CLIENT: { es: "Encontramos un punto que limita al resto. Es lo primero que vamos a trabajar.", en: "We found one point that limits the rest. That is what we will work on first." }
+    source: "CLINICAL_SPECIFICATION §Critical Component Rule (C-3)"
+  REASON_V3_AUTO_P1:
+    COACH: { es: "Dominio CRITICAL: se convierte automáticamente en P1 con 70% del volumen (Principio 1).", en: "CRITICAL domain: automatically becomes P1 with 70% of volume (Principle 1)." }
+    CLIENT: { es: "Esta es tu prioridad principal del ciclo.", en: "This is your main priority for the cycle." }
+    source: "PRIORITY ASSIGNMENT ENGINE Principio 1"
+  REASON_V3_MULTIPLE_CRITICAL:
+    COACH: { es: "Más de un dominio CRITICAL: se rankea por impact factor; el primero es P1_PRIMARY y el resto comparte el esfuerzo P1.", en: "More than one CRITICAL domain: ranked by impact factor; the first is P1_PRIMARY and the rest share P1 effort." }
+    CLIENT: { es: "Tenés dos puntos que necesitan atención al mismo tiempo.", en: "You have two points that need attention at the same time." }
+    source: "PRIORITY ASSIGNMENT ENGINE RULE 1"
+  REASON_V3_NO_CRITICAL:
+    COACH: { es: "Sin dominios CRITICAL: el peor dominio pasa a P2 como foco de desarrollo (40%).", en: "No CRITICAL domains: the worst domain becomes P2 as development focus (40%)." }
+    CLIENT: { es: "No hay puntos críticos. Vamos a desarrollar tu punto más débil.", en: "There are no critical points. We will develop your weakest area." }
+    source: "PRIORITY ASSIGNMENT ENGINE RULE 3"
+  REASON_V3_MOVEMENT_WORST_CASE:
+    COACH: { es: "Movement se clasifica por el peor de sus 4 niveles (dependencia jerárquica, C-4).", en: "Movement is classified by the worst of its 4 levels (hierarchical dependency, C-4)." }
+    CLIENT: { es: "Tu nivel de movimiento lo define el eslabón más débil de la cadena.", en: "Your movement level is defined by the weakest link in the chain." }
+    source: "MOVEMENT_OBSERVATION_RUBRIC §Movement Domain Classification"
+  REASON_V3_ROLE_P2:
+    COACH: { es: "Segundo foco: compatible con P1, puede progresar en paralelo con modificaciones.", en: "Second focus: compatible with P1, can progress in parallel with modifications." }
+    CLIENT: { es: "Segundo foco del ciclo.", en: "Second focus of the cycle." }
+    source: "PRIORITY ASSIGNMENT ENGINE Principio 2"
+  REASON_V3_ROLE_SUPPORT:
+    COACH: { es: "Soporte: se atiende si el tiempo y los recursos lo permiten.", en: "Support: addressed if time and resources permit." }
+    CLIENT: { es: "Trabajo de apoyo.", en: "Support work." }
+    source: "PRIORITY ASSIGNMENT ENGINE Principio 2"
+  REASON_V3_ROLE_MAINTAIN:
+    COACH: { es: "Mantenimiento: preservación, sin desarrollo.", en: "Maintenance: preservation only, no development." }
+    CLIENT: { es: "Esto está bien: lo mantenemos.", en: "This is fine: we maintain it." }
+    source: "PRIORITY ASSIGNMENT ENGINE Principio 2"
+  REASON_V3_CONSTRAINT_L2:
+    COACH: { es: "Control dinámico limitado (L2): restringe trabajo unilateral y transiciones complejas; usar posiciones bilaterales y estables para el P1.", en: "Limited dynamic control (L2): restricts single-leg work and complex transitions; use bilateral, stable positions for P1." }
+    CLIENT: { es: "Vamos a usar posiciones estables hasta mejorar tu control dinámico.", en: "We will use stable positions until your dynamic control improves." }
+    source: "PRIORITY ASSIGNMENT ENGINE applyMovementConstraints"
+  REASON_V3_CONSTRAINT_L3:
+    COACH: { es: "Coordinación limitada (L3): usar progresiones lineales simples y evitar novedad.", en: "Limited coordination (L3): use simple linear progressions and avoid novelty." }
+    CLIENT: { es: "Vamos a usar progresiones simples por ahora.", en: "We will use simple progressions for now." }
+    source: "PRIORITY ASSIGNMENT ENGINE applyMovementConstraints"
+  REASON_V3_CONSTRAINT_L4:
+    COACH: { es: "Resolución motora limitada (L4): progresión altamente estructurada, menor exposición a novedad.", en: "Limited motor problem solving (L4): highly structured progression, reduced novelty exposure." }
+    CLIENT: { es: "Tu plan va a ser muy estructurado al principio.", en: "Your plan will be highly structured at first." }
+    source: "PRIORITY ASSIGNMENT ENGINE MOVEMENT HIERARCHY SPECIAL CASE"
+  REASON_V3_PREREQ_NOT_MET:
+    COACH: { es: "Prerrequisito jerárquico no alcanzado: el nivel anterior está por debajo de FUNCTIONAL, por lo que este nivel no es plenamente accesible.", en: "Hierarchical prerequisite not met: the previous level is below FUNCTIONAL, so this level is not fully accessible." }
+    CLIENT: { es: "Primero consolidamos el nivel anterior.", en: "We consolidate the previous level first." }
+    source: "MOVEMENT STANDARD prerequisites"
+
+report_sections:
+  - { id: "HEALTH_STATUS",   es: "Estado de Salud y Seguridad", en: "Health & Safety Status" }
+  - { id: "DOMAIN_PROFILE",  es: "Perfil por Dominio",          en: "Domain Profile" }
+  - { id: "BOTTLENECK",      es: "Punto Limitante",             en: "Bottleneck" }
+  - { id: "ROADMAP",         es: "Plan de Desarrollo",          en: "Development Roadmap" }
+  - { id: "CONSTRAINTS",     es: "Restricciones",               en: "Constraints" }
+  - { id: "SESSION",         es: "Estructura de Sesión",        en: "Session Architecture" }
+  - { id: "REASSESSMENT",    es: "Reevaluación",                en: "Reassessment" }

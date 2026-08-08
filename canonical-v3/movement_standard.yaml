@@ -1,0 +1,186 @@
+# movement_standard.yaml
+# Transcripción literal de HTC_YAML_SCHEMA_UPDATED_POST_C5_v1.0.md — FILE 4,
+# + HTC_MOVEMENT_OBSERVATION_RUBRIC_v1.0.md (reglas de clasificación por nivel).
+# C-4: 4 niveles jerárquicos (IBM, DC, MC, MPS).
+version: "1.0"
+last_updated: "2026-07-25"
+effective_date: "2026-07-25"
+source_document: "Movement Standard FINAL_1 + YAML SCHEMA POST-C5 FILE 4"
+canonical: true
+
+metadata:
+  description: "Movement assessment framework (4 levels)"
+  assessment_method_mvp: "qualitative_coach_rubric"
+  assessment_method_v2: "numeric_from_population_data"
+
+movement_domain:
+  total_levels: 4
+  aggregation_method: "worst_case_hierarchical"
+  aggregation_logic: "MIN(L1, L2, L3, L4)"
+  critical_component_rule: true
+  domain_classification_rule: |
+    Movement_Domain_Classification = MIN(L1, L2, L3, L4)
+    Reasoning: hierarchical dependency — the weakest level defines the domain.
+
+levels:
+  - level_id: "L1_IBM"
+    sequence_number: 1
+    name: "Internal Body Mapping"
+    description: "Perception, representation, voluntary control of body"
+    duration_assessment_min: 10
+    prerequisite: null
+    progression_gate: "IBM >= FUNCTIONAL"
+    observation_variables: ["perception", "precision", "selective_motor_control", "correction", "attention"]
+    tests: ["Breath & Tension Scan", "Joint Isolation Task", "Quadruped Position Shift", "Eyes Closed Position Match"]
+    numeric_thresholds_v2: null
+    typical_duration_weeks: { CRITICAL: 4, EMERGING: 2, FUNCTIONAL: 1, FOUNDATION: 1 }
+    training_volume_percent: { CRITICAL: 70, EMERGING: 70, FUNCTIONAL: 20, FOUNDATION: 5 }
+    # Regla de clasificación — MOVEMENT_OBSERVATION_RUBRIC "IBM Classification Rule"
+    classification_rule:
+      FOUNDATION:
+        min_at_foundation: 4
+        none_below: "FUNCTIONAL"
+      FUNCTIONAL:
+        min_at_functional_or_above: 3
+        max_emerging: 2
+        no_critical: true
+      EMERGING:
+        min_at_functional: 2
+        emerging_range: [2, 3]
+        max_critical: 1
+      CRITICAL:
+        min_at_emerging_or_critical: 3
+
+  - level_id: "L2_DC"
+    sequence_number: 2
+    name: "Dynamic Control"
+    description: "Stability, precision, organization during movement"
+    duration_assessment_min: 12
+    prerequisite: "L1 >= FUNCTIONAL"
+    progression_gate: "DC >= FUNCTIONAL"
+    observation_variables: ["dynamic_balance", "load_transfer", "postural_control", "motor_precision"]
+    tests: ["Bear Hold → Bear Crawl", "Single Leg Reach", "HTC Transition Flow"]
+    numeric_thresholds_v2: null
+    typical_duration_weeks: { CRITICAL: 6, EMERGING: 4, FUNCTIONAL: 2, FOUNDATION: 1 }
+    training_volume_percent: { CRITICAL: 70, EMERGING: 70, FUNCTIONAL: 20, FOUNDATION: 5 }
+    # MOVEMENT_OBSERVATION_RUBRIC "DC Classification Rule"
+    classification_rule:
+      FOUNDATION:
+        min_at_foundation: 3
+        none_below: "FUNCTIONAL"
+      FUNCTIONAL:
+        min_at_functional_or_above: 2
+        max_emerging: 2
+        no_critical: true
+      EMERGING:
+        emerging_range: [2, 3]
+        max_critical: 1
+      CRITICAL:
+        min_at_emerging_or_critical: 2
+
+  - level_id: "L3_MC"
+    sequence_number: 3
+    name: "Movement Coordination"
+    description: "Synchronize multiple segments maintaining precision and quality"
+    duration_assessment_min: 15
+    prerequisite: "L2 >= FUNCTIONAL"
+    progression_gate: "MC >= FUNCTIONAL"
+    observation_variables: ["rhythm_accuracy", "synchronization", "timing", "complexity_tolerance", "error_recovery"]
+    output_ceiling: "coordination_ceiling_1_to_5"
+    complexity_progression: ["Upper_Body_Rhythm", "Lower_Body_Rhythm", "Upper_Plus_Lower", "Plus_Trunk", "Whole_Body"]
+    numeric_thresholds_v2: null
+    typical_duration_weeks: { CRITICAL: 6, EMERGING: 6, FUNCTIONAL: 4, FOUNDATION: 2 }
+    training_volume_percent: { CRITICAL: 70, EMERGING: 70, FUNCTIONAL: 20, FOUNDATION: 5 }
+    # MOVEMENT_OBSERVATION_RUBRIC "MC Classification Rule" (variables + ceiling)
+    classification_rule:
+      FOUNDATION:
+        ceiling_min: 5
+        all_at_functional_or_above: true
+      FUNCTIONAL:
+        ceiling_min: 4
+        min_at_functional_or_above: 3
+      EMERGING:
+        ceiling_range: [2, 3]
+        min_at_emerging_or_worse: 3
+      CRITICAL:
+        ceiling_max: 1
+        min_at_emerging_or_critical: 3
+
+  - level_id: "L4_MPS"
+    sequence_number: 4
+    name: "Motor Problem Solving"
+    description: "Resolve new motor challenges via exploration, selection, adaptation"
+    duration_assessment_min: 15
+    prerequisite: "L3 >= FUNCTIONAL"
+    progression_gate: null
+    observation_variables: ["solution_generation", "strategy_selection", "exploration", "learning_speed", "error_recovery", "autonomy"]
+    output_ceiling: "problem_solving_ceiling_constraint_to_open"
+    challenges: ["constraint_challenge", "environment_challenge", "object_challenge", "open_motor_challenge"]
+    numeric_thresholds_v2: null
+    typical_duration_weeks: { CRITICAL: 8, EMERGING: 6, FUNCTIONAL: 4, FOUNDATION: 2 }
+    training_volume_percent: { CRITICAL: 70, EMERGING: 70, FUNCTIONAL: 20, FOUNDATION: 5 }
+    # MOVEMENT_OBSERVATION_RUBRIC "MPS Classification Rule" (variables + ceiling)
+    classification_rule:
+      FOUNDATION:
+        ceiling_min_challenge: "open_motor_challenge"
+        min_at_foundation: 5
+      FUNCTIONAL:
+        ceiling_min_challenge: "object_challenge"
+        min_at_functional_or_above: 3
+      EMERGING:
+        ceiling_min_challenge: "environment_challenge"
+        min_at_emerging_or_worse: 3
+      CRITICAL:
+        ceiling_min_challenge: "constraint_challenge"
+        min_at_emerging_or_critical: 3
+
+# Escalera de challenges de L4, de menor a mayor complejidad.
+challenge_order: ["constraint_challenge", "environment_challenge", "object_challenge", "open_motor_challenge"]
+
+# Constraints de programación que impone Movement sobre otros dominios
+# (DEVELOPMENT_PRIORITY_ASSIGNMENT_ENGINE "MOVEMENT HIERARCHY SPECIAL CASE").
+programming_constraints:
+  - id: "DYNAMIC_CONTROL_LIMIT"
+    when_level: "L2_DC"
+    when_classification: ["CRITICAL", "EMERGING"]
+    description: "L2 weakness limits single-leg and complex transitions"
+    affected_domains: ["STRENGTH", "MOBILITY"]
+    mitigation: "Use bilateral, stable positions for P1 work"
+  - id: "COORDINATION_LIMIT"
+    when_level: "L3_MC"
+    when_classification: ["CRITICAL"]
+    description: "L3 weakness limits pattern complexity"
+    affected_domains: ["STRENGTH", "MOBILITY"]
+    mitigation: "Use simple, linear progressions; avoid novelty"
+  - id: "PROBLEM_SOLVING_LIMIT"
+    when_level: "L4_MPS"
+    when_classification: ["CRITICAL", "EMERGING"]
+    description: "L4 weakness requires highly structured progression"
+    affected_domains: ["STRENGTH", "MOBILITY", "AEROBIC"]
+    mitigation: "Reduced novelty exposure; highly structured progression"
+
+# Focos de desarrollo cuando Movement es P1 (mismo documento).
+p1_focus_by_level:
+  L1_IBM:
+    focus: "Build proprioception + body awareness"
+    duration_weeks: [4, 6]
+    constraint: "Restrict complex movements"
+  L2_DC:
+    focus: "Restore dynamic stability"
+    duration_weeks: [6, 8]
+    constraint: "Avoid single-leg work, complex transitions"
+  L3_MC:
+    focus: "Build coordination capacity"
+    duration_weeks: [6, 10]
+    constraint: "Simplify patterns, reduce complexity ceiling"
+  L4_MPS:
+    focus: "Build problem-solving capacity"
+    duration_weeks: [8, 12]
+    constraint: "Highly structured progression"
+
+reassessment:
+  formal_weeks: [6, 8]
+  additional_triggers:
+    - "Level classification changes during training"
+    - "New symptom or limitation emerges"
+    - "Coach identifies ceiling reached"

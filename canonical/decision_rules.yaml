@@ -1,0 +1,253 @@
+# HTC Decision Rules — consumed by the Decision Engine. The engine contains NO
+# HTC knowledge; it evaluates these rules.
+# Sources: HTC DECISION RULES v1.0, HTC DECISION GRAPH SPECIFICATION v1.0,
+# HTC PLATFORM DATA §12-§23, HTC MASTER TABLES T6, HTC OPERATING SYSTEM cap.10.
+# Approved resolution C1 (2026-07-18): full Decision Graph model.
+
+classifications:
+  ordered_worst_to_best: ["CRITICAL", "EMERGING", "FUNCTIONAL", "FOUNDATION"]
+  additional_states: ["NOT_ASSESSED", "INVALID_RESULT"]
+  functional_floor: "FUNCTIONAL"   # "below Functional" = CRITICAL or EMERGING
+  verification_status: "VERIFIED"
+  source: "HTC PLATFORM DATA §9; DECISION GRAPH §3.4"
+
+priority_roles:
+  values: ["P1", "P2", "P3", "SUPPORT", "MAINTAIN", "DEFER", "MONITOR", "UNCONFIRMED"]
+  verification_status: "VERIFIED"
+  source: "HTC PLATFORM DATA §19"
+
+strategies:
+  values: ["SEQUENTIAL", "CONCURRENT", "INTEGRATED", "RESTORE_FIRST", "ASSESSMENT_REQUIRED"]
+  verification_status: "VERIFIED"
+  source: "HTC PLATFORM DATA §21"
+
+pathways:
+  values: ["RESTORE", "MOVE", "BUILD", "PERFORM", "SUSTAIN"]
+  verification_status: "VERIFIED"
+  source: "HTC OPERATING SYSTEM cap.2; DECISION GRAPH Node 13"
+
+# ── Aggregation strategy (parameterized; the engine contains no formula) ─────
+# Test → Capacity and Capacity → Domain aggregation is configurable here so the
+# methodology can change without touching code (Development Principles §3, §5).
+#
+# ⚠️ OPEN CONFLICT — the v3.0 package proposes a DIFFERENT strategy than the one
+# in force. It is NOT applied until Magnetia resolves C-2 and C-3
+# (see ANALISIS_PAQUETE_NUEVO_v3.md):
+#   · BLOCK_1 Decision 6 (2026-07-21): weighted_average + critical_component:OVERRIDE
+#   · AUTHORITATIVE §5.2-5.3 (2026-07-15): weighted_average + critical_component:FLAG
+#   · BLOCK_1 Decision 6 uses TWO opposite numeric scales in its own examples
+#     (0-3 ordinal for Movement, 0-100 for Strength) and no test→score formula exists.
+# Until resolved, the in-force strategy stays WORST_OF, which never hides a
+# CRITICAL and therefore satisfies both readings conservatively.
+aggregation:
+  test_to_capacity:
+    strategy: "WORST_OF"
+    critical_component: "INHERENT"   # WORST_OF already surfaces any CRITICAL
+    verification_status: "DRAFT"
+    source: "Conservative default; pending C-2/C-3 resolution by Magnetia"
+  supported_strategies:
+    - id: "WORST_OF"
+      description: "Capacity takes the worst classification among its tests."
+    - id: "SIMPLE_AVERAGE"
+      description: "Numeric mean over the ordinal scale, then rounded."
+      requires: ["ordinal_scale", "rounding_rule"]
+    - id: "WEIGHTED_AVERAGE"
+      description: "Weighted mean using per-test/per-capacity weights."
+      requires: ["weights", "ordinal_scale", "rounding_rule"]
+  critical_component_modes:
+    - id: "OVERRIDE"
+      description: "If ANY component is CRITICAL the whole capacity/domain becomes CRITICAL (BLOCK_1 D6)."
+    - id: "FLAG"
+      description: "Classification keeps the average; a critical_component_flag is raised (AUTHORITATIVE §5.2)."
+    - id: "INHERENT"
+      description: "Strategy already guarantees a CRITICAL is never hidden (WORST_OF)."
+  # Ordinal scale is declared but only consumed by average-based strategies.
+  ordinal_scale:
+    FOUNDATION: 0
+    FUNCTIONAL: 1
+    EMERGING: 2
+    CRITICAL: 3
+    direction: "HIGHER_IS_WORSE"
+    verification_status: "VERIFIED"
+    source: "HTC OS v3.0 §5.2 Rule 2 / BLOCK_1 Decision 2 — declared for future use"
+  rounding_rule:
+    status: "MISSING_CANONICAL"
+    note: >
+      No source defines rounding at the midpoint (is 1.5 FUNCTIONAL or EMERGING?).
+      Average-based strategies fail loudly until Magnetia provides this rule.
+
+# ── Within-domain bottleneck (Decision Graph Node 5; Platform Data §12) ──────
+domain_bottleneck:
+  rule: "EARLIEST_CAPACITY_BELOW_FUNCTIONAL"
+  description: "The Domain Bottleneck is the earliest capacity (lowest hierarchy_level) below Functional within the domain hierarchy. Downstream limitations are provisional manifestations."
+  multiple_limitation_tiebreak: ["SEVERITY", "FUNCTIONAL_RELEVANCE", "ASSESSMENT_CONFIDENCE", "DOWNSTREAM_IMPACT"]
+  exceptions:
+    - id: "EXC_GOAL_CRITICAL"
+      rule: "A goal-critical higher capacity may stay relevant (Support/Monitor/Defer) but cannot become Domain Bottleneck while a required lower capacity is below Functional."
+      source: "HTC PLATFORM DATA §13 Exception 1"
+    - id: "EXC_LOW_CONFIDENCE"
+      rule: "IF lower capacity < Functional AND assessment confidence = LOW THEN domain bottleneck = UNCONFIRMED and further assessment is required."
+      source: "HTC PLATFORM DATA §13 Exception 2"
+    - id: "EXC_INDEPENDENT_SUBCAPACITY"
+      rule: "Two subcapacities in the same domain may be independent; one does not block the other unless a defined dependency exists."
+      source: "HTC PLATFORM DATA §13 Exception 3"
+  verification_status: "VERIFIED"
+
+# ── Candidate bottleneck list (Decision Graph Node 6; Platform Data §16) ─────
+candidate_list:
+  include: ["CONFIRMED_DOMAIN_BOTTLENECKS", "CRITICAL_GENERAL_HEALTH_FINDINGS", "HIGH_RELEVANCE_EMERGING_CAPACITIES", "GOAL_CRITICAL_CAPACITIES", "HIGH_CAUSAL_INFLUENCE_CAPACITIES"]
+  exclude: ["INVALID_RESULTS", "LOW_CONFIDENCE_UNCONFIRMED", "SECONDARY_MANIFESTATIONS", "ALREADY_SUPPORT", "NO_FUNCTIONAL_OR_GOAL_RELEVANCE"]
+  verification_status: "VERIFIED"
+  source: "HTC PLATFORM DATA §16"
+
+# ── Global priority rules (Platform Data §18; Decision Rules §2-§5) ──────────
+global_rules:
+  - id: "RULE_18_1_HEALTH_OVERRIDE"
+    if: "general_health == CRITICAL and (safety_compromised or training_tolerance_compromised)"
+    then: { p1: "CAP_GENERAL_HEALTH_STATUS", pathway: "RESTORE" }
+    reason_id: "REASON_HEALTH_OVERRIDE"
+    verification_status: "VERIFIED"
+    source: "PLATFORM DATA 18.1; DECISION RULES 2.1; MASTER TABLES R001"
+  - id: "RULE_18_2_CAUSE_BEFORE_MANIFESTATION"
+    if: "capacity A is confirmed cause of capacity B"
+    then: "A receives higher priority than B"
+    reason_id: "REASON_CAUSE_BEFORE_MANIFESTATION"
+    verification_status: "VERIFIED"
+    source: "PLATFORM DATA 18.2; DECISION RULES 4.1; DECISION GRAPH 11.1"
+  - id: "RULE_18_3_DEPENDENCY"
+    if: "capacity B requires capacity A and A < Functional"
+    then: "B cannot become P1"
+    reason_id: "REASON_DEPENDENCY_BLOCK"
+    verification_status: "VERIFIED"
+    source: "PLATFORM DATA 18.3; DECISION RULES 3.2; MASTER TABLES R002"
+  - id: "RULE_18_4_GOAL_MODIFIER"
+    if: "two candidates have similar systemic relevance"
+    then: "prioritize the capacity most relevant to the client's primary goal"
+    reason_id: "REASON_GOAL_MODIFIER"
+    verification_status: "VERIFIED"
+    source: "PLATFORM DATA 18.4; DECISION RULES 7.1"
+  - id: "RULE_18_5_TRANSFER"
+    if: "one candidate positively affects multiple capacities"
+    then: "increase its priority recommendation"
+    reason_id: "REASON_TRANSFER_POTENTIAL"
+    verification_status: "VERIFIED"
+    source: "PLATFORM DATA 18.5"
+  - id: "RULE_18_6_CONFIDENCE"
+    if: "assessment confidence == LOW"
+    then: "candidate cannot become confirmed P1"
+    reason_id: "REASON_LOW_CONFIDENCE"
+    verification_status: "VERIFIED"
+    source: "PLATFORM DATA 18.6 / §10; MASTER TABLES R003"
+  - id: "RULE_18_7_SINGLE_P1"
+    if: "always"
+    then: "only one capacity may receive P1"
+    reason_id: "REASON_SINGLE_P1"
+    verification_status: "VERIFIED"
+    source: "PLATFORM DATA 18.7; DECISION RULES 5.1"
+  - id: "RULE_MANIFESTATION_EXCLUSION"
+    if: "capacity == SECONDARY_MANIFESTATION"
+    then: "cannot become P1 until primary cause is addressed"
+    reason_id: "REASON_MANIFESTATION_EXCLUDED"
+    verification_status: "VERIFIED"
+    source: "DECISION GRAPH 11.2; MASTER TABLES R004"
+
+# ── Multi-domain scoring (OS cap.10.3 — deterministic P1 recommendation) ─────
+multi_domain_scoring:
+  classification_points: { FOUNDATION: 0, FUNCTIONAL: 2, EMERGING: 5, CRITICAL: 10 }
+  # impact factors live on domains.yaml / capacities.yaml (Stability override ×2.0)
+  rule: "score = classification_points × impact_factor; highest total score = P1 Global recommendation"
+  strategy_threshold:
+    rule: "score difference > 10 points → SEQUENTIAL blocks; < 10 points → CONCURRENT blocks"
+    source: "HTC OPERATING SYSTEM 10.8"
+  note: >
+    PLATFORM DATA §17 states v1 'should not automatically create a final
+    mathematical score' — resolved by hierarchy: OS cap.10.3 (level 2) defines
+    the scoring algorithm, so the engine computes it as a RECOMMENDATION,
+    displays the full Priority Analysis Matrix alongside, and the coach
+    confirms or overrides (coach-led principle preserved).
+  verification_status: "VERIFIED"
+  source: "HTC OPERATING SYSTEM cap.10.3"
+
+# ── Priority Analysis Matrix criteria (Decision Graph Node 8) ────────────────
+priority_matrix_criteria:
+  values: ["SAFETY", "SEVERITY", "CAUSAL_INFLUENCE", "DEPENDENCY", "FUNCTIONAL_IMPACT", "GOAL_RELEVANCE", "TRANSFER_POTENTIAL", "TRAINABILITY", "ASSESSMENT_CONFIDENCE"]
+  verification_status: "VERIFIED"
+  source: "DECISION GRAPH §12; PLATFORM DATA §17"
+
+tie_breakers:
+  ordered: ["HEALTH_AND_SAFETY", "CAUSAL_INFLUENCE", "DEPENDENCY", "GOAL_RELEVANCE", "TRANSFER_POTENTIAL", "TRAINABILITY", "ASSESSMENT_CONFIDENCE"]
+  verification_status: "VERIFIED"
+  source: "DECISION GRAPH §13"
+
+# ── Priority role assignment (Decision Graph §16; Platform Data §20) ─────────
+role_assignment:
+  items:
+    - { role: "P1",      if: "confirmed primary system bottleneck with sufficient confidence and highest systemic impact", reason_id: "REASON_ROLE_P1" }
+    - { role: "P2",      if: "relevant and compatible with P1; can progress without reducing P1 quality", reason_id: "REASON_ROLE_P2" }
+    - { role: "P3",      if: "lower impact and compatible; recovery and schedule permit", reason_id: "REASON_ROLE_P3" }
+    - { role: "SUPPORT", if: "facilitates P1 or P2; independent development unnecessary", reason_id: "REASON_ROLE_SUPPORT" }
+    - { role: "MAINTAIN", if: "capacity >= Functional and not goal-critical; minimum dose preserves adaptation", reason_id: "REASON_ROLE_MAINTAIN" }
+    - { role: "DEFER",   if: "relevant but timing inappropriate or depends on unresolved priorities", reason_id: "REASON_ROLE_DEFER" }
+    - { role: "MONITOR", if: "no intervention required but change should be observed", reason_id: "REASON_ROLE_MONITOR" }
+    - { role: "UNCONFIRMED", if: "data incomplete or confidence low; further testing required", reason_id: "REASON_ROLE_UNCONFIRMED" }
+  verification_status: "VERIFIED"
+  source: "PLATFORM DATA §20; DECISION GRAPH §15-16"
+
+# ── Strategy selection (Platform Data §22; Decision Graph Node 11) ───────────
+strategy_rules:
+  items:
+    - { strategy: "SEQUENTIAL",  if: "P2 depends on P1, or adaptations compete, or recovery limited, or health requires conservative progression", reason_id: "REASON_STRATEGY_SEQUENTIAL" }
+    - { strategy: "CONCURRENT",  if: "capacities compatible, both need regular exposure, recovery sufficient, neither fully depends on the other", reason_id: "REASON_STRATEGY_CONCURRENT" }
+    - { strategy: "INTEGRATED",  if: "one intervention meaningfully stimulates multiple priorities without insufficient dose", reason_id: "REASON_STRATEGY_INTEGRATED" }
+    - { strategy: "RESTORE_FIRST", if: "General Health is P1 or symptoms/safety limit normal training", reason_id: "REASON_STRATEGY_RESTORE_FIRST" }
+    - { strategy: "ASSESSMENT_REQUIRED", if: "no valid P1 can be selected due to missing or low-confidence data", reason_id: "REASON_STRATEGY_ASSESSMENT_REQUIRED" }
+  verification_status: "VERIFIED"
+  source: "PLATFORM DATA §22"
+
+# ── Pathway assignment (Decision Graph Node 13; Platform Data §23; OS cap.2) ─
+pathway_rules:
+  items:
+    - { pathway: "RESTORE", if: "p1_domain == DOMAIN_GENERAL_HEALTH", reason_id: "REASON_PATHWAY_RESTORE" }
+    - { pathway: "MOVE",    if: "p1_domain == DOMAIN_MOBILITY",       reason_id: "REASON_PATHWAY_MOVE" }
+    - { pathway: "BUILD",   if: "p1_domain in [DOMAIN_STRENGTH, DOMAIN_AEROBIC]", reason_id: "REASON_PATHWAY_BUILD" }
+    - { pathway: "PERFORM", if: "all required base capacities >= Functional and primary_goal == PERFORMANCE", reason_id: "REASON_PATHWAY_PERFORM" }
+    - { pathway: "SUSTAIN", if: "no dominant bottleneck exists and goal == LONG_TERM_MAINTENANCE", reason_id: "REASON_PATHWAY_SUSTAIN" }
+  movement_note: "Movement may be P1 within Build or Perform, Support within Move, integrated within Sustain (DECISION GRAPH Node 20)."
+  movement_p1_pathway_rule:
+    rule: "IF p1_domain == DOMAIN_MOVEMENT THEN pathway = BUILD"
+    verification_status: "DRAFT"
+    note: >
+      No source assigns an explicit pathway when Movement is P1. DECISION GRAPH
+      Node 20 says Movement may be 'P1 within Build' — transcribed as BUILD.
+      HTC must confirm.
+  verification_status: "VERIFIED"
+  source: "DECISION GRAPH Node 13/20; PLATFORM DATA §23; OS cap.2"
+
+# ── Reassessment triggers (Decision Graph Node 15; Platform Data §27) ────────
+reassessment_triggers:
+  values:
+    - "SCHEDULED_DATE_REACHED"
+    - "P1_EXIT_CRITERIA_MET"
+    - "SYMPTOMS_WORSEN"
+    - "NEW_INJURY_OR_LIMITATION"
+    - "PROGRESS_PLATEAU"
+    - "ADHERENCE_BELOW_THRESHOLD"
+    - "AVAILABILITY_CHANGED"
+    - "GOAL_CHANGED"
+    - "MAINTAIN_CAPACITY_REGRESSED"
+    - "CONFIDENCE_NEEDS_IMPROVEMENT"
+  plateau_rule: "On plateau evaluate in order: assessment accuracy, adherence, training dose, recovery, exercise selection, misidentified causal relationship, insufficient time. NEVER auto-increase intensity."
+  verification_status: "VERIFIED"
+  source: "PLATFORM DATA §27-28; DECISION GRAPH §22-23"
+
+# ── Non-negotiable constraints (validated as invariants after every run) ─────
+non_negotiables:
+  - "Never assign more than one P1"
+  - "Never prioritize a Secondary Manifestation over its confirmed cause"
+  - "Never recommend performance development when health prevents safe participation"
+  - "Never progress a higher capacity while a required lower capacity remains below Functional"
+  - "Never assign definitive priorities from low-confidence data"
+  - "Never select exercises before identifying capacity priorities"
+  - "Never hide automated reasoning from the coach"
+  - "Never modify priorities without recording why"
+# non_negotiables verification: VERIFIED — PLATFORM DATA §36; DECISION GRAPH §26; DECISION RULES §10

@@ -1,0 +1,178 @@
+# Language Mapping — decision logic emits IDs; this file renders them.
+# Audiences: COACH (technical) / CLIENT (simple). Languages: es / en.
+# Texts are transcribed or minimally adapted from source documents (cited per
+# entry). ALL entries are DRAFT until HTC/Magnetia validates exact wording —
+# structure and meaning come from the sources; no clinical content invented.
+
+default_language: "es"
+languages: ["es", "en"]
+audiences: ["COACH", "CLIENT"]
+verification_status: "DRAFT"
+
+labels:
+  classifications:
+    FOUNDATION:  { es: "Foundation (Sólido)",      en: "Foundation" }
+    FUNCTIONAL:  { es: "Functional (Funcional)",   en: "Functional" }
+    EMERGING:    { es: "Emerging (En desarrollo)", en: "Emerging" }
+    CRITICAL:    { es: "Critical (Crítico)",       en: "Critical" }
+    NOT_ASSESSED: { es: "No evaluado",             en: "Not assessed" }
+    INVALID_RESULT: { es: "Resultado inválido",    en: "Invalid result" }
+  pathways:
+    # Descriptions from OS cap.2
+    RESTORE: { es: "Restore — la salud limita la función: disminuir irritabilidad, recuperar función, mejorar tolerancia", en: "Restore — health limits function: reduce irritability, restore function, improve tolerance" }
+    MOVE:    { es: "Move — Mobility Capacity es el bottleneck: desarrollar Joint Workspace, Workspace Ownership e integración", en: "Move — Mobility Capacity is the bottleneck: develop Joint Workspace, Workspace Ownership and integration" }
+    BUILD:   { es: "Build — Strength o Aerobic limitan: incrementar estabilidad, producción de fuerza y capacidad aeróbica", en: "Build — Strength or Aerobic limit: increase stability, force production and aerobic capacity" }
+    PERFORM: { es: "Perform — base sólida: optimizar la expresión de capacidades", en: "Perform — solid base: optimize capacity expression" }
+    SUSTAIN: { es: "Sustain — sin bottleneck dominante: mantener todas las capacidades", en: "Sustain — no dominant bottleneck: maintain all capacities" }
+  roles:
+    P1:      { es: "Prioridad 1 (bottleneck principal)", en: "Priority 1 (primary bottleneck)" }
+    P2:      { es: "Prioridad 2 (desarrollo secundario)", en: "Priority 2 (secondary development)" }
+    P3:      { es: "Prioridad 3 (complementario)", en: "Priority 3 (complementary)" }
+    SUPPORT: { es: "Soporte (facilita P1/P2)", en: "Support (facilitates P1/P2)" }
+    MAINTAIN: { es: "Mantener (dosis mínima efectiva)", en: "Maintain (minimum effective dose)" }
+    DEFER:   { es: "Diferir (momento inapropiado, no irrelevante)", en: "Defer (inappropriate timing, not irrelevant)" }
+    MONITOR: { es: "Monitorear (observar sin intervenir)", en: "Monitor (observe without intervening)" }
+    UNCONFIRMED: { es: "Sin confirmar (requiere más evaluación)", en: "Unconfirmed (requires further assessment)" }
+
+reasons:
+  REASON_HEALTH_OVERRIDE:
+    COACH:
+      es: "General Health en estado Critical con tolerancia al entrenamiento comprometida: se suspende la priorización normal, P1 = Salud General, Pathway = Restore (Regla 18.1)."
+      en: "General Health is Critical and training tolerance is compromised: normal prioritization suspended, P1 = General Health, Pathway = Restore (Rule 18.1)."
+    CLIENT:
+      es: "Tu salud general necesita atención primero. Antes de entrenar rendimiento, vamos a recuperar tu base de salud."
+      en: "Your general health needs attention first. Before performance training, we will restore your health baseline."
+    source: "PLATFORM DATA 18.1; DECISION GRAPH 5.2"
+  REASON_MEDICAL_REFERRAL:
+    COACH:
+      es: "Red flag médica detectada: se detiene el proceso de decisión. Derivación médica requerida antes de continuar (Regla 2.3)."
+      en: "Medical red flag detected: decision process stopped. Medical referral required before continuing (Rule 2.3)."
+    CLIENT:
+      es: "Encontramos una señal que debe revisar un médico antes de continuar con el programa. Es un paso de seguridad."
+      en: "We found a sign that a physician should review before continuing the program. This is a safety step."
+    source: "DECISION GRAPH 5.1; DECISION RULES 2.3"
+  REASON_HEALTH_GATE_STOP:
+    COACH:
+      es: "Health Markers en estado Critical (biomarcador crítico o diagnóstico no controlado): STOP, derivación médica inmediata."
+      en: "Health Markers Critical (critical biomarker or uncontrolled diagnosis): STOP, immediate medical referral."
+    CLIENT:
+      es: "Tus análisis muestran un valor que requiere revisión médica antes de entrenar con intensidad."
+      en: "Your lab results show a value that requires medical review before intense training."
+    source: "HEALTH MARKERS STANDARD §5"
+  REASON_HEALTH_GATE_CAUTION:
+    COACH:
+      es: "Dos o más áreas de Health Markers en Emerging: proceder con precaución, entrenamiento controlado, follow-up en 4-6 semanas."
+      en: "Two or more Health Markers areas Emerging: proceed with caution, controlled training, follow-up in 4-6 weeks."
+    CLIENT:
+      es: "Algunos valores de salud están fuera de rango. Vamos a entrenar de forma controlada y volver a revisarlos pronto."
+      en: "Some health values are out of range. We will train in a controlled way and re-check them soon."
+    source: "HEALTH MARKERS STANDARD §5"
+  REASON_PAIN_LIMITED:
+    COACH:
+      es: "El dolor limita significativamente la calidad de evaluación: se reduce la confianza, se evita priorización definitiva y la tolerancia a síntomas pasa a ser la prioridad inmediata (Regla 2.2)."
+      en: "Pain significantly limits assessment quality: confidence reduced, definitive prioritization avoided, symptom tolerance becomes the immediate priority (Rule 2.2)."
+    CLIENT:
+      es: "El dolor está interfiriendo con la evaluación. Primero vamos a mejorar tu tolerancia y después completamos el diagnóstico."
+      en: "Pain is interfering with the assessment. We will first improve your tolerance and then complete the evaluation."
+    source: "DECISION GRAPH 5.3; DECISION RULES 2.2"
+  REASON_SAFETY_PASSED:
+    COACH: { es: "Screen de salud y seguridad superado: se continúa con la clasificación.", en: "Health & safety screen passed: continuing to classification." }
+    CLIENT: { es: "Tu evaluación de seguridad está en orden.", en: "Your safety screening is clear." }
+    source: "DECISION GRAPH Node 2"
+  REASON_DOMAIN_BOTTLENECK:
+    COACH:
+      es: "Bottleneck de dominio: capacidad más temprana por debajo de Functional en la jerarquía. Las limitaciones aguas abajo se tratan como manifestaciones provisorias (Nodo 5)."
+      en: "Domain bottleneck: earliest capacity below Functional in the hierarchy. Downstream limitations treated as provisional manifestations (Node 5)."
+    CLIENT:
+      es: "Esta es la primera capacidad de la cadena que está limitada; trabajarla destraba a las demás."
+      en: "This is the first limited capacity in the chain; improving it unlocks the rest."
+    source: "DECISION GRAPH Node 5; PLATFORM DATA §12"
+  REASON_DEPENDENCY_BLOCK:
+    COACH:
+      es: "Una capacidad superior no puede ser P1 mientras una capacidad requerida inferior esté por debajo de Functional (Regla 18.3 / R002)."
+      en: "A higher capacity cannot be P1 while a required lower capacity is below Functional (Rule 18.3 / R002)."
+    CLIENT:
+      es: "Primero construimos la base; lo demás viene después y con mejores resultados."
+      en: "We build the base first; the rest comes later with better results."
+    source: "PLATFORM DATA 18.3"
+  REASON_CAUSE_BEFORE_MANIFESTATION:
+    COACH: { es: "Causa antes que manifestación: la capacidad que explica el déficit de otra recibe mayor prioridad (Regla 18.2).", en: "Cause before manifestation: the capacity explaining another deficit receives higher priority (Rule 18.2)." }
+    CLIENT: { es: "Atacamos la causa del problema, no solo sus síntomas.", en: "We address the cause of the problem, not just its symptoms." }
+    source: "PLATFORM DATA 18.2; DECISION GRAPH 11.1"
+  REASON_MANIFESTATION_EXCLUDED:
+    COACH: { es: "Manifestación secundaria: no puede ser P1 hasta resolver la causa primaria (Regla 11.2 / R004).", en: "Secondary manifestation: cannot be P1 until the primary cause is addressed (Rule 11.2 / R004)." }
+    CLIENT: { es: "Esta limitación mejora sola cuando trabajemos su causa.", en: "This limitation improves on its own once we address its cause." }
+    source: "DECISION GRAPH 11.2"
+  REASON_LOW_CONFIDENCE:
+    COACH: { es: "Confianza de evaluación baja: prohibido asignar P1 definitivo hasta completar evaluación adicional (Regla 18.6 / §10).", en: "Low assessment confidence: definitive P1 prohibited until additional assessment is completed (Rule 18.6 / §10)." }
+    CLIENT: { es: "Necesitamos repetir algunas pruebas para estar seguros antes de definir tu prioridad.", en: "We need to repeat some tests to be certain before setting your priority." }
+    source: "PLATFORM DATA §10, 18.6"
+  REASON_SINGLE_P1: { COACH: { es: "Solo una capacidad puede ser P1 (Regla 18.7).", en: "Only one capacity may be P1 (Rule 18.7)." }, CLIENT: { es: "Un foco principal por ciclo: así se progresa.", en: "One main focus per cycle: that is how progress happens." }, source: "PLATFORM DATA 18.7" }
+  REASON_GOAL_MODIFIER: { COACH: { es: "Relevancia similar entre candidatos: se prioriza el más relevante para el objetivo primario del cliente (Regla 18.4).", en: "Similar relevance among candidates: the one most relevant to the client's primary goal is prioritized (Rule 18.4)." }, CLIENT: { es: "Entre dos opciones parecidas, elegimos la que más acerca a tu objetivo.", en: "Between two similar options, we choose the one closest to your goal." }, source: "PLATFORM DATA 18.4" }
+  REASON_TRANSFER_POTENTIAL: { COACH: { es: "El candidato afecta positivamente múltiples capacidades: sube su recomendación de prioridad (Regla 18.5).", en: "Candidate positively affects multiple capacities: its priority recommendation increases (Rule 18.5)." }, CLIENT: { es: "Mejorar esto mejora varias cosas a la vez.", en: "Improving this improves several things at once." }, source: "PLATFORM DATA 18.5" }
+  REASON_MULTI_DOMAIN_SCORE:
+    COACH:
+      es: "P1 Global recomendado por el 3-Domain Scoring Algorithm (puntos de clasificación × Impact Factor por dominio, OS 10.3). Recomendación sujeta a confirmación del coach."
+      en: "Global P1 recommended by the 3-Domain Scoring Algorithm (classification points × domain Impact Factor, OS 10.3). Recommendation subject to coach confirmation."
+    CLIENT:
+      es: "De todas tus capacidades, esta es la que más impacto genera si mejora."
+      en: "Of all your capacities, this one generates the most impact if improved."
+    source: "HTC OPERATING SYSTEM 10.3"
+  REASON_ROLE_P1: { COACH: { es: "Bottleneck primario confirmado del sistema con confianza suficiente y máximo impacto sistémico.", en: "Confirmed primary system bottleneck with sufficient confidence and highest systemic impact." }, CLIENT: { es: "Tu prioridad principal de este ciclo.", en: "Your main priority for this cycle." }, source: "PLATFORM DATA §20" }
+  REASON_ROLE_P2: { COACH: { es: "Relevante y compatible con P1; puede progresar sin reducir la calidad de P1.", en: "Relevant and compatible with P1; can progress without reducing P1 quality." }, CLIENT: { es: "Segundo foco: acompaña a tu prioridad principal.", en: "Second focus: accompanies your main priority." }, source: "PLATFORM DATA §20" }
+  REASON_ROLE_P3: { COACH: { es: "Menor impacto; se desarrolla solo si recuperación y agenda lo permiten.", en: "Lower impact; developed only if recovery and schedule permit." }, CLIENT: { es: "Trabajo complementario cuando hay espacio.", en: "Complementary work when there is room." }, source: "PLATFORM DATA §20" }
+  REASON_ROLE_SUPPORT: { COACH: { es: "Facilita P1 o P2; no requiere bloque de desarrollo independiente.", en: "Facilitates P1 or P2; no independent development block required." }, CLIENT: { es: "Trabajo de apoyo a tu prioridad principal.", en: "Support work for your main priority." }, source: "PLATFORM DATA §20" }
+  REASON_ROLE_MAINTAIN: { COACH: { es: "Capacidad al menos Functional: dosis mínima efectiva para preservar la adaptación.", en: "Capacity at least Functional: minimum effective dose to preserve adaptation." }, CLIENT: { es: "Esto está bien: lo mantenemos.", en: "This is fine: we maintain it." }, source: "PLATFORM DATA §20" }
+  REASON_ROLE_DEFER: { COACH: { es: "Relevante pero con timing inapropiado o dependiente de prioridades no resueltas. Defer no indica irrelevancia (Regla 5.6).", en: "Relevant but poorly timed or dependent on unresolved priorities. Defer does not indicate irrelevance (Rule 5.6)." }, CLIENT: { es: "Esto importa, pero su momento llega después.", en: "This matters, but its moment comes later." }, source: "DECISION RULES 5.6; PLATFORM DATA §20" }
+  REASON_ROLE_MONITOR: { COACH: { es: "No requiere intervención; el cambio debe observarse.", en: "No intervention required; change should be observed." }, CLIENT: { es: "Lo vigilamos sin entrenarlo específicamente.", en: "We keep an eye on it without training it specifically." }, source: "PLATFORM DATA §20" }
+  REASON_ROLE_UNCONFIRMED: { COACH: { es: "Datos incompletos o confianza baja: se requiere más evaluación.", en: "Incomplete data or low confidence: further testing required." }, CLIENT: { es: "Falta información para definir esto con seguridad.", en: "More information is needed to define this with certainty." }, source: "PLATFORM DATA §20" }
+  REASON_STRATEGY_SEQUENTIAL: { COACH: { es: "Estrategia Secuencial: dependencia jerárquica, adaptaciones que compiten o recuperación limitada (Regla 6.1).", en: "Sequential strategy: hierarchical dependency, competing adaptations or limited recovery (Rule 6.1)." }, CLIENT: { es: "Primero un foco, después el siguiente.", en: "First one focus, then the next." }, source: "DECISION RULES 6.1; PLATFORM DATA §22" }
+  REASON_STRATEGY_CONCURRENT: { COACH: { es: "Estrategia Concurrente: capacidades compatibles, interferencia mínima, recuperación suficiente (Regla 6.2).", en: "Concurrent strategy: compatible capacities, minimal interference, sufficient recovery (Rule 6.2)." }, CLIENT: { es: "Trabajamos tus prioridades en paralelo, con énfasis distinto.", en: "We work your priorities in parallel, with different emphasis." }, source: "DECISION RULES 6.2; PLATFORM DATA §22" }
+  REASON_STRATEGY_INTEGRATED: { COACH: { es: "Estrategia Integrada: una intervención estimula múltiples prioridades sin dosis insuficiente (Regla 6.3).", en: "Integrated strategy: one intervention stimulates multiple priorities without insufficient dose (Rule 6.3)." }, CLIENT: { es: "Ejercicios que trabajan varias prioridades a la vez.", en: "Exercises that train several priorities at once." }, source: "DECISION RULES 6.3" }
+  REASON_STRATEGY_RESTORE_FIRST: { COACH: { es: "Restore-First: General Health es P1 o los síntomas limitan el entrenamiento normal.", en: "Restore-First: General Health is P1 or symptoms limit normal training." }, CLIENT: { es: "Primero recuperamos tu salud; el resto espera.", en: "We restore your health first; the rest waits." }, source: "PLATFORM DATA §22" }
+  REASON_STRATEGY_ASSESSMENT_REQUIRED: { COACH: { es: "Assessment-Required: no puede seleccionarse un P1 válido por datos faltantes o de baja confianza.", en: "Assessment-Required: no valid P1 can be selected due to missing or low-confidence data." }, CLIENT: { es: "Necesitamos completar tu evaluación antes de armar el plan.", en: "We need to complete your assessment before building the plan." }, source: "PLATFORM DATA §22" }
+  REASON_PATHWAY_RESTORE: { COACH: { es: "P1 en dominio General Health ⇒ Pathway Restore (Nodo 13).", en: "P1 in General Health domain ⇒ Restore pathway (Node 13)." }, CLIENT: { es: "Tu camino: Restore — recuperar tu base de salud.", en: "Your path: Restore — recover your health baseline." }, source: "DECISION GRAPH Node 13" }
+  REASON_PATHWAY_MOVE: { COACH: { es: "P1 en dominio Mobility ⇒ Pathway Move (Nodo 13).", en: "P1 in Mobility domain ⇒ Move pathway (Node 13)." }, CLIENT: { es: "Tu camino: Move — ganar control real de tus rangos de movimiento.", en: "Your path: Move — gain real control of your movement ranges." }, source: "DECISION GRAPH Node 13" }
+  REASON_PATHWAY_BUILD: { COACH: { es: "P1 en dominio Strength o Aerobic ⇒ Pathway Build (Nodo 13).", en: "P1 in Strength or Aerobic domain ⇒ Build pathway (Node 13)." }, CLIENT: { es: "Tu camino: Build — construir fuerza y capacidad.", en: "Your path: Build — build strength and capacity." }, source: "DECISION GRAPH Node 13" }
+  REASON_PATHWAY_PERFORM: { COACH: { es: "Base ≥ Functional y objetivo de rendimiento ⇒ Pathway Perform (Nodo 13).", en: "Base ≥ Functional and performance goal ⇒ Perform pathway (Node 13)." }, CLIENT: { es: "Tu camino: Perform — optimizar tu rendimiento.", en: "Your path: Perform — optimize your performance." }, source: "DECISION GRAPH Node 13" }
+  REASON_PATHWAY_SUSTAIN: { COACH: { es: "Sin bottleneck dominante y objetivo de mantenimiento ⇒ Pathway Sustain (Nodo 13).", en: "No dominant bottleneck and maintenance goal ⇒ Sustain pathway (Node 13)." }, CLIENT: { es: "Tu camino: Sustain — mantener lo construido.", en: "Your path: Sustain — maintain what you built." }, source: "DECISION GRAPH Node 13" }
+  REASON_CLASSIFIED_BY_STANDARD:
+    COACH: { es: "Clasificación aplicando el estándar HTC correspondiente a la población del cliente.", en: "Classification applying the HTC standard for the client's population." }
+    CLIENT: { es: "Comparamos tu resultado con el estándar que corresponde a tu perfil.", en: "We compared your result against the standard for your profile." }
+    source: "PLATFORM DATA §9; DECISION GRAPH Node 3"
+  FLAG_ASYMMETRY:
+    COACH: { es: "Asimetría lado a lado por encima del umbral: flag para programación.", en: "Side-to-side asymmetry above threshold: flag for programming." }
+    CLIENT: { es: "Un lado rinde bastante menos que el otro; lo vamos a equilibrar.", en: "One side performs noticeably less than the other; we will balance it." }
+    source: "STRENGTH STANDARDS §2; MOBILITY STANDARD §4 Rule 5; AUTHORITATIVE §9.2 (>20%)"
+  REASON_BP_GATE:
+    COACH:
+      es: "Presión arterial en rango de parada (PAS ≥180 o PAD ≥110): se detiene la evaluación y se deriva a médico."
+      en: "Blood pressure in stop range (SBP ≥180 or DBP ≥110): assessment stopped, physician referral."
+    CLIENT:
+      es: "Tu presión arterial está por encima del rango seguro para evaluar hoy. Primero tiene que verla un médico."
+      en: "Your blood pressure is above the safe range to assess today. A physician needs to review it first."
+    source: "HTC_AUTHORITATIVE_DECISIONS v1.0 §9.1; OS v3.0 §4.2"
+  REASON_PAIN_FLAG:
+    COACH:
+      es: "Dolor 6 o mayor durante las pruebas: flag para revisión del coach; modificar o saltear el siguiente test de la serie."
+      en: "Pain 6 or above during testing: flag for coach review; modify or skip the next test in the series."
+    CLIENT:
+      es: "Registramos dolor durante algunas pruebas. Vamos a adaptar los ejercicios."
+      en: "We recorded pain during some tests. We will adapt the exercises."
+    source: "HTC_AUTHORITATIVE_DECISIONS v1.0 §9.2, §9.3"
+  REASON_MODULE_NOT_IMPLEMENTED:
+    COACH: { es: "MODULE NOT IMPLEMENTED: prescripción de ejercicios/dosificación fuera del alcance del MVP (Master Instructions).", en: "MODULE NOT IMPLEMENTED: exercise prescription/dosage out of MVP scope (Master Instructions)." }
+    CLIENT: { es: "Tu coach definirá los ejercicios de tu plan.", en: "Your coach will define the exercises in your plan." }
+    source: "HTC AI MASTER INSTRUCTIONS — MVP SCOPE"
+
+client_report_sections:
+  # PLATFORM DATA §30.2 — required Client Report sections (es/en headings)
+  - { id: "CURRENT_PROFILE",     es: "Tu Perfil Físico Actual",              en: "Your Current Physical Profile" }
+  - { id: "PRIMARY_PRIORITY",    es: "Tu Prioridad Principal",               en: "Your Primary Priority" }
+  - { id: "WHY_IT_MATTERS",      es: "Por Qué Importa",                      en: "Why It Matters" }
+  - { id: "WHAT_IT_LIMITS",      es: "Qué Limita Hoy",                       en: "What It Currently Limits" }
+  - { id: "WHAT_WILL_BE_TRAINED", es: "Qué Vamos a Entrenar",                en: "What Will Be Trained" }
+  - { id: "MAINTAINED",          es: "Capacidades Que Se Mantienen",         en: "Capacities Being Maintained" }
+  - { id: "SUCCESS_CRITERIA",    es: "Criterios de Éxito",                   en: "Success Criteria" }
+  - { id: "REASSESSMENT",        es: "Reevaluación",                         en: "Reassessment" }
+  - { id: "PROGRESS",            es: "Progreso Desde la Evaluación Anterior", en: "Progress Since Previous Assessment" }

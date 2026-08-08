@@ -1,0 +1,166 @@
+# health_gates.yaml
+# Transcripción literal de HTC_YAML_SCHEMA_UPDATED_POST_C5_v1.0.md — FILE 6,
+# contrastada con HTC_THRESHOLDS_CANONICAL_v1.0.md "HEALTH GATES".
+# C-1: Health is safety gates only, never P1/P2/P3.
+version: "1.0"
+last_updated: "2026-07-25"
+effective_date: "2026-07-25"
+source_document: "Authoritative v1.0 §9 + YAML SCHEMA POST-C5 FILE 6"
+canonical: true
+
+metadata:
+  description: "Health gates and safety protocols (transversal, not domain)"
+  rationale: "C-1: Health is safety gates only, never P1/P2/P3"
+
+assessment_flow: |
+  IF any STOP_GATE triggered  → { status: BLOCKED, action: MEDICAL_REFERRAL }
+  IF any ALERT_FLAG present   → flagForCoachReview() + continue + addConstraint()
+  ELSE                        → PROCEED to domain assessment
+
+# ── STOP GATES: bloquean la evaluación, derivan a médico ────────────────────
+stop_gates:
+  - gate_id: "PAR_Q_PLUS"
+    name: "PAR-Q+ Screening"
+    input: "parq_positive"
+    trigger: "Any answer = YES"
+    action: "MEDICAL_REFERRAL"
+    reason_id: "REASON_V3_GATE_PARQ"
+
+  - gate_id: "BP_SBP"
+    name: "Systolic Blood Pressure >= 180 mmHg"
+    input: "systolic_bp"
+    operator: ">="
+    threshold: 180
+    unit: "mmHg"
+    action: "MEDICAL_REFERRAL"
+    reason_id: "REASON_V3_GATE_BP"
+
+  - gate_id: "BP_DBP"
+    name: "Diastolic Blood Pressure >= 110 mmHg"
+    input: "diastolic_bp"
+    operator: ">="
+    threshold: 110
+    unit: "mmHg"
+    action: "MEDICAL_REFERRAL"
+    reason_id: "REASON_V3_GATE_BP"
+
+  - gate_id: "CHEST_PAIN"
+    name: "Chest Pain Present"
+    input: "symptom"
+    symptom_id: "chest_pain"
+    trigger: "Any chest pain during evaluation"
+    action: "MEDICAL_REFERRAL"
+    reason_id: "REASON_V3_GATE_CHEST_PAIN"
+
+# ── ALERT FLAGS: continúa la evaluación, marca para revisión ────────────────
+alert_flags:
+  - flag_id: "PAIN_6"
+    name: "Current Pain >= 6/10"
+    input: "current_pain_level"
+    operator: ">="
+    threshold: 6
+    action: "COACH_REVIEW + PROGRAMMING_CONSTRAINT"
+    severity: "HIGH"
+    reason_id: "REASON_V3_FLAG_PAIN"
+
+  - flag_id: "PAIN_MONITOR"
+    name: "Current Pain 4-5/10"
+    input: "current_pain_level"
+    operator: "range"
+    range: [4, 5]
+    action: "MONITOR"
+    severity: "MODERATE"
+    reason_id: "REASON_V3_FLAG_PAIN_MONITOR"
+    source: "HTC_THRESHOLDS_CANONICAL v1.0 'Flag 1: Pain Level' (Moderado 4-5 → MONITOR)"
+
+# ── Red flags clínicos (13 síntomas) ────────────────────────────────────────
+# Severidad según YAML SCHEMA FILE 6 `action_by_severity`:
+#   "CRITICAL: Dyspnea/Dizziness/Neuro → STOP + Medical; ALERT: Others → FLAG"
+red_flags:
+  - id: "RF_SEVERE_DYSPNEA"
+    label: { es: "Disnea severa (falta de aire)", en: "Severe dyspnea (shortness of breath)" }
+    severity: "STOP"
+  - id: "RF_DIZZINESS"
+    label: { es: "Mareos / vértigo", en: "Dizziness / vertigo" }
+    severity: "STOP"
+  - id: "RF_NEURO_SYMPTOMS"
+    label: { es: "Síntomas neurológicos", en: "Neurological symptoms" }
+    severity: "STOP"
+  # ── v1.1 (2026-08-02) — CONDICIONALES por ventana temporal ────────────────
+  # HTC_CLINICAL_CONFIRMATIONS_v1.0_FINAL, Observación #3:
+  # agudo/reciente = STOP · crónico estable = ALERT.
+  - id: "RF_RECENT_SURGERY"
+    label: { es: "Cirugía reciente (<4 semanas)", en: "Recent surgery (<4 weeks)" }
+    severity: "STOP"
+    conditional:
+      window_weeks: 4
+      within_window: "STOP"
+      outside_window: "ALERT"
+      outside_window_flag_id: "RF_POST_SURGERY_CLEARED"
+    source: "CLINICAL_CONFIRMATIONS #3 — 'Recent surgery (<4 weeks): STOP'"
+  - id: "RF_FEVER_INFECTION"
+    label: { es: "Fiebre / infección aguda", en: "Acute fever / infection" }
+    severity: "STOP"
+    conditional:
+      acute: "STOP"
+      chronic_managed: "ALERT"
+      chronic_flag_id: "RF_CHRONIC_INFECTION_MANAGED"
+    source: "CLINICAL_CONFIRMATIONS #3 — 'Acute infection/fever: STOP'"
+  - id: "RF_UNCONTROLLED_DIABETES"
+    label: { es: "Diabetes no controlada", en: "Uncontrolled diabetes" }
+    severity: "ALERT"
+  - id: "RF_SEVERE_OSTEOPOROSIS"
+    label: { es: "Osteoporosis severa", en: "Severe osteoporosis" }
+    severity: "ALERT"
+  - id: "RF_KNOWN_ARRHYTHMIA"
+    label: { es: "Arritmia conocida", en: "Known arrhythmia" }
+    severity: "ALERT"
+  - id: "RF_JOINT_PAIN_7"
+    label: { es: "Dolor articular >=7/10", en: "Joint pain >=7/10" }
+    severity: "ALERT"
+  - id: "RF_RECENT_HOSPITALIZATION"
+    label: { es: "Hospitalización reciente (<4 semanas)", en: "Recent hospitalization (<4 weeks)" }
+    severity: "STOP"
+    conditional:
+      window_weeks: 4
+      within_window: "STOP"
+      outside_window: "ALERT"
+      outside_window_flag_id: "RF_POST_HOSPITALIZATION_CLEARED"
+    source: "CLINICAL_CONFIRMATIONS #3 — 'Post-hospitalization (>4 weeks, stable): ALERT' ⇒ dentro de ventana: STOP"
+  - id: "RF_NEURO_DISORDER"
+    label: { es: "Trastorno neurológico crónico (estable)", en: "Chronic neurological condition (stable)" }
+    severity: "ALERT"
+    source: "CLINICAL_CONFIRMATIONS #3 — lista ALERT #11. Distinto de 'síntomas neurológicos agudos' (STOP)."
+  - id: "RF_CARDIOVASCULAR_EVENT"
+    label: { es: "Evento cardiovascular reciente (<2 semanas)", en: "Recent cardiovascular event (<2 weeks)" }
+    severity: "STOP"
+    conditional:
+      window_weeks: 2
+      within_window: "STOP"
+      outside_window: "ALERT"
+      outside_window_flag_id: "RF_CHRONIC_CARDIOVASCULAR_MANAGED"
+    examples: ["IAM", "ACV", "angina inestable", "arritmia mayor", "procedimiento cardíaco"]
+    source: "CLINICAL_CONFIRMATIONS #3 — 'Recent cardiovascular event (<2 weeks): STOP'"
+  - id: "RF_VISION_PROBLEMS"
+    label: { es: "Problemas de visión (crónicos)", en: "Vision problems (chronic)" }
+    severity: "ALERT"
+
+  # ── Contrapartes crónicas / post-recuperación (siempre ALERT) ─────────────
+  - id: "RF_CHRONIC_CARDIOVASCULAR_MANAGED"
+    label: { es: "Condición cardiovascular crónica estable (manejada)", en: "Chronic cardiovascular condition (stable, managed)" }
+    severity: "ALERT"
+    source: "CLINICAL_CONFIRMATIONS #3 — 'Chronic cardiovascular (stable, managed): ALERT'"
+  - id: "RF_POST_SURGERY_CLEARED"
+    label: { es: "Post-cirugía (>4 semanas, con alta médica)", en: "Post-surgery (>4 weeks, cleared)" }
+    severity: "ALERT"
+    source: "CLINICAL_CONFIRMATIONS #3 — 'Post-surgery (>4 weeks, cleared): ALERT'"
+  - id: "RF_POST_HOSPITALIZATION_CLEARED"
+    label: { es: "Post-hospitalización (>4 semanas, estable)", en: "Post-hospitalization (>4 weeks, stable)" }
+    severity: "ALERT"
+    source: "CLINICAL_CONFIRMATIONS #3 — lista ALERT #12"
+  - id: "RF_CHRONIC_INFECTION_MANAGED"
+    label: { es: "Infección crónica manejada médicamente", en: "Chronic infection (medically managed)" }
+    severity: "ALERT"
+    source: "CLINICAL_CONFIRMATIONS #3 — 'Chronic infection (managed): ALERT'"
+
+health_states: ["PASS", "FLAGGED", "BLOCKED"]

@@ -1,0 +1,192 @@
+# Explicit test ↔ capacity relationships. NEVER inferred from names.
+# Source: HTC MASTER TABLES — Table 2 rows (Capacity column) + Strength
+# Assessment Standards section headings (each test states its capacity)
+# + Operating System cap. 3.2 / 7.1.
+
+test_capacity_links:
+  # Strength — Health Strength Markers (OS cap.7.1: "Handgrip + 30-Sec Chair")
+  - test_id: "TEST_HANDGRIP"
+    capacity_id: "CAP_HEALTH_STRENGTH_MARKERS"
+    verification_status: "VERIFIED"
+    source: "HTC_OPERATING_SYSTEM cap.7.1; HTC_Strength_Assessment_Standards §1"
+
+  - test_id: "TEST_CHAIR_STAND_30S"
+    capacity_id: "CAP_HEALTH_STRENGTH_MARKERS"
+    verification_status: "VERIFIED"
+    source: "HTC_OPERATING_SYSTEM cap.7.1; HTC_Strength_Assessment_Standards §1"
+
+  # Strength — Stability (Standards §2: 4 isometric tests, 25% each)
+  - test_id: "TEST_FRONT_PLANK"
+    capacity_id: "CAP_STABILITY"
+    weight: 0.25
+    verification_status: "VERIFIED"
+    source: "HTC_Strength_Assessment_Standards §2"
+
+  - test_id: "TEST_SIDE_PLANK"
+    capacity_id: "CAP_STABILITY"
+    weight: 0.25
+    verification_status: "VERIFIED"
+    source: "HTC_Strength_Assessment_Standards §2"
+
+  - test_id: "TEST_BIERING_SORENSEN"
+    capacity_id: "CAP_STABILITY"
+    weight: 0.25
+    verification_status: "VERIFIED"
+    source: "HTC_Strength_Assessment_Standards §2"
+
+  - test_id: "TEST_SINGLE_LEG_ISO_SQUAT"
+    capacity_id: "CAP_STABILITY"
+    weight: 0.25
+    verification_status: "VERIFIED"
+    source: "HTC_Strength_Assessment_Standards §2"
+
+  - test_id: "TEST_SINGLE_LEG_SIT_TO_STAND"
+    capacity_id: "CAP_STABILITY"
+    verification_status: "VERIFIED"
+    source: "HTC MASTER TABLES T2 (row: Stability | Single Leg Sit to Stand)"
+
+  - test_id: "TEST_SINGLE_LEG_WALL_SIT"
+    capacity_id: "CAP_STABILITY"
+    verification_status: "VERIFIED"
+    source: "HTC MASTER TABLES T2 (row: Stability | Single Leg Wall Sit)"
+
+  # Strength — Force Production / Endurance
+  - test_id: "TEST_FORCE_PRODUCTION_SPECTRUM"
+    capacity_id: "CAP_FORCE_PRODUCTION"
+    verification_status: "VERIFIED"
+    source: "HTC_Strength_Assessment_Standards §3"
+
+  - test_id: "TEST_DEAD_HANG"
+    capacity_id: "CAP_FORCE_ENDURANCE"
+    weight: 0.10
+    verification_status: "VERIFIED"
+    source: "HTC_Strength_Assessment_Standards §4 Component 1 (Dead Hang 10%)"
+
+  # Mobility
+  - test_id: "TEST_CAR_ASSESSMENT"
+    capacity_id: "CAP_JOINT_WORKSPACE"
+    verification_status: "VERIFIED"
+    source: "HTC MASTER TABLES T2 (row: Joint Workspace | CAR Assessment)"
+
+  - test_id: "TEST_AROM_PROM_RATIO"
+    capacity_id: "CAP_WORKSPACE_OWNERSHIP"
+    verification_status: "VERIFIED"
+    source: "HTC MASTER TABLES T2 (row: Workspace Ownership | AROM/PROM Ratio)"
+
+  - test_id: "TEST_END_RANGE_DYNAMOMETRY"
+    capacity_id: "CAP_WORKSPACE_OWNERSHIP"
+    verification_status: "VERIFIED"
+    source: "HTC MASTER TABLES T2 (row: Workspace Ownership | End Range Dynamometry)"
+
+  - test_id: "TEST_MOBILITY_REGIONAL_SCREEN"
+    capacity_id: "CAP_JOINT_WORKSPACE"
+    verification_status: "DRAFT"
+    source: "HTC_Mobility_Standard §2-4 (screen classifies the Mobility domain via regional algorithm; mapped to the domain's level-1 capacity for profile construction — HTC must confirm this mapping)"
+
+  # Aerobic
+  - test_id: "TEST_ROCKPORT_WALK"
+    capacity_id: "CAP_AEROBIC_BASE"
+    verification_status: "VERIFIED"
+    source: "HTC MASTER TABLES T2 (row: Aerobic Base | Rockport Walk Test)"
+
+  - test_id: "TEST_TALK_TEST"
+    capacity_id: "CAP_THRESHOLD_CAPACITY"
+    verification_status: "VERIFIED"
+    source: "HTC MASTER TABLES T2 (row: Threshold Capacity | Talk Test)"
+
+  - test_id: "TEST_HR_RECOVERY"
+    capacity_id: "CAP_RECOVERY_CAPACITY"
+    verification_status: "VERIFIED"
+    source: "HTC MASTER TABLES T2 (row: Recovery Capacity | HR Recovery)"
+
+  # Movement
+  - test_id: "TEST_SINGLE_LEG_SQUAT_SCORE"
+    capacity_id: "CAP_DYNAMIC_CONTROL"
+    verification_status: "VERIFIED"
+    source: "HTC MASTER TABLES T2 (row: Dynamic Control | Single Leg Squat)"
+
+  - test_id: "TEST_CROSS_CRAWL_MATRIX"
+    capacity_id: "CAP_MOVEMENT_COORDINATION"
+    verification_status: "VERIFIED"
+    source: "HTC MASTER TABLES T2 (row: Coordination | Cross Crawl Matrix)"
+
+  # ── v3.1.0 additions (Scoring Rubric / Master Assessment Form / Aerobic v1.1 / Movement Standard) ──
+  - test_id: "TEST_RHR"
+    capacity_id: "CAP_HEALTH_AEROBIC_MARKERS"
+    verification_status: "VERIFIED"
+    source: "OS cap.3.2 D5 (Health Aerobic Markers: RHR, HR Recovery); Aerobic Assessment Sheet §1"
+
+  - test_id: "TEST_HR_DRIFT"
+    capacity_id: "CAP_AEROBIC_BASE"
+    verification_status: "VERIFIED"
+    source: "Aerobic System REFINED v1.1 (Aerobic Base Efficiency variable); Aerobic Assessment Sheet §2"
+
+  - test_id: "TEST_PACE_VARIABILITY"
+    capacity_id: "CAP_AEROBIC_BASE"
+    verification_status: "VERIFIED"
+    source: "Aerobic System REFINED v1.1; Aerobic Assessment Sheet §2"
+
+  - test_id: "TEST_ROM_PERCENT_NORM"
+    capacity_id: "CAP_JOINT_WORKSPACE"
+    verification_status: "VERIFIED"
+    source: "SCORING_RUBRIC §4 (Joint Workspace Quantity); MASTER_ASSESSMENT_FORM Mobility C1"
+
+  - test_id: "TEST_CARS_SCORE"
+    capacity_id: "CAP_JOINT_WORKSPACE"
+    verification_status: "VERIFIED"
+    source: "SCORING_RUBRIC §4 (Workspace Quality subcapacity of Joint Workspace, OS cap.8.1); MASTER_ASSESSMENT_FORM Mobility C2"
+
+  - test_id: "TEST_MOBILITY_INTEGRATION_FUNCTIONAL"
+    capacity_id: "CAP_MOBILITY_INTEGRATION"
+    verification_status: "VERIFIED"
+    source: "MASTER_ASSESSMENT_FORM Mobility C4"
+
+  - test_id: "TEST_PUSHUPS_ENDURANCE"
+    capacity_id: "CAP_FORCE_ENDURANCE"
+    verification_status: "VERIFIED"
+    source: "SCORING_RUBRIC §3; STRENGTH Assessment Sheet §4"
+
+  - test_id: "TEST_SQUATS_ENDURANCE"
+    capacity_id: "CAP_FORCE_ENDURANCE"
+    verification_status: "VERIFIED"
+    source: "SCORING_RUBRIC §3; STRENGTH Assessment Sheet §4"
+
+  - test_id: "TEST_ROWS_ENDURANCE"
+    capacity_id: "CAP_FORCE_ENDURANCE"
+    verification_status: "VERIFIED"
+    source: "SCORING_RUBRIC §3; STRENGTH Assessment Sheet §4"
+
+  - test_id: "TEST_CMJ"
+    capacity_id: "CAP_FORCE_EXPRESSION"
+    verification_status: "VERIFIED"
+    source: "SCORING_RUBRIC §3 Force Expression; STRENGTH Assessment Sheet §5"
+
+  - test_id: "TEST_BROAD_JUMP"
+    capacity_id: "CAP_FORCE_EXPRESSION"
+    verification_status: "VERIFIED"
+    source: "SCORING_RUBRIC §3 Force Expression; STRENGTH Assessment Sheet §5"
+
+  - test_id: "TEST_MOVEMENT_L1_BODY_MAPPING"
+    capacity_id: "CAP_INTERNAL_BODY_MAPPING"
+    verification_status: "VERIFIED"
+    source: "MOVEMENT Standard FINAL Level 1"
+
+  - test_id: "TEST_MOVEMENT_L2_DYNAMIC_CONTROL"
+    capacity_id: "CAP_DYNAMIC_CONTROL"
+    verification_status: "VERIFIED"
+    source: "MOVEMENT Standard FINAL Level 2"
+
+  - test_id: "TEST_MOVEMENT_L3_COORDINATION"
+    capacity_id: "CAP_MOVEMENT_COORDINATION"
+    verification_status: "VERIFIED"
+    source: "MOVEMENT Standard FINAL Level 3"
+
+  - test_id: "TEST_MOVEMENT_L4_PROBLEM_SOLVING"
+    capacity_id: "CAP_MOTOR_PROBLEM_SOLVING"
+    verification_status: "VERIFIED"
+    source: "MOVEMENT Standard FINAL Level 4"
+
+# MISSING (requested from HTC — never inferred):
+#   TEST_SINGLE_LEG_BALANCE → ??? (standard exists in MASTER TABLES T3, no capacity link anywhere;
+#     note: MASTER_ASSESSMENT_FORM lists Single-Leg Balance under Movement observation, but without
+#     an explicit capacity assignment — still not inferred)

@@ -1,0 +1,114 @@
+# domains_taxonomy.yaml
+# Transcripción literal de HTC_YAML_SCHEMA_UPDATED_POST_C5_v1.0.md — FILE 2.
+# C-1: Health is NOT a domain; it is a transversal safety layer.
+version: "1.0"
+last_updated: "2026-07-25"
+effective_date: "2026-07-25"
+source_document: "HTC_YAML_SCHEMA_UPDATED_POST_C5_v1.0 FILE 2"
+canonical: true
+
+metadata:
+  description: "Official domain taxonomy for HTC assessment"
+  rationale: "C-1: Health is NOT a domain; it's transversal safety gates"
+
+# LAYER 0 — SAFETY (transversal, not developable)
+safety_layer:
+  id: "GATE_HEALTH"
+  name: "Health & Safety Gates"
+  type: "transversal_safety_layer"
+  is_domain: false
+  is_developable: false
+  tier: 0
+  classification_states: ["PASS", "FLAGGED", "BLOCKED"]
+  development_role_eligible: false
+  note: "Health never competes with domain priorities. Passed gates = proceed to assessment."
+
+# TIER 1 — DEVELOPABLE DOMAINS (4)
+domains:
+  - id: "DOM_STRENGTH"
+    key: "STRENGTH"
+    name: "Strength"
+    tier: 1
+    order: 1
+    is_developable: true
+    impact_factor: 3.0
+    scale: "0_to_3_interpolation"
+    aggregation:
+      method: "weighted_average"
+      total_weight: 11.5
+    critical_component_rule: true
+    capacity_names: ["Handgrip", "SitToStand_5x", "DeadHang", "WallSit", "PushUp", "InvertedRow"]
+    source: "YAML SCHEMA POST-C5 FILE 2 DOMAIN_1_STRENGTH"
+
+  - id: "DOM_MOBILITY"
+    key: "MOBILITY"
+    name: "Mobility"
+    tier: 1
+    order: 2
+    is_developable: true
+    impact_factor: 2.0
+    scale: "0_to_3_interpolation"
+    aggregation:
+      method: "weighted_average"
+      total_weight: 6.5
+    critical_component_rule: true
+    capacity_names: ["HipAROM", "AnkleDF", "ShoulderER", "ThoracicRotation"]
+    source: "YAML SCHEMA POST-C5 FILE 2 DOMAIN_2_MOBILITY"
+
+  - id: "DOM_AEROBIC"
+    key: "AEROBIC"
+    name: "Aerobic Capacity"
+    tier: 1
+    order: 3
+    is_developable: true
+    impact_factor: 1.5
+    scale: "0_to_3_interpolation"
+    aggregation:
+      method: "weighted_average"
+      total_weight_mvp: 1
+      total_weight_v2: 3
+    critical_component_rule: true
+    capacity_names: ["RestingHeartRate", "VO2MaxEstimate_optional"]
+    source: "YAML SCHEMA POST-C5 FILE 2 DOMAIN_3_AEROBIC"
+
+  - id: "DOM_MOVEMENT"
+    key: "MOVEMENT"
+    name: "Movement Capacity"
+    tier: 1
+    order: 4
+    is_developable: true
+    impact_factor: 2.5
+    scale_mvp: "categorical_FEFC"
+    scale_v2: "0_to_3_numeric"
+    structure: "hierarchical_4_levels"
+    aggregation:
+      method: "worst_case_hierarchical"
+      logic: "MIN(L1, L2, L3, L4)"
+      rationale: "Weakest link determines domain; hierarchical constraints"
+    critical_component_rule: true
+    assessment_method_mvp: "qualitative_coach_rubric"
+    level_names:
+      - "Level_1_InternalBodyMapping"
+      - "Level_2_DynamicControl"
+      - "Level_3_MovementCoordination"
+      - "Level_4_MotorProblemSolving"
+    source: "YAML SCHEMA POST-C5 FILE 2 DOMAIN_4_MOVEMENT"
+
+# Classification scale shared by every domain (C-2).
+classification:
+  states: ["CRITICAL", "EMERGING", "FUNCTIONAL", "FOUNDATION"]
+  # code: 3 = worst … 0 = best (CLINICAL_SPEC "Classification Rule")
+  codes: { CRITICAL: 3, EMERGING: 2, FUNCTIONAL: 1, FOUNDATION: 0 }
+  score_boundaries:
+    critical_max: 0.75
+    emerging_max: 1.5
+    functional_max: 2.25
+  rounding: "CONSERVATIVE"
+  rounding_rule: |
+    Score exactly at 0.75, 1.5 or 2.25 → assign the WORSE classification.
+    Source (identical wording in two documents):
+      · HTC_THRESHOLDS_CANONICAL_v1.0 "CONVENCIÓN DE NOMENCLATURA"
+      · HTC_PLATFORM_CLINICAL_SPECIFICATION_v1.0 "Rounding Rule (C-2 Confirmed: CONSERVATIVE)"
+    Confirmed arithmetically by the worked example in
+    HTC_YAML_SCHEMA_UPDATED_POST_C5 (RHR 75 → score 1.5 → EMERGING).
+  verification_status: "VERIFIED"

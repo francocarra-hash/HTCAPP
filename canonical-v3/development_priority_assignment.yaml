@@ -1,0 +1,109 @@
+# development_priority_assignment.yaml
+# Transcripción de HTC_DEVELOPMENT_PRIORITY_ASSIGNMENT_ENGINE_v1.0.md
+# + YAML SCHEMA POST-C5 FILE 7.
+version: "1.0"
+last_updated: "2026-07-25"
+effective_date: "2026-07-25"
+source_document: "HTC_DEVELOPMENT_PRIORITY_ASSIGNMENT_ENGINE_v1.0"
+canonical: true
+
+metadata:
+  description: "Decision engine for assigning P1/P2/Support/Maintain from classifications"
+  rationale: "Principio 1: Critical Component = AUTO P1"
+
+principles:
+  - id: "P_CRITICAL_AUTO_P1"
+    text: "IF any_domain_contains_CRITICAL_component → domain = CRITICAL → role = P1 → 70% volume"
+  - id: "P_STRICT_HIERARCHY"
+    text: "P1 blocks/constrains others; P2 parallel with modifications; Support if time permits; Maintain preserves; Monitor tracks; Defer postpones"
+  - id: "P_HIERARCHICAL_COHERENCE"
+    text: "Movement is hierarchical: a weak level constrains how P2/Support are assigned elsewhere"
+
+roles:
+  - id: "P1"
+    name: "Critical Priority"
+    volume_percent_range: [60, 70]
+  - id: "P1_PRIMARY"
+    name: "Critical Priority (primary of several)"
+    volume_percent_range: [35, 35]
+  - id: "P1_SECONDARY"
+    name: "Critical Priority (shared)"
+    volume_percent_range: [0, 35]
+  - id: "P2"
+    name: "Primary Priority"
+    volume_percent_range: [20, 40]
+  - id: "SUPPORT"
+    name: "Tertiary / Support"
+    volume_percent_range: [5, 30]
+  - id: "MAINTAIN"
+    name: "Maintenance"
+    volume_percent_range: [3, 20]
+  - id: "MONITOR"
+    name: "Monitoring"
+    volume_percent_range: [0, 3]
+  - id: "DEFER"
+    name: "Deferred"
+    volume_percent_range: [0, 0]
+
+# ── Reglas de asignación ────────────────────────────────────────────────────
+# Los volúmenes salen de la "DECISION TABLE: Classification → Role", que es la
+# única fuente que satisface la Validation Rule 1 ("Volume always sums to 100%").
+# El pseudocódigo del mismo documento usa otros valores y NO suma 100 —
+# ver OBSERVACION_OBS-2 en OBSERVACIONES_PAQUETE_C5.md.
+assignment_rules:
+  RULE_SINGLE_CRITICAL:
+    when: "Exactly 1 domain = CRITICAL"
+    volumes:
+      p1: 70
+      p2: 20
+      support: 5
+      maintain: 5
+    source: "DECISION TABLE 'When 1 CRITICAL domain exists' (70+20+5+5 = 100)"
+
+  RULE_MULTIPLE_CRITICAL:
+    when: "2+ domains = CRITICAL"
+    volumes:
+      p1_primary: 35
+      p1_secondary_total: 35
+      support: 20
+      maintain: 10
+    source: "DECISION TABLE 'When Multiple CRITICAL domains' + Scenario 2 (35+35+20+10 = 100)"
+
+  RULE_NO_CRITICAL:
+    when: "No domain = CRITICAL"
+    volumes:
+      p2: 40
+      support: 30
+      maintain_first: 20
+      maintain_second: 10
+    source: "DECISION TABLE 'When NO CRITICAL domains' + Scenario 3 (40+30+20+10 = 100)"
+
+# ── Ranking / desempate ─────────────────────────────────────────────────────
+ranking:
+  primary: "BY_CLASSIFICATION"     # Rule A: CRITICAL > EMERGING > FUNCTIONAL > FOUNDATION
+  tiebreak_1: "BY_IMPACT_FACTOR"   # Rule B: STRENGTH 3.0 > MOVEMENT 2.5 > MOBILITY 2.0 > AEROBIC 1.5
+  tiebreak_2: "BY_SCOPE"           # Rule C: fewer affected components = higher priority
+  scope_rule: "Fewer critical components = more focused intervention = higher priority"
+  source: "PRIORITY ASSIGNMENT ENGINE 'RANKING RULES'"
+
+# Orden de iteración de dominios (el pseudocódigo lo fija así).
+domain_iteration_order: ["STRENGTH", "MOBILITY", "AEROBIC", "MOVEMENT"]
+
+validation_rules:
+  - id: "VOL_SUMS_100"
+    rule: "Volume allocation must sum to 100%"
+    on_violation: "NORMALIZE_AND_RECORD"
+    note: "El documento exige 100%; el motor normaliza y deja constancia en el audit trail."
+  - id: "SINGLE_P1_PRIMARY"
+    rule: "At most one P1_PRIMARY"
+    on_violation: "ERROR"
+  - id: "ACTIVE_WORK_MIN"
+    rule: "P1 + P2 + Support should be >= 80%"
+    on_violation: "WARN"
+  - id: "MOVEMENT_CRITICAL_NEEDS_CONSTRAINT"
+    rule: "If Movement = CRITICAL, constraints must be documented"
+    on_violation: "ERROR"
+
+session_architecture:
+  default_total_minutes: 60
+  source: "PRIORITY ASSIGNMENT ENGINE 'generateSessionArchitecture'"

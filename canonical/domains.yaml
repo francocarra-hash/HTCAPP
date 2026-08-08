@@ -1,0 +1,65 @@
+# Source: HTC Operating System v2.0 cap. 3 (Assessment domains) + cap. 10.2
+# (Hierarchical Decision Matrix tiers) + HTC Platform Data §4.4.
+# Approved resolution C2 (2026-07-18): the 5-domain Operating System model is
+# canonical; the 6-domain BUILD PACKAGE domains.yaml is superseded.
+# assessment_order: OS cap. 3.2. conflict_tier / impact_factor: OS cap. 10.2-10.3
+# (Multi-Domain Integration Engine). Lower tier number = higher priority in conflict.
+
+domains:
+  - id: "DOMAIN_GENERAL_HEALTH"
+    name: "General Health"
+    description: "Systemic health gate-keeper. Consumes clinical information (pain, medical history, red flags, lab biomarkers). Evaluated before every other domain decision."
+    assessment_order: 2
+    conflict_tier: 1
+    impact_factor: 3.0
+    is_gatekeeper: true
+    version: "1.0.0"
+    verification_status: "VERIFIED"
+    sources: ["HTC_OPERATING_SYSTEM_v2_0 cap.3.2 D2, cap.10.2", "HTC_Health_Markers_Standard §8"]
+
+  - id: "DOMAIN_MOVEMENT"
+    name: "Movement Quality"
+    description: "Baseline evaluation of perception, control, coordination and motor problem solving."
+    assessment_order: 1
+    conflict_tier: 2
+    impact_factor: 2.5
+    is_gatekeeper: false
+    version: "1.0.0"
+    verification_status: "VERIFIED"
+    sources: ["HTC_OPERATING_SYSTEM_v2_0 cap.3.2 D1, cap.9, cap.10.2"]
+
+  - id: "DOMAIN_STRENGTH"
+    name: "Strength Capacity"
+    description: "Hierarchical force capacities: Health Strength Markers, Stability, Force Production, Force Endurance, Force Expression."
+    assessment_order: 3
+    conflict_tier: 4
+    impact_factor: 1.5
+    is_gatekeeper: false
+    version: "1.0.0"
+    verification_status: "VERIFIED"
+    sources: ["HTC_OPERATING_SYSTEM_v2_0 cap.3.2 D3, cap.7, cap.10.2"]
+    notes: >
+      Stability (sub-capacity of Strength) has its own conflict tier 3B and
+      impact_factor 2.0 per OS cap.10.2/10.3 — modeled on the capacity, not here.
+
+  - id: "DOMAIN_MOBILITY"
+    name: "Mobility Capacity"
+    description: "Regional joint capacity: Joint Workspace (Quantity/Quality), Workspace Ownership, Mobility Integration, Mobility Expression."
+    assessment_order: 4
+    conflict_tier: 3
+    impact_factor: 1.8
+    is_gatekeeper: false
+    version: "1.0.0"
+    verification_status: "VERIFIED"
+    sources: ["HTC_OPERATING_SYSTEM_v2_0 cap.3.2 D4, cap.8, cap.10.2"]
+
+  - id: "DOMAIN_AEROBIC"
+    name: "Aerobic Capacity"
+    description: "Hierarchical aerobic capacities: Health Aerobic Markers, Aerobic Base, Threshold Capacity, Recovery Capacity, Aerobic Expression."
+    assessment_order: 5
+    conflict_tier: 5
+    impact_factor: 1.0
+    is_gatekeeper: false
+    version: "1.0.0"
+    verification_status: "VERIFIED"
+    sources: ["HTC_OPERATING_SYSTEM_v2_0 cap.3.2 D5, cap.10.2"]

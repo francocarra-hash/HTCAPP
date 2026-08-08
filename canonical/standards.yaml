@@ -1,0 +1,481 @@
+# HTC Standards — raw result → classification.
+# Sources: HTC Strength Assessment Standards COMPLETE v2, HTC MASTER TABLES T3,
+# HTC Mobility Standard v2, HTC Health Markers Standard.
+#
+# TECHNICAL CONVENTION (not HTC knowledge): where a source gives touching band
+# edges (e.g. "35.0–43.6" then "43.6–55.9"), bands are interpreted as
+# lower-bound-inclusive / upper-bound-exclusive for HIGHER_IS_BETTER, and the
+# mirror for LOWER_IS_BETTER. Flagged for HTC confirmation.
+#
+# classification_model.type:
+#   HIGHER_IS_BETTER — value >= foundation_min ⇒ FOUNDATION, etc.
+#   LOWER_IS_BETTER  — value <= foundation_max ⇒ FOUNDATION, etc.
+#   ALGORITHMIC      — deterministic rule set (see rules[]), not numeric bands.
+#
+# population: null field = source does not restrict it. A standard with
+# verification_status PLACEHOLDER must make the engine FAIL LOUDLY if selected.
+
+standards:
+  # ── HANDGRIP — iGRIPS 2024 percentile model (approved resolution C3) ───────
+  - id: "STANDARD_GRIP_IGRIPS_MALE_30_34"
+    test_id: "TEST_HANDGRIP"
+    population: { sex: "MALE", age_min: 30, age_max: 34, activity_level: null }
+    classification_model:
+      type: "HIGHER_IS_BETTER"
+      basis: "Percentile bands: Foundation ≥P75, Functional P25-P75, Emerging P5-P25, Critical <P5"
+    thresholds: { foundation_min: 55.9, functional_min: 43.6, emerging_min: 35.0 }
+    unit: "kg"
+    standard_type: "Normative"
+    evidence:
+      based_on: ["REF_IGRIPS_2024", "REF_LEONG_2023"]
+      sample_size: 2400000
+      data_source: "iGRIPS 2024 (≈2.4M measurements, 69 countries)"
+    version: "2.0"
+    verification_status: "VERIFIED"
+    source: "HTC_Strength_Assessment_Standards §1 Test 1 — Example Reference Values Age 30-34 (Men)"
+
+  - id: "STANDARD_GRIP_IGRIPS_FEMALE_30_34"
+    test_id: "TEST_HANDGRIP"
+    population: { sex: "FEMALE", age_min: 30, age_max: 34, activity_level: null }
+    classification_model:
+      type: "HIGHER_IS_BETTER"
+      basis: "Percentile bands: Foundation ≥P75, Functional P25-P75, Emerging P5-P25, Critical <P5"
+    thresholds: { foundation_min: 34.2, functional_min: 25.4, emerging_min: 19.6 }
+    unit: "kg"
+    standard_type: "Normative"
+    evidence:
+      based_on: ["REF_IGRIPS_2024", "REF_LEONG_2023"]
+      sample_size: 2400000
+      data_source: "iGRIPS 2024"
+    version: "2.0"
+    verification_status: "VERIFIED"
+    source: "HTC_Strength_Assessment_Standards §1 Test 1 — Example Reference Values Age 30-34 (Women)"
+
+  # MISSING CANONICAL (requested from HTC): iGRIPS bands for every other
+  # age/sex combination. The source states the full database exists ("the system
+  # automatically selects correct age/gender band") but only publishes 30-34.
+  # Selecting TEST_HANDGRIP outside 30-34 must fail loudly.
+
+  # ── 30-SECOND CHAIR STAND — Rikli & Jones ──────────────────────────────────
+  - id: "STANDARD_CHAIR_STAND_MALE_60_64"
+    test_id: "TEST_CHAIR_STAND_30S"
+    population: { sex: "MALE", age_min: 60, age_max: 64, activity_level: null }
+    classification_model: { type: "HIGHER_IS_BETTER", basis: "Percentile bands (P5/P25/P75)" }
+    thresholds: { foundation_min: null, functional_min: null, emerging_min: null }
+    unit: "reps"
+    standard_type: "Normative"
+    evidence: { based_on: ["REF_RIKLI_JONES_2013"], data_source: "Rikli & Jones normative database (ACSM)" }
+    version: "2.0"
+    verification_status: "PLACEHOLDER"
+    source: "HTC_Strength_Assessment_Standards §1 Test 2"
+    notes: >
+      SOURCE TABLE IS INTERNALLY CONTRADICTORY: it lists Critical <14,
+      Emerging 14-19, Functional "P25-P75" (no numbers) and Foundation >19 —
+      Emerging and Functional overlap and no P5 value is given. Cannot be used
+      for real decisions. HTC must supply the corrected band values.
+
+  # ── STABILITY — 4 isometric tests (universal bands per source) ─────────────
+  - id: "STANDARD_FRONT_PLANK"
+    test_id: "TEST_FRONT_PLANK"
+    population: null
+    classification_model: { type: "HIGHER_IS_BETTER", basis: "Time bands" }
+    thresholds: { foundation_min: 120, functional_min: 60, emerging_min: 30 }
+    unit: "seconds"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "2.0"
+    verification_status: "VERIFIED"
+    source: "HTC_Strength_Assessment_Standards §2 Test 1 (<30 C, 30-59 E, 60-119 Fn, ≥120 F)"
+
+  - id: "STANDARD_SIDE_PLANK"
+    test_id: "TEST_SIDE_PLANK"
+    population: null
+    classification_model: { type: "HIGHER_IS_BETTER", basis: "Time bands; classify on WORSE side" }
+    thresholds: { foundation_min: 120, functional_min: 60, emerging_min: 30 }
+    unit: "seconds"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "2.0"
+    verification_status: "VERIFIED"
+    source: "HTC_Strength_Assessment_Standards §2 Test 2"
+
+  - id: "STANDARD_BIERING_SORENSEN"
+    test_id: "TEST_BIERING_SORENSEN"
+    population: null
+    classification_model: { type: "HIGHER_IS_BETTER", basis: "Time bands" }
+    thresholds: { foundation_min: 120, functional_min: 60, emerging_min: 30 }
+    unit: "seconds"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL", "REF_BIERING_1983"] }
+    version: "2.0"
+    verification_status: "VERIFIED"
+    source: "HTC_Strength_Assessment_Standards §2 Test 3"
+
+  - id: "STANDARD_SINGLE_LEG_ISO_SQUAT"
+    test_id: "TEST_SINGLE_LEG_ISO_SQUAT"
+    population: null
+    classification_model: { type: "HIGHER_IS_BETTER", basis: "Time bands; classify on WORSE leg" }
+    thresholds: { foundation_min: 120, functional_min: 60, emerging_min: 30 }
+    unit: "seconds"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "2.0"
+    verification_status: "VERIFIED"
+    source: "HTC_Strength_Assessment_Standards §2 Test 4"
+
+  # ── FORCE PRODUCTION — universal rep classification ────────────────────────
+  - id: "STANDARD_FORCE_PRODUCTION_REPS"
+    test_id: "TEST_FORCE_PRODUCTION_SPECTRUM"
+    population: null
+    classification_model: { type: "HIGHER_IS_BETTER", basis: "Max reps at ≥85% relative intensity; applies to all 4 spectrums" }
+    thresholds: { foundation_min: 8, functional_min: 6, emerging_min: 4 }
+    unit: "reps"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "2.0"
+    verification_status: "VERIFIED"
+    source: "HTC_Strength_Assessment_Standards §3 (≤3 C, 4-5 E, 6-7 Fn, ≥8 F)"
+
+  # ── DEAD HANG — sex-specific ───────────────────────────────────────────────
+  - id: "STANDARD_DEAD_HANG_MALE"
+    test_id: "TEST_DEAD_HANG"
+    population: { sex: "MALE", age_min: null, age_max: null, activity_level: null }
+    classification_model: { type: "HIGHER_IS_BETTER", basis: "Time bands" }
+    thresholds: { foundation_min: 60, functional_min: 40, emerging_min: 20 }
+    unit: "seconds"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "2.0"
+    verification_status: "VERIFIED"
+    source: "HTC_Strength_Assessment_Standards §4 (<20 C, 20-39 E, 40-59 Fn, ≥60 F)"
+
+  - id: "STANDARD_DEAD_HANG_FEMALE"
+    test_id: "TEST_DEAD_HANG"
+    population: { sex: "FEMALE", age_min: null, age_max: null, activity_level: null }
+    classification_model: { type: "HIGHER_IS_BETTER", basis: "Time bands" }
+    thresholds: { foundation_min: 45, functional_min: 30, emerging_min: 15 }
+    unit: "seconds"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "2.0"
+    verification_status: "VERIFIED"
+    source: "HTC_Strength_Assessment_Standards §4 (<15 C, 15-29 E, 30-44 Fn, ≥45 F)"
+
+  # ── MOBILITY — AROM/PROM (Hip IR) ──────────────────────────────────────────
+  - id: "STANDARD_AROM_PROM_HIP_IR"
+    test_id: "TEST_AROM_PROM_RATIO"
+    population: null
+    classification_model: { type: "HIGHER_IS_BETTER", basis: "Percent of passive range actively controlled" }
+    thresholds: { foundation_min: 95, functional_min: 90, emerging_min: 80 }
+    unit: "percent"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "1.1"
+    verification_status: "VERIFIED"
+    source: "HTC MASTER TABLES T3 (Hip IR); SCORING_RUBRIC §4 and MASTER_ASSESSMENT_FORM Mobility C3 apply the SAME bands to every joint (thoracic/hip/cervical) — joint restriction removed in v3.1.0."
+
+  # ── MOBILITY — regional screen algorithm (domain-level) ────────────────────
+  - id: "STANDARD_MOBILITY_REGIONAL_SCREEN"
+    test_id: "TEST_MOBILITY_REGIONAL_SCREEN"
+    population: null
+    classification_model:
+      type: "ALGORITHMIC"
+      basis: "Deterministic rules over 4 regional interpretations (CLEAR/LIMITED/ASYMMETRICAL/PAINFUL/NEEDS_DEEPER)"
+      rules:
+        - id: "MOB_RULE_1_PAINFUL"
+          if: "any region == PAINFUL"
+          then: { classification_at_most: "EMERGING", red_flag: true, deep_dive: true }
+        - id: "MOB_RULE_2_CRITICAL_REGION"
+          if: "any region == CRITICAL_BLOCKING"
+          then: { classification: "CRITICAL", deep_dive: true }
+        - id: "MOB_RULE_3_MULTIPLE_LIMITED"
+          if: "count(region in [LIMITED, ASYMMETRICAL]) >= 2"
+          then: { classification: "EMERGING", deep_dive: true }
+        - id: "MOB_RULE_4_SINGLE_LIMITED"
+          if: "count(region == LIMITED) == 1 and not blocks_goal"
+          then: { classification: "FUNCTIONAL", deep_dive: false }
+        - id: "MOB_RULE_6_ALL_CLEAR"
+          if: "all regions == CLEAR"
+          then: { classification: "FOUNDATION" }
+    unit: "region_interpretation"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "2.0"
+    verification_status: "VERIFIED"
+    source: "HTC_Mobility_Standard §3-4 (ALGORITHM, deterministic)"
+    notes: >
+      Source Rule 5 (asymmetry >20% ⇒ flag + selective deep dive) is a flag,
+      not a classification change — engine emits FLAG_ASYMMETRY. Source Rule 6
+      allows FOUNDATION or FUNCTIONAL when all CLEAR; numeric sub-banding
+      (§3: F 80-100 / Fn 60-79) requires a scored input the screen does not
+      define — all-CLEAR maps to FOUNDATION; HTC to confirm.
+
+  # ── AEROBIC — Rockport VO2 (population unspecified in source) ──────────────
+  - id: "STANDARD_ROCKPORT_VO2"
+    test_id: "TEST_ROCKPORT_WALK"
+    population: null
+    classification_model: { type: "HIGHER_IS_BETTER", basis: "Estimated VO2 max bands" }
+    thresholds: { foundation_min: 55, functional_min: 45, emerging_min: 35 }
+    unit: "ml/kg/min"
+    standard_type: "Criterion-Based"
+    evidence: { based_on: ["REF_ACSM"] }
+    version: "1.0"
+    verification_status: "DRAFT"
+    source: "HTC MASTER TABLES T3 (Rockport VO2: >55 F, 45-55 Fn, 35-45 E, <35 C — ACSM)"
+    notes: "Source gives no age/sex/activity segmentation. Usable, but flagged DRAFT until HTC confirms population applicability."
+
+  # ── SINGLE LEG BALANCE (test currently inactive — no capacity link) ────────
+  - id: "STANDARD_SINGLE_LEG_BALANCE"
+    test_id: "TEST_SINGLE_LEG_BALANCE"
+    population: null
+    classification_model: { type: "HIGHER_IS_BETTER", basis: "Time bands" }
+    thresholds: { foundation_min: 45, functional_min: 30, emerging_min: 10 }
+    unit: "seconds"
+    standard_type: "Normative"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "1.0"
+    verification_status: "DRAFT"
+    source: "HTC MASTER TABLES T3 (>45 F, 30-45 Fn, 10-30 E, <10 C)"
+
+  # ═══ v3.1.0 — standards mined from HTC_SCORING_RUBRIC, Aerobic System
+  # ═══ REFINED v1.1, MASTER_ASSESSMENT_FORM and Movement Standard FINAL ═══
+
+  # ── AEROBIC — Health Aerobic Markers ───────────────────────────────────────
+  - id: "STANDARD_RHR"
+    test_id: "TEST_RHR"
+    population: null
+    classification_model: { type: "LOWER_IS_BETTER", basis: "Resting HR bands (<60 F, 60-70 Fn, 70-90 E, >90 C)" }
+    thresholds: { foundation_max: 59, functional_max: 69, emerging_max: 90 }
+    unit: "bpm"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "1.0"
+    verification_status: "VERIFIED"
+    source: "HTC_SCORING_RUBRIC §5; Aerobic System REFINED v1.1 quick reference (age 30-50 noted there; rubric states no restriction)"
+
+  - id: "STANDARD_HR_RECOVERY_1MIN"
+    test_id: "TEST_HR_RECOVERY"
+    population: null
+    classification_model: { type: "HIGHER_IS_BETTER", basis: "HR drop 1 min post-exercise (>20 F, 15-20 Fn, 10-14 E, <10 C)" }
+    thresholds: { foundation_min: 21, functional_min: 15, emerging_min: 10 }
+    unit: "bpm"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL", "REF_COLE_1999"] }
+    version: "1.0"
+    verification_status: "VERIFIED"
+    source: "HTC_SCORING_RUBRIC §5; Aerobic System REFINED v1.1; MASTER_ASSESSMENT_FORM Domain 5"
+
+  # ── AEROBIC — Aerobic Base Efficiency variables ────────────────────────────
+  - id: "STANDARD_HR_DRIFT"
+    test_id: "TEST_HR_DRIFT"
+    population: null
+    classification_model: { type: "LOWER_IS_BETTER", basis: "HR drift % in 12-min test (<5 Fn/F, 5-10 E, >10 C)" }
+    thresholds: { foundation_max: 2, functional_max: 5, emerging_max: 10 }
+    unit: "percent"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "1.0"
+    verification_status: "DRAFT"
+    source: "Aerobic System REFINED v1.1 (table: C >10, E 5-10, Fn/F <5; 'Key Changes' cites 'HR Drift <2%' as the specified target — transcribed as Foundation ≤2)"
+    notes: "F/Fn boundary (2%) comes from the 'Key Changes' note, not the threshold table — HTC must confirm."
+
+  - id: "STANDARD_PACE_VARIABILITY"
+    test_id: "TEST_PACE_VARIABILITY"
+    population: null
+    classification_model: { type: "LOWER_IS_BETTER", basis: "Pace variability % (Foundation <2, Critical >8 per source)" }
+    thresholds: { foundation_max: 2, functional_max: 5, emerging_max: 8 }
+    unit: "percent"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "1.0"
+    verification_status: "VERIFIED"
+    source: "Aerobic System REFINED v1.1 ('Pace Stability: Critical >8%, Foundation <2%'; table: E 5-8, Fn/F <5)"
+
+  # ── AEROBIC — Talk Test (4-level ordinal scale) ────────────────────────────
+  - id: "STANDARD_TALK_TEST"
+    test_id: "TEST_TALK_TEST"
+    population: null
+    classification_model:
+      type: "ORDINAL_MAP"
+      basis: "Defined 4-level scale: Cannot speak / With effort / Normal / Easily"
+      map: { "1": "CRITICAL", "2": "EMERGING", "3": "FUNCTIONAL", "4": "FOUNDATION" }
+      map_labels:
+        "1": { es: "No puede hablar", en: "Cannot speak" }
+        "2": { es: "Habla con esfuerzo", en: "Speaks with effort" }
+        "3": { es: "Habla normal", en: "Speaks normally" }
+        "4": { es: "Habla con facilidad", en: "Speaks easily" }
+    unit: "stage"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "1.1"
+    verification_status: "VERIFIED"
+    source: "Aerobic System REFINED v1.1 ('Talk Test: Defined 4-level scale — objective coaching criteria')"
+
+  # ── MOBILITY — Workspace Quantity & Quality ────────────────────────────────
+  - id: "STANDARD_ROM_PERCENT_NORM"
+    test_id: "TEST_ROM_PERCENT_NORM"
+    population: null
+    classification_model: { type: "HIGHER_IS_BETTER", basis: "% of normative passive ROM (≥95 F, 85-94 Fn, 70-84 E, <70 C)" }
+    thresholds: { foundation_min: 95, functional_min: 85, emerging_min: 70 }
+    unit: "percent"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "1.0"
+    verification_status: "VERIFIED"
+    source: "HTC_SCORING_RUBRIC §4 (Joint Workspace Quantity threshold row)"
+
+  - id: "STANDARD_CARS_SCORE"
+    test_id: "TEST_CARS_SCORE"
+    population: null
+    classification_model: { type: "HIGHER_IS_BETTER", basis: "CARs 0-10 (5 variables × 0-2): 9-10 F, 7-8 Fn, 5-6 E, 0-4 C" }
+    thresholds: { foundation_min: 9, functional_min: 7, emerging_min: 5 }
+    unit: "score_0_10"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "1.0"
+    verification_status: "VERIFIED"
+    source: "HTC_SCORING_RUBRIC §4 (CARs Scoring); MASTER_ASSESSMENT_FORM Mobility C2 (variable definitions)"
+
+  - id: "STANDARD_MOBILITY_INTEGRATION_FUNCTIONAL"
+    test_id: "TEST_MOBILITY_INTEGRATION_FUNCTIONAL"
+    population: null
+    classification_model:
+      type: "ORDINAL_MAP"
+      basis: "Complex movement without compensation: Yes(F) / Mostly(Fn) / Some compensation(E) / Cannot(C)"
+      map: { "1": "CRITICAL", "2": "EMERGING", "3": "FUNCTIONAL", "4": "FOUNDATION" }
+      map_labels:
+        "1": { es: "No puede ejecutar", en: "Cannot perform" }
+        "2": { es: "Con compensaciones", en: "Some compensation" }
+        "3": { es: "Mayormente sin compensar", en: "Mostly clean" }
+        "4": { es: "Sin compensación", en: "No compensation" }
+    unit: "ordinal_level"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "1.0"
+    verification_status: "VERIFIED"
+    source: "MASTER_ASSESSMENT_FORM Mobility Component 4"
+
+  # ── STRENGTH — Force Endurance patterns ────────────────────────────────────
+  - id: "STANDARD_PUSHUPS_ENDURANCE"
+    test_id: "TEST_PUSHUPS_ENDURANCE"
+    population: null
+    classification_model: { type: "HIGHER_IS_BETTER", basis: "Max reps (≥20 F, 15-19 Fn, 8-14 E, <8 C)" }
+    thresholds: { foundation_min: 20, functional_min: 15, emerging_min: 8 }
+    unit: "reps"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "1.0"
+    verification_status: "VERIFIED"
+    source: "HTC_SCORING_RUBRIC §3 Force Endurance"
+
+  - id: "STANDARD_SQUATS_ENDURANCE"
+    test_id: "TEST_SQUATS_ENDURANCE"
+    population: null
+    classification_model: { type: "HIGHER_IS_BETTER", basis: "Max reps (≥30 F, 20-29 Fn, 10-19 E, <10 C)" }
+    thresholds: { foundation_min: 30, functional_min: 20, emerging_min: 10 }
+    unit: "reps"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "1.0"
+    verification_status: "VERIFIED"
+    source: "HTC_SCORING_RUBRIC §3 Force Endurance"
+
+  - id: "STANDARD_ROWS_ENDURANCE"
+    test_id: "TEST_ROWS_ENDURANCE"
+    population: null
+    classification_model: { type: "HIGHER_IS_BETTER", basis: "Max reps (≥20 F, 15-19 Fn, 8-14 E, <8 C)" }
+    thresholds: { foundation_min: 20, functional_min: 15, emerging_min: 8 }
+    unit: "reps"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "1.0"
+    verification_status: "VERIFIED"
+    source: "HTC_SCORING_RUBRIC §3 Force Endurance"
+
+  # ── STRENGTH — Force Expression ────────────────────────────────────────────
+  - id: "STANDARD_CMJ"
+    test_id: "TEST_CMJ"
+    population: null
+    classification_model: { type: "HIGHER_IS_BETTER", basis: "CMJ height cm (≥50 F, 35-49 Fn, 20-34 E, <20 C)" }
+    thresholds: { foundation_min: 50, functional_min: 35, emerging_min: 20 }
+    unit: "cm"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "1.0"
+    verification_status: "VERIFIED"
+    source: "HTC_SCORING_RUBRIC §3 Force Expression"
+
+  - id: "STANDARD_BROAD_JUMP"
+    test_id: "TEST_BROAD_JUMP"
+    population: null
+    classification_model: { type: "HIGHER_IS_BETTER", basis: "Broad jump cm (≥200 F, 160-199 Fn, 120-159 E, <120 C)" }
+    thresholds: { foundation_min: 200, functional_min: 160, emerging_min: 120 }
+    unit: "cm"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "1.0"
+    verification_status: "VERIFIED"
+    source: "HTC_SCORING_RUBRIC §3 Force Expression"
+
+  # ── MOVEMENT — 4 observational levels (coach classifies per criteria) ──────
+  - id: "STANDARD_MOVEMENT_L1"
+    test_id: "TEST_MOVEMENT_L1_BODY_MAPPING"
+    population: null
+    classification_model:
+      type: "COACH_CLASSIFIED"
+      basis: "Official criteria — F: perceives precisely, selective control, quick correction · Fn: good body awareness, small self-correctable compensations · E: isolation difficulties, needs frequent feedback · C: imprecise body map, major compensations"
+    unit: "classification"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "1.0"
+    verification_status: "VERIFIED"
+    source: "MOVEMENT Standard FINAL — Level 1 classification definitions"
+
+  - id: "STANDARD_MOVEMENT_L2"
+    test_id: "TEST_MOVEMENT_L2_DYNAMIC_CONTROL"
+    population: null
+    classification_model:
+      type: "COACH_CLASSIFIED"
+      basis: "Official criteria — F: keeps stability/alignment, efficient load transfer · Fn: good control, small self-correctable losses · E: loses stability frequently · C: cannot maintain organization"
+    unit: "classification"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "1.0"
+    verification_status: "VERIFIED"
+    source: "MOVEMENT Standard FINAL — Level 2 classification definitions"
+
+  - id: "STANDARD_MOVEMENT_L3"
+    test_id: "TEST_MOVEMENT_L3_COORDINATION"
+    population: null
+    classification_model:
+      type: "COACH_CLASSIFIED"
+      basis: "Official criteria — F: synchronization across full progression · Fn: adequate coordination · E: loses coordination with complexity · C: no synchronization even at initial levels"
+    unit: "classification"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "1.0"
+    verification_status: "VERIFIED"
+    source: "MOVEMENT Standard FINAL — Level 3 classification definitions"
+
+  - id: "STANDARD_MOVEMENT_L4"
+    test_id: "TEST_MOVEMENT_L4_PROBLEM_SOLVING"
+    population: null
+    classification_model:
+      type: "COACH_CLASSIFIED"
+      basis: "Official criteria — F: explores strategies, fast learning, max autonomy · Fn: solves with progressive improvement · E: repeats strategies, needs feedback · C: major difficulties, depends on external instructions"
+    unit: "classification"
+    standard_type: "HTC_Operational"
+    evidence: { based_on: ["REF_HTC_OPERATIONAL"] }
+    version: "1.0"
+    verification_status: "VERIFIED"
+    source: "MOVEMENT Standard FINAL — Level 4 classification definitions"
+
+# STILL NO STANDARD (requested from HTC — engines fail loudly):
+#   TEST_CAR_ASSESSMENT (degree bands — superseded in practice by TEST_CARS_SCORE 0-10),
+#   TEST_SINGLE_LEG_SQUAT_SCORE / TEST_CROSS_CRAWL_MATRIX (numeric HTC score bands;
+#     Movement levels L2/L3 observational standards cover the capacities meanwhile),
+#   TEST_SINGLE_LEG_SIT_TO_STAND, TEST_SINGLE_LEG_WALL_SIT, TEST_END_RANGE_DYNAMOMETRY,
+#   TEST_HANDGRIP fuera de 30-34 (Scoring Rubric brings partial Fnd/Crit cut-offs by age
+#     band but no Fn/E boundary, and conflicts with iGRIPS 30-34 — awaiting HTC),
+#   TEST_CHAIR_STAND_30S (rubric gives Fnd/Crit only: 60-64 ≥14/<8, 65-69 ≥13/<7,
+#     70-79 ≥12/<6, 80+ ≥11/<5 — middle bands missing).

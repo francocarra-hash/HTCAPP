@@ -1,0 +1,54 @@
+# Source: HTC MASTER TABLES — Table 4 (Dependency Table) + Table 5 (Cross
+# Domain Relationship Table) + Platform Data §14-15.
+# dependencies: hard hierarchy (Capacity DEPENDS ON predecessor).
+# cross_domain_influences: suggested relationships ("May Influence") — the
+# engine SUGGESTS them; the coach must confirm (Platform Data §15).
+
+dependencies:
+  - { capacity_id: "CAP_FORCE_PRODUCTION",     depends_on: "CAP_STABILITY",            verification_status: "VERIFIED", source: "MASTER TABLES T4" }
+  - { capacity_id: "CAP_FORCE_ENDURANCE",      depends_on: "CAP_FORCE_PRODUCTION",     verification_status: "VERIFIED", source: "MASTER TABLES T4" }
+  - { capacity_id: "CAP_FORCE_EXPRESSION",     depends_on: "CAP_FORCE_ENDURANCE",      verification_status: "VERIFIED", source: "MASTER TABLES T4" }
+  - { capacity_id: "CAP_WORKSPACE_OWNERSHIP",  depends_on: "CAP_JOINT_WORKSPACE",      verification_status: "VERIFIED", source: "MASTER TABLES T4" }
+  - { capacity_id: "CAP_MOBILITY_INTEGRATION", depends_on: "CAP_WORKSPACE_OWNERSHIP",  verification_status: "VERIFIED", source: "MASTER TABLES T4" }
+  - { capacity_id: "CAP_MOBILITY_EXPRESSION",  depends_on: "CAP_MOBILITY_INTEGRATION", verification_status: "VERIFIED", source: "MASTER TABLES T4" }
+  - { capacity_id: "CAP_THRESHOLD_CAPACITY",   depends_on: "CAP_AEROBIC_BASE",         verification_status: "VERIFIED", source: "MASTER TABLES T4" }
+  - { capacity_id: "CAP_RECOVERY_CAPACITY",    depends_on: "CAP_THRESHOLD_CAPACITY",   verification_status: "VERIFIED", source: "MASTER TABLES T4" }
+  - { capacity_id: "CAP_AEROBIC_EXPRESSION",   depends_on: "CAP_RECOVERY_CAPACITY",    verification_status: "VERIFIED", source: "MASTER TABLES T4" }
+  - { capacity_id: "CAP_DYNAMIC_CONTROL",      depends_on: "CAP_INTERNAL_BODY_MAPPING", verification_status: "VERIFIED", source: "MASTER TABLES T4" }
+  - { capacity_id: "CAP_MOVEMENT_COORDINATION", depends_on: "CAP_DYNAMIC_CONTROL",     verification_status: "VERIFIED", source: "MASTER TABLES T4" }
+  - { capacity_id: "CAP_MOTOR_PROBLEM_SOLVING", depends_on: "CAP_MOVEMENT_COORDINATION", verification_status: "VERIFIED", source: "MASTER TABLES T4" }
+
+cross_domain_influences:
+  - { source_capacity_id: "CAP_JOINT_WORKSPACE",      target_capacity_id: "CAP_DYNAMIC_CONTROL",       type: "MAY_INFLUENCE", verification_status: "VERIFIED", source: "MASTER TABLES T5" }
+  - { source_capacity_id: "CAP_WORKSPACE_OWNERSHIP",  target_capacity_id: "CAP_FORCE_PRODUCTION",      type: "MAY_INFLUENCE", verification_status: "VERIFIED", source: "MASTER TABLES T5" }
+  - { source_capacity_id: "CAP_AEROBIC_BASE",         target_capacity_id: "CAP_RECOVERY_CAPACITY",     type: "MAY_INFLUENCE", verification_status: "VERIFIED", source: "MASTER TABLES T5" }
+  - { source_capacity_id: "CAP_AEROBIC_BASE",         target_capacity_id: "CAP_FORCE_ENDURANCE",       type: "MAY_INFLUENCE", verification_status: "VERIFIED", source: "MASTER TABLES T5" }
+  - { source_capacity_id: "CAP_STABILITY",            target_capacity_id: "CAP_DYNAMIC_CONTROL",       type: "MAY_INFLUENCE", verification_status: "VERIFIED", source: "MASTER TABLES T5" }
+  - { source_capacity_id: "CAP_DYNAMIC_CONTROL",      target_capacity_id: "CAP_FORCE_EXPRESSION",      type: "MAY_INFLUENCE", verification_status: "VERIFIED", source: "MASTER TABLES T5" }
+  - { source_capacity_id: "CAP_FORCE_PRODUCTION",     target_capacity_id: "CAP_MOTOR_PROBLEM_SOLVING", type: "MAY_INFLUENCE", verification_status: "VERIFIED", source: "MASTER TABLES T5" }
+  - { source_capacity_id: "CAP_MOBILITY_INTEGRATION", target_capacity_id: "CAP_MOVEMENT_COORDINATION", type: "MAY_INFLUENCE", verification_status: "VERIFIED", source: "MASTER TABLES T5" }
+
+# Suggestion rules (Platform Data §15): when both source and target are below
+# Functional, the engine suggests "Causes / Contributes To" for coach review.
+suggestion_rules:
+  - id: "SUGGEST_HIP_WORKSPACE_LOWER_CHAIN"
+    if: { source: "CAP_JOINT_WORKSPACE", source_below: "FUNCTIONAL", target: "CAP_MOBILITY_INTEGRATION", target_below: "FUNCTIONAL" }
+    suggest: "CAUSES_OR_CONTRIBUTES_TO"
+    verification_status: "VERIFIED"
+    source: "HTC PLATFORM DATA §15 example rule 1"
+  - id: "SUGGEST_AEROBIC_BASE_RECOVERY"
+    if: { source: "CAP_AEROBIC_BASE", source_is: "CRITICAL", target: "CAP_RECOVERY_CAPACITY", target_is: "CRITICAL" }
+    suggest: "CONTRIBUTES_TO"
+    verification_status: "VERIFIED"
+    source: "HTC PLATFORM DATA §15 example rule 2"
+  - id: "SUGGEST_STABILITY_LIMITS_FORCE"
+    if: { source: "CAP_STABILITY", source_is: "CRITICAL", target: "CAP_FORCE_PRODUCTION", target_is: "EMERGING" }
+    suggest: "MAY_LIMIT"
+    verification_status: "VERIFIED"
+    source: "HTC PLATFORM DATA §15 example rule 3"
+
+relationship_types:
+  # Platform Data §14
+  values: ["CAUSES", "CONTRIBUTES_TO", "DEPENDS_ON", "SUPPORTS", "SECONDARY_MANIFESTATION_OF", "INDEPENDENT_FROM", "CONFLICTS_WITH", "UNKNOWN"]
+  verification_status: "VERIFIED"
+  source: "HTC PLATFORM DATA §14"

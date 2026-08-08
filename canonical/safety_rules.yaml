@@ -1,0 +1,214 @@
+# Safety Engine rules — consume CLINICAL information only (pain, red flags,
+# medical history, biomarker gate). NEVER derived from performance
+# classifications (HTC AI Master Instructions — SAFETY).
+# Sources: DECISION GRAPH Node 2 (§5), DECISION RULES §2, HEALTH MARKERS
+# STANDARD §5/§8, AEROBIC DECISION ENGINE Part 4.
+
+clinical_event_types:
+  values: ["PAIN", "SYMPTOM", "CONTRAINDICATION", "RED_FLAG", "RECENT_SURGERY", "MEDICAL_RESTRICTION"]
+  verification_status: "VERIFIED"
+  source: "PLATFORM DATA §4.2; BUILD PACKAGE MVP req. §3 (event taxonomy)"
+
+# ── Canonical red-flag catalogue (AUTHORITATIVE DECISIONS v1.0 §9.1) ─────────
+# Literal transcription. This section closes the former gap B10 ("no exhaustive
+# red flag list"). It is NOT in conflict with any other source: OS v3.0 §4.2 and
+# BLOCK_1 Decision 3 list the same gates (PAR-Q+, chest pain, BP) as Layer 1.
+red_flags:
+  medical:
+    - id: "RF_CHEST_PAIN"
+      label: { es: "Dolor, presión u opresión en el pecho", en: "Chest pain, pressure or tightness" }
+      action: "STOP"
+      note: "Call emergency services if acute."
+    - id: "RF_SEVERE_DYSPNEA"
+      label: { es: "Falta de aire severa en reposo", en: "Severe shortness of breath at rest" }
+      action: "STOP"
+    - id: "RF_DIZZINESS_SYNCOPE"
+      label: { es: "Mareos o desmayos", en: "Dizziness or fainting" }
+      action: "STOP"
+    - id: "RF_SEVERE_JOINT_PAIN"
+      label: { es: "Dolor articular severo durante el movimiento", en: "Severe joint pain during movement" }
+      action: "STOP"
+    - id: "RF_NEURO_SYMPTOMS"
+      label: { es: "Adormecimiento, hormigueo o síntomas nerviosos", en: "Numbness, tingling or nerve symptoms" }
+      action: "STOP"
+    - id: "RF_RECENT_SURGERY"
+      label: { es: "Cirugía o lesión reciente (< 6 semanas)", en: "Recent surgery or injury (< 6 weeks)" }
+      action: "STOP"
+    - id: "RF_FEVER_ILLNESS"
+      label: { es: "Fiebre o enfermedad aguda", en: "Fever or acute illness" }
+      action: "STOP"
+  contraindications:
+    - id: "RF_UNCONTROLLED_HTN"
+      label: { es: "Hipertensión no controlada (PAS > 180 o PAD > 110)", en: "Uncontrolled hypertension (SBP > 180 or DBP > 110)" }
+      action: "STOP"
+    - id: "RF_UNCONTROLLED_DIABETES"
+      label: { es: "Diabetes no controlada", en: "Uncontrolled diabetes" }
+      action: "STOP"
+    - id: "RF_SEVERE_OSTEOPOROSIS"
+      label: { es: "Osteoporosis severa diagnosticada", en: "Severe osteoporosis (known diagnosis)" }
+      action: "STOP"
+    - id: "RF_RECENT_MI"
+      label: { es: "Infarto de miocardio reciente (< 6 semanas)", en: "Recent myocardial infarction (< 6 weeks)" }
+      action: "STOP"
+    - id: "RF_UNCONTROLLED_ARRHYTHMIA"
+      label: { es: "Arritmia no controlada", en: "Uncontrolled arrhythmia" }
+      action: "STOP"
+  screening:
+    - id: "RF_PARQ_POSITIVE"
+      label: { es: "PAR-Q+ con alguna respuesta afirmativa", en: "PAR-Q+ with any YES answer" }
+      action: "STOP"
+      note: "Physician clearance required before proceeding."
+  verification_status: "VERIFIED"
+  source: "HTC_AUTHORITATIVE_DECISIONS_v1.0 §9.1"
+
+# ── Numeric safety gates (AUTHORITATIVE §9.1; OS v3.0 §4.2; BLOCK_1 D3) ──────
+vital_sign_gates:
+  - id: "GATE_BP_SYSTOLIC"
+    measure: "systolic_bp"
+    operator: ">="
+    threshold: 180
+    unit: "mmHg"
+    action: "STOP"
+    reason_id: "REASON_BP_GATE"
+    verification_status: "VERIFIED"
+    source: "AUTHORITATIVE §9.1; OS v3.0 §4.2 (SBP ≥180); BLOCK_1 D3"
+  - id: "GATE_BP_DIASTOLIC"
+    measure: "diastolic_bp"
+    operator: ">="
+    threshold: 110
+    unit: "mmHg"
+    action: "STOP"
+    reason_id: "REASON_BP_GATE"
+    verification_status: "VERIFIED"
+    source: "AUTHORITATIVE §9.1; OS v3.0 §4.2 (DBP ≥110); BLOCK_1 D3"
+
+# ── Flag rules — continue but monitor (AUTHORITATIVE §9.2) ──────────────────
+flag_rules:
+  - id: "FLAG_PAIN_SIGNIFICANT"
+    condition: "pain_level >= 6"
+    action: "FLAG_FOR_COACH_REVIEW"
+    detail: "Modify or skip next test in series."
+    severity: "HIGH"
+    reason_id: "REASON_PAIN_FLAG"
+    verification_status: "VERIFIED"
+    source: "AUTHORITATIVE §9.2 (pain 6-8/10) and §9.3 RULE_PAIN_SIGNIFICANT (pain_level >= 6)"
+  - id: "FLAG_ASYMMETRY"
+    condition: "side_difference_percent > 20"
+    action: "FLAG_FOR_COACH_REVIEW"
+    detail: "Significant asymmetry (>20% L vs R in ROM or strength)."
+    severity: "MODERATE"
+    reason_id: "FLAG_ASYMMETRY"
+    verification_status: "VERIFIED"
+    source: "AUTHORITATIVE §9.2"
+  - id: "FLAG_RESPIRATORY_DISTRESS"
+    condition: "respiratory_distress_recovered_under_2min == true"
+    action: "FLAG_FOR_COACH_REVIEW"
+    severity: "MODERATE"
+    reason_id: "REASON_PAIN_FLAG"
+    verification_status: "VERIFIED"
+    source: "AUTHORITATIVE §9.2"
+
+safety_rules:
+  - id: "SAFETY_MEDICAL_REFERRAL"
+    priority: 1
+    if: { any_event_of_type: ["RED_FLAG"] }
+    then:
+      outcome: "MEDICAL_REFERRAL_REQUIRED"
+      assessment_allowed: false
+      stop_decision_process: true
+    reason_id: "REASON_MEDICAL_REFERRAL"
+    verification_status: "VERIFIED"
+    source: "DECISION GRAPH 5.1; DECISION RULES 2.3"
+
+  - id: "SAFETY_HEALTH_MARKERS_GATE_STOP"
+    priority: 2
+    if: { health_markers_state: "CRITICAL" }
+    then:
+      outcome: "STOP_MEDICAL_REFERRAL"
+      assessment_allowed: false
+      stop_decision_process: true
+    reason_id: "REASON_HEALTH_GATE_STOP"
+    verification_status: "VERIFIED"
+    source: "HEALTH MARKERS STANDARD §5 (binary gate: STOP)"
+
+  - id: "SAFETY_HEALTH_OVERRIDE"
+    priority: 3
+    if: { general_health_classification: "CRITICAL", training_tolerance_compromised: true }
+    then:
+      outcome: "HEALTH_OVERRIDE"
+      assessment_allowed: true
+      force_p1: "CAP_GENERAL_HEALTH_STATUS"
+      force_pathway: "RESTORE"
+      allowed_other_roles: ["SUPPORT", "MAINTAIN", "DEFER"]
+    reason_id: "REASON_HEALTH_OVERRIDE"
+    verification_status: "VERIFIED"
+    source: "DECISION GRAPH 5.2; DECISION RULES 2.1; PLATFORM DATA 18.1"
+
+  - id: "SAFETY_HEALTH_MARKERS_GATE_CAUTION"
+    priority: 4
+    if: { health_markers_state: "EMERGING_MULTIPLE" }
+    then:
+      outcome: "PROCEED_WITH_CAUTION"
+      assessment_allowed: true
+      followup_weeks_min: 4
+      followup_weeks_max: 6
+    reason_id: "REASON_HEALTH_GATE_CAUTION"
+    verification_status: "VERIFIED"
+    source: "HEALTH MARKERS STANDARD §5 (two+ areas EMERGING → controlled training, follow-up 4-6 weeks)"
+
+  - id: "SAFETY_PAIN_LIMITED"
+    priority: 5
+    if: { any_event: { type: "PAIN", significantly_limits: true } }
+    then:
+      outcome: "PAIN_LIMITED"
+      assessment_allowed: true
+      reduce_confidence: true
+      block_definitive_p1: true
+      immediate_priority: "PAIN_MANAGEMENT"
+    reason_id: "REASON_PAIN_LIMITED"
+    verification_status: "VERIFIED"
+    source: "DECISION GRAPH 5.3; DECISION RULES 2.2"
+
+  - id: "SAFETY_VITAL_SIGN_GATE"
+    priority: 1
+    if: { vital_sign_gate_triggered: true }
+    then:
+      outcome: "MEDICAL_REFERRAL_REQUIRED"
+      assessment_allowed: false
+      stop_decision_process: true
+    reason_id: "REASON_BP_GATE"
+    verification_status: "VERIFIED"
+    source: "AUTHORITATIVE §9.1; OS v3.0 §4.2 — blood pressure gate"
+
+  - id: "SAFETY_PROCEED"
+    priority: 99
+    if: { default: true }
+    then: { outcome: "PROCEED", assessment_allowed: true }
+    reason_id: "REASON_SAFETY_PASSED"
+    verification_status: "VERIFIED"
+    source: "DECISION GRAPH Node 2 (all screens passed)"
+
+# Domain-specific escalation red flags (monitoring-time, not intake-time):
+escalation_rules:
+  - id: "ESC_HR_RECOVERY_PERSISTENT"
+    if: "HR Recovery < 10 bpm persists after 4 weeks"
+    then: "MEDICAL_REFERRAL"
+    verification_status: "VERIFIED"
+    source: "AEROBIC DECISION ENGINE Scenario 1 red flag"
+  - id: "ESC_MOBILITY_PAINFUL_REGION"
+    if: "any mobility region == PAINFUL"
+    then: "RED_FLAG (possible medical issue) + deep dive"
+    verification_status: "VERIFIED"
+    source: "MOBILITY STANDARD §4 Rule 1"
+
+# RESOLVED in v3.1.1 (from HTC_AUTHORITATIVE_DECISIONS_v1.0):
+#   ✔ Formal red-flag enumeration → see `red_flags` above (§9.1).
+#   ✔ Numeric BP gates → see `vital_sign_gates` above (§9.1).
+#   ✔ Pain threshold for coach review → `flag_rules.FLAG_PAIN_SIGNIFICANT`
+#     (pain >= 6, §9.2/§9.3).
+#
+# STILL DISTINCT (not a gap): "significantly_limits" on a PAIN event remains a
+# COACH DECLARATION driving SAFETY_PAIN_LIMITED (blocks a definitive P1).
+# The numeric pain>=6 flag is a REVIEW flag and does not block P1 by itself.
+# No source merges the two, so the engine keeps them separate and never infers
+# `significantly_limits` from the 0-10 score.

@@ -1,0 +1,145 @@
+# movement_observation_rubrics.yaml
+# Transcripción de HTC_MOVEMENT_OBSERVATION_RUBRIC_v1.0.md (20 variables).
+# El coach observa y clasifica cada variable; la plataforma nunca infiere.
+version: "1.0"
+last_updated: "2026-07-25"
+effective_date: "2026-07-25"
+source_document: "HTC_MOVEMENT_OBSERVATION_RUBRIC_v1.0"
+canonical: true
+
+metadata:
+  description: "Complete observation rubrics for Movement L1-L4 (MVP)"
+  philosophy: "Coaches observe specific variables and classify based on rubrics. No numerical thresholds yet."
+
+rubrics:
+  # ═══════════════════ LEVEL 1 — INTERNAL BODY MAPPING ═══════════════════
+  L1_IBM:
+    perception:
+      question: "¿Qué tan preciso es el mapa interno que el individuo posee sobre su propio cuerpo?"
+      FOUNDATION: "Identifica con precisión cada región; detecta diferencias sutiles izq/der; autocorrección sin feedback; respuestas consistentes; entiende relaciones espaciales complejas."
+      FUNCTIONAL: "Identifica la mayoría de regiones; pequeños errores (±2-3 cm); autocorrección rápida con cues mínimos; algunas dificultades con regiones menos obvias."
+      EMERGING: "Requiere feedback frecuente; dudas en lateralidad; dificultad con regiones no visibles; inconsistencia entre intentos."
+      CRITICAL: "No logra localizar regiones incluso con feedback; confusión de lateralidad; respuestas aleatorias; requiere contacto táctil directo."
+    precision:
+      question: "¿Puede aislar y controlar regiones específicas sin movimiento no intencional?"
+      FOUNDATION: "Aislamiento perfecto; cero movimiento de otras articulaciones; mantiene isométrico sin drift; control refinado y consistente."
+      FUNCTIONAL: "Buen aislamiento con leaks leves; activación adyacente muy leve; mantiene la mayoría de intentos sin drift."
+      EMERGING: "Pierde aislamiento frecuentemente; co-contracción; compensación visible; requiere feedback frecuente."
+      CRITICAL: "No logra aislar incluso bajo instrucción; movimiento sinergístico obligatorio; patrón caótico."
+    selective_motor_control:
+      question: "¿Puede controlar selectivamente músculos específicos sin activar patrones globales?"
+      FOUNDATION: "Controla músculos específicos sin respuesta global; activa/desactiva en secuencia; resiste resistencia sin compensación."
+      FUNCTIONAL: "Control selectivo con pequeñas compensaciones autocorregibles; mantiene control bajo resistencia leve."
+      EMERGING: "Dificultad para activar de forma aislada; compensaciones constantes y obvias; pierde control bajo resistencia."
+      CRITICAL: "No logra activar selectivamente; respuesta sinergística obligatoria; patrón motor primitivo."
+    correction:
+      question: "¿Cuán rápido y automático se autocorrige cuando detecta error?"
+      FOUNDATION: "Detección inmediata; autocorrección automática sin delay (<0.3 s); anticipa el error."
+      FUNCTIONAL: "Detección rápida; autocorrección con delay 0.5-1 s; corrige en 2-3 intentos."
+      EMERGING: "Detección lenta; delay 1-2 s; múltiples intentos; corrección inconsistente."
+      CRITICAL: "No detecta error propio; incapaz de corregir incluso con instrucción (>2 s o no ocurre)."
+    attention:
+      question: "¿Cuál es la carga atencional para mantener el control?"
+      FOUNDATION: "Mantiene control con distracción; conversa mientras ejecuta; bajo esfuerzo percibido."
+      FUNCTIONAL: "Control estable con atención completa; pequeña pérdida con distracción; maneja 2-3 cues."
+      EMERGING: "Requiere atención completa; pérdida notable con distracción; sólo 1 cue a la vez; fatiga cognitiva rápida."
+      CRITICAL: "Incapaz de mantener atención; colapsa con cualquier demanda dual; fatiga instantánea."
+
+  # ═══════════════════ LEVEL 2 — DYNAMIC CONTROL ═══════════════════
+  L2_DC:
+    dynamic_balance:
+      question: "¿Puede mantener el equilibrio mientras cambia posición?"
+      FOUNDATION: "Equilibrio impecable; cero oscilación; transiciones suaves; respuesta anticipatoria."
+      FUNCTIONAL: "Balance adecuado con pequeños ajustes; oscilación leve controlada; respuesta correctiva rápida."
+      EMERGING: "Pérdida de balance frecuente; ajustes constantes; requiere apoyo frecuente."
+      CRITICAL: "Incapaz de mantener balance en posiciones simples; caídas o apoyos repetidos; requiere asistencia."
+    load_transfer:
+      question: "¿Puede transferir carga eficientemente entre segmentos sin compensación?"
+      FOUNDATION: "Transferencia fluida y eficiente; sin compensación en cadena cinética; carga alta sin cambio de patrón."
+      FUNCTIONAL: "Transferencia adecuada con pequeñas asimetrías; compensación mínima; maneja cargas moderadas."
+      EMERGING: "Transferencia ineficiente; compensación visible; pierde patrón bajo carga."
+      CRITICAL: "No logra transferencia coordinada; compensación severa; incapaz de manejar carga."
+    postural_control:
+      question: "¿Puede mantener postura contra resistencia o disturbancia?"
+      FOUNDATION: "Postura perfecta bajo resistencia; alineación neutral; respuesta anticipatoria."
+      FUNCTIONAL: "Postura generalmente mantenida; pequeños cambios de alineación; resiste resistencia moderada."
+      EMERGING: "Postura cede bajo resistencia; cambios notables de alineación; resistencia débil."
+      CRITICAL: "Postura se colapsa sin resistencia significativa; dependencia de apoyo."
+    motor_precision:
+      question: "¿Qué tan preciso es el patrón de movimiento?"
+      FOUNDATION: "Movimiento fluido y coordinado; precisión milimétrica; múltiples velocidades sin cambio de patrón."
+      FUNCTIONAL: "Movimiento adecuado; pequeñas imprecisiones ocasionales; eficiencia aceptable."
+      EMERGING: "Movimiento descoordinado frecuentemente; patrón cambia con velocidad; transiciones ásperas."
+      CRITICAL: "Movimiento caótico; patrón primitivo; imposible mantener velocidad."
+
+  # ═══════════════════ LEVEL 3 — MOVEMENT COORDINATION ═══════════════════
+  L3_MC:
+    rhythm_accuracy:
+      question: "¿Qué tan preciso es el timing del movimiento?"
+      FOUNDATION: "Rhythm perfecto y consistente; mantiene sin cueing; múltiples velocidades sin desincronizar."
+      FUNCTIONAL: "Rhythm adecuado; pequeñas variaciones de timing; autocorrección visible pero efectiva."
+      EMERGING: "Rhythm inconsistente; timing frecuentemente fuera; requiere cueing constante."
+      CRITICAL: "No logra rhythm; timing aleatorio; imposible sin guía externa continua."
+    synchronization:
+      question: "¿Puede sincronizar múltiples segmentos simultáneamente?"
+      FOUNDATION: "Sincronización perfecta; cero desacople; participación equilibrada de segmentos."
+      FUNCTIONAL: "Sincronización adecuada; desacople ocasional rápidamente corregido; pequeño lag aceptable."
+      EMERGING: "Desacople frecuente; segmentos fuera de tiempo; requiere simplificación."
+      CRITICAL: "No logra sincronización; segmentos actúan independientemente."
+    timing:
+      question: "¿Puede anticipar y mantener timing de transición entre fases?"
+      FOUNDATION: "Timing de transiciones perfecto; anticipa cambio de fase; automatizado."
+      FUNCTIONAL: "Timing adecuado; pequeño delay en transición; se recupera rápido."
+      EMERGING: "Delay notable; requiere cue para cambiar; pierde coordinación durante la transición."
+      CRITICAL: "No puede transicionar; colapso completo en cambio de fase; requiere parada y reinicio."
+    complexity_tolerance:
+      question: "¿Hasta qué nivel de complejidad puede mantener coordinación?"
+      FOUNDATION: "Mantiene coordinación en los 5 niveles; superávit de capacidad."
+      FUNCTIONAL: "Mantiene hasta nivel 4/5; pequeña pérdida en el máximo."
+      EMERGING: "Mantiene hasta nivel 2-3/5; pierde rápidamente con complejidad."
+      CRITICAL: "No mantiene ni el nivel 1/5; colapso inmediato."
+    error_recovery:
+      question: "¿Cuánto tarda en recuperarse de un error coordinativo?"
+      FOUNDATION: "Recuperación instantánea (<0.1 s); sin interrupción de patrón."
+      FUNCTIONAL: "Recuperación rápida (0.2-0.5 s); retoma en 1-2 ciclos."
+      EMERGING: "Recuperación lenta (0.5-1.5 s); requiere 3+ ciclos; requiere reset."
+      CRITICAL: "No se recupera (>1.5 s o nunca); colapso del patrón completo."
+
+  # ═══════════════════ LEVEL 4 — MOTOR PROBLEM SOLVING ═══════════════════
+  L4_MPS:
+    solution_generation:
+      question: "¿Puede generar múltiples estrategias para resolver un problema motor?"
+      FOUNDATION: "Genera 5+ soluciones espontáneamente; variedad de enfoques; exploración activa."
+      FUNCTIONAL: "Genera 3-4 soluciones; algunas espontáneas, algunas con cueing."
+      EMERGING: "Genera 1-2; limitado en variedad; repite patrones familiares."
+      CRITICAL: "No genera soluciones; sólo repite un patrón; pensamiento rígido."
+    strategy_selection:
+      question: "¿Puede seleccionar estrategias apropiadas para el contexto?"
+      FOUNDATION: "Selecciona la óptima rápidamente; ajusta según contexto; descarta ineficientes."
+      FUNCTIONAL: "Selecciona adecuadamente; dudas ocasionales; pequeña ineficiencia a veces."
+      EMERGING: "Selecciona ineficientemente; requiere cueing frecuente; sin criterio claro."
+      CRITICAL: "No logra seleccionar; elige al azar; requiere instrucción explícita."
+    exploration:
+      question: "¿Persevera en exploración y prueba de nuevas estrategias?"
+      FOUNDATION: "Explora activamente; persevera hasta encontrar solución; toma riesgos calculados."
+      FUNCTIONAL: "Explora con propósito; mantiene perseverancia; pequeña pérdida de motivación ocasional."
+      EMERGING: "Exploración limitada; rinde fácilmente; requiere encouragement; abandona temprano."
+      CRITICAL: "No explora; abandona inmediatamente; desesperanza aprendida."
+    learning_speed:
+      question: "¿Qué tan rápido aprende de la retroalimentación?"
+      FOUNDATION: "Aprendizaje inmediato (1 intento); aplica feedback al siguiente intento; generaliza."
+      FUNCTIONAL: "Aprendizaje rápido (2-3 intentos); retiene información."
+      EMERGING: "Aprendizaje lento (5+ intentos); retención pobre; dificultad generalizando."
+      CRITICAL: "No aprende del feedback; repite errores; sin retención."
+    error_recovery:
+      question: "¿Cómo responde a errores durante problem-solving?"
+      FOUNDATION: "Acepta errores como información; recuperación emocional rápida; actitud de crecimiento."
+      FUNCTIONAL: "Recuperación adecuada; pequeña frustración; continúa tras pausa breve."
+      EMERGING: "Frustración notable; requiere encouragement; poca extracción de aprendizaje."
+      CRITICAL: "Colapso emocional; abandono completo; depende de validación externa."
+    autonomy:
+      question: "¿Puede resolver problemas de forma independiente?"
+      FOUNDATION: "Total autonomía; no requiere cueing; propone soluciones sin prompt."
+      FUNCTIONAL: "Autonomía sustancial; cueing mínimo; independencia clara."
+      EMERGING: "Autonomía limitada; cueing frecuente; busca validación constante."
+      CRITICAL: "Sin autonomía; completamente dependiente; requiere instrucción paso a paso."
