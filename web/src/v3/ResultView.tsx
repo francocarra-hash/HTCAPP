@@ -50,7 +50,7 @@ export default function ResultView({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <button onClick={onBack} className="text-sm font-medium text-slate-500 hover:text-slate-900">← Volver</button>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight">{r.client.name}</h1>
+          <h1 className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">{r.client.name}</h1>
           <p className="text-sm text-slate-500">{r.client.age} años · {r.client.sex === 'MALE' ? 'M' : 'F'} · {new Date(r.timestamp).toLocaleString()}</p>
         </div>
         <button
@@ -130,7 +130,8 @@ export default function ResultView({
                       )}
                     </div>
                     {d.tests.length > 0 && (
-                      <table className="mt-3 w-full text-xs">
+                      <div className="mt-3 -mx-1 overflow-x-auto px-1">
+                      <table className="w-full min-w-[16rem] text-xs">
                         <tbody>
                           {d.tests.map((t) => (
                             <tr key={t.test_key} className="border-t border-slate-100">
@@ -156,6 +157,7 @@ export default function ResultView({
                           ))}
                         </tbody>
                       </table>
+                      </div>
                     )}
                   </div>
                 ))}

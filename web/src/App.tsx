@@ -63,37 +63,37 @@ export default function App() {
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-          <button onClick={() => setView({ name: 'dashboard' })} className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-sm font-black text-white">H</span>
-            <span className="text-left leading-tight">
-              <span className="block text-sm font-bold tracking-tight">HTC — Sistema de Decisiones</span>
-              <span className="block text-[11px] text-slate-400">Hit The Climax · coach-led</span>
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-3 sm:px-6">
+          <button onClick={() => setView({ name: 'dashboard' })} className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-black text-white">H</span>
+            <span className="min-w-0 text-left leading-tight">
+              <span className="block truncate text-sm font-bold tracking-tight">HTC</span>
+              <span className="block truncate text-[11px] text-slate-400">Sistema de decisiones</span>
             </span>
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             {v3Available && (
               <div className="flex overflow-hidden rounded-lg border border-slate-300 text-xs font-semibold">
                 <button
                   onClick={() => setEngine('v3')}
-                  className={`px-3 py-1.5 ${engine === 'v3' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                  className={`px-2.5 py-1.5 sm:px-3 ${engine === 'v3' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
                 >
                   OS v3.0
                 </button>
                 <button
                   onClick={() => setEngine('v2')}
-                  className={`px-3 py-1.5 ${engine === 'v2' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                  className={`px-2.5 py-1.5 sm:px-3 ${engine === 'v2' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
                   title="Modelo anterior (histórico)"
                 >
                   v2
                 </button>
               </div>
             )}
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-500">
+            <span className="hidden rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-500 md:inline">
               {engine === 'v3' ? `Thresholds v${v3Thresholds || '—'}` : `Canonical v${version}`}
             </span>
             {authEnabled && authed && (
-              <button onClick={logout} className="rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-500 hover:border-slate-400 hover:text-slate-800">
+              <button onClick={logout} className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-500 hover:border-slate-400 hover:text-slate-800">
                 Salir
               </button>
             )}
@@ -101,7 +101,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-6 py-8">
+      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
         {authed === null ? null : !authed ? (
           <Login onDone={() => { setAuthed(true); setView({ name: 'dashboard' }); }} />
         ) : engine === 'v3' ? (

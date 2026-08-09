@@ -70,7 +70,7 @@ export default function MovementLevel({
           const isOpen = openVar === v;
           return (
             <div key={v} className="rounded-lg border border-slate-100 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                 <button
                   type="button"
                   onClick={() => setOpenVar(isOpen ? null : v)}
@@ -79,13 +79,13 @@ export default function MovementLevel({
                 >
                   {prettyVar(v)} <span className="text-xs text-slate-400">{isOpen ? '▾' : '▸'} criterio</span>
                 </button>
-                <div className="flex gap-1">
+                <div className="grid grid-cols-4 gap-1 sm:flex">
                   {ORDER.map((c) => (
                     <button
                       key={c}
                       type="button"
                       onClick={() => setVar(v, c)}
-                      className={`rounded-md border px-2 py-1 text-[11px] font-semibold transition ${
+                      className={`rounded-md border px-2 py-1.5 text-[11px] font-semibold transition sm:py-1 ${
                         chosen === c ? CLS_BTN[c] : 'border-slate-200 bg-white text-slate-500 hover:border-slate-400'
                       }`}
                     >

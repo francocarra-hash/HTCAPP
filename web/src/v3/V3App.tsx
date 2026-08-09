@@ -151,13 +151,13 @@ export default function V3App() {
   if (view.name === 'dashboard') {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Evaluaciones</h1>
+            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Evaluaciones</h1>
             <p className="mt-1 text-sm text-slate-500">HTC OS v3.0 · Health Gates → Clasificación → Movement → Roadmap</p>
           </div>
           <button onClick={() => { reset(); setView({ name: 'new' }); }}
-            className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700">
+            className="w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 sm:w-auto">
             + Nueva evaluación
           </button>
         </div>
@@ -222,10 +222,10 @@ export default function V3App() {
   const canSubmit = name.trim() !== '' && Number(age) > 0 && (testsLoaded > 0 || levelsLoaded > 0 || safetyOnly) && !busy;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Nueva evaluación</h1>
-        <button onClick={() => setView({ name: 'dashboard' })} className="text-sm font-medium text-slate-500 hover:text-slate-900">
+    <div className="space-y-6 pb-4">
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Nueva evaluación</h1>
+        <button onClick={() => setView({ name: 'dashboard' })} className="shrink-0 text-sm font-medium text-slate-500 hover:text-slate-900">
           ← Volver
         </button>
       </div>
@@ -376,13 +376,13 @@ export default function V3App() {
         </div>
       </Card>
 
-      <div className="sticky bottom-4 flex items-center justify-between rounded-xl border border-slate-200 bg-white/95 px-5 py-4 shadow-lg backdrop-blur">
+      <div className="sticky bottom-3 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur sm:bottom-4 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4">
         <p className="text-sm text-slate-500">
           {testsLoaded} pruebas · {levelsLoaded} niveles de movimiento
           {safetyOnly && ' · gate de seguridad activo'}
         </p>
         <button onClick={submit} disabled={!canSubmit}
-          className="rounded-lg bg-slate-900 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:opacity-40">
+          className="w-full rounded-lg bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:opacity-40 sm:w-auto sm:py-2.5">
           {busy ? 'Evaluando…' : 'Evaluar'}
         </button>
       </div>

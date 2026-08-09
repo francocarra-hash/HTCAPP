@@ -23,7 +23,7 @@ export default function Login({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="flex min-h-[70vh] items-center justify-center">
-      <form onSubmit={submit} className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
+      <form onSubmit={submit} className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
         <div className="mb-6 flex items-center gap-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-900 text-base font-black text-white">H</span>
           <div>

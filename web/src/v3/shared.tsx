@@ -35,12 +35,12 @@ export function Card({ title, right, children }: { title?: string; right?: React
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
       {title && (
-        <header className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+        <header className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3 sm:px-5">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{title}</h2>
           {right}
         </header>
       )}
-      <div className="p-5">{children}</div>
+      <div className="p-4 sm:p-5">{children}</div>
     </section>
   );
 }
