@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { benefitsFor } from './benefits';
 import { CAP_LABEL, capacityMix, firstName, Routine } from './data';
 import { Icon } from './ui';
@@ -19,12 +20,19 @@ function useConfetti(canvas: React.RefObject<HTMLCanvasElement>, colors: string[
     const ctx = c.getContext('2d');
     if (!ctx) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const resize = () => { c.width = innerWidth * dpr; c.height = innerHeight * dpr; };
+    // Se dibuja en el tamaño que el canvas ocupa en pantalla, así nunca sale estirado.
+    let w = 0, h = 0;
+    const resize = () => {
+      w = c.clientWidth || innerWidth;
+      h = c.clientHeight || innerHeight;
+      c.width = Math.round(w * dpr);
+      c.height = Math.round(h * dpr);
+    };
     resize();
     const palette = colors.length ? colors : ['#2a78d6', '#1baf7a', '#eda100'];
     const parts = Array.from({ length: 150 }, (_, i) => ({
-      x: innerWidth / 2 + (Math.random() - .5) * 80,
-      y: innerHeight * .38,
+      x: w / 2 + (Math.random() - .5) * 80,
+      y: h * .38,
       vx: (Math.random() - .5) * 14,
       vy: -Math.random() * 15 - 6,
       w: 6 + Math.random() * 6,
@@ -34,18 +42,22 @@ function useConfetti(canvas: React.RefObject<HTMLCanvasElement>, colors: string[
       color: palette[i % palette.length]!,
     }));
     const t0 = performance.now();
+    let prev = t0;
     let raf = 0;
     const tick = (t: number) => {
       const age = t - t0;
+      // Pasos en "cuadros de 60 fps": misma velocidad en pantallas de 60 o 120 Hz.
+      const k = Math.min(3, Math.max(0, (t - prev) / (1000 / 60)));
+      prev = t;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, innerWidth, innerHeight);
+      ctx.clearRect(0, 0, w, h);
       ctx.globalAlpha = Math.max(0, Math.min(1, (3600 - age) / 900));
       for (const p of parts) {
-        p.vy += 0.38;
-        p.vx *= 0.99;
-        p.x += p.vx;
-        p.y += p.vy;
-        p.r += p.vr;
+        p.vy += 0.38 * k;
+        p.vx *= 0.99 ** k;
+        p.x += p.vx * k;
+        p.y += p.vy * k;
+        p.r += p.vr * k;
         ctx.save();
         ctx.translate(p.x, p.y);
         ctx.rotate(p.r);
@@ -54,11 +66,13 @@ function useConfetti(canvas: React.RefObject<HTMLCanvasElement>, colors: string[
         ctx.restore();
       }
       if (age < 3600) raf = requestAnimationFrame(tick);
-      else ctx.clearRect(0, 0, innerWidth, innerHeight);
+      else ctx.clearRect(0, 0, w, h);
     };
     raf = requestAnimationFrame(tick);
-    window.addEventListener('resize', resize);
-    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); };
+    // Sigue al canvas (barra de scroll que desaparece, barra del navegador en el celu, rotación).
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize);
+    if (ro) ro.observe(c); else window.addEventListener('resize', resize);
+    return () => { cancelAnimationFrame(raf); ro?.disconnect(); window.removeEventListener('resize', resize); };
   }, [canvas, colors]);
 }
 
@@ -72,18 +86,20 @@ export function Celebration({ routine, seed, done, total, studentName, onClose }
     const css = getComputedStyle(document.documentElement);
     return mix.map((m) => css.getPropertyValue(`--cap-${m.id}`).trim()).filter(Boolean);
   });
-  useConfetti(canvas, colors);
-  const [feeling, setFeeling] = useState<number | null>(null);
-  const [comment, setComment] = useState('');
-  const benefits = benefitsFor(routine, seed);
-
+  // Antes que el confeti: sin la barra de scroll, el canvas se mide con su ancho final.
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = prev; };
   }, []);
+  useConfetti(canvas, colors);
+  const [feeling, setFeeling] = useState<number | null>(null);
+  const [comment, setComment] = useState('');
+  const benefits = benefitsFor(routine, seed);
 
-  return (
+  // En el <body>: dentro de una pantalla animada el position:fixed queda atrapado
+  // y el festejo sale corrido, tapado por la barra y con el confeti estirado.
+  return createPortal(
     <div className="bt bt-celebrate" role="dialog" aria-modal="true" aria-labelledby="cel-title">
       <canvas ref={canvas} aria-hidden="true" />
       <div className="cel">
@@ -130,6 +146,7 @@ export function Celebration({ routine, seed, done, total, studentName, onClose }
           Listo
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

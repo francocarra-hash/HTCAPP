@@ -1,4 +1,5 @@
 import { ReactNode, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { fmtValue, monthShort, shortDate, Unit } from './data';
 
 // ── íconos (trazo 1.8, mismos que la bitácora) ──────────────────────────────
@@ -142,7 +143,8 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
     window.addEventListener('keydown', esc);
     return () => { document.body.style.overflow = prev; window.removeEventListener('keydown', esc); };
   }, [onClose]);
-  return (
+  // En el <body>: dentro de una pantalla animada el position:fixed queda atrapado.
+  return createPortal(
     <div className="bt bt-sheet-back" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="sheet" role="dialog" aria-modal="true" aria-label={title}>
         <div className="in">
@@ -154,7 +156,8 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
           {children}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
