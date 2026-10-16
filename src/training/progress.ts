@@ -1,9 +1,12 @@
 /**
  * Progreso de un alumno a partir de sus sesiones. Sólo usa las cantidades que el
  * coach escribió: no estima, no extrapola. Un ejercicio entra en el progreso
- * cuando aparece con dosis comparable en al menos 3 sesiones.
+ * cuando aparece con dosis comparable en al menos 3 sesiones. Todo se agrupa
+ * además por capacidad física (fuerza, movilidad, reactividad…).
  */
-import { doseOf, firstName, fold, ParsedItem, ParsedSessionBody } from './parser';
+import { CAPACITIES, CapacityId } from './capacities';
+import { doseOf, exerciseName, firstName, fold } from './parser';
+import { exerciseGroups, itemText, Routine, RoutineItem } from './routine';
 
 export type Unit = 's' | 'reps' | 'kg';
 
@@ -17,6 +20,7 @@ export interface ProgressPoint {
 export interface ExerciseSeries {
   key: string;
   name: string;
+  capacity: CapacityId | null;
   unit: Unit;
   points: ProgressPoint[];
   first: number;
@@ -29,22 +33,46 @@ export interface ProgressStats {
   first_date: string | null;
   last_date: string | null;
   weeks_active: number;
+  /** Semanas desde la primera sesión (incluida la actual): "semana N de tu proceso". */
+  process_week: number;
   per_week: number | null;
   this_month: number;
   streak_weeks: number;
+}
+
+export interface Highlight {
+  key: string; name: string; capacity: CapacityId | null; unit: Unit;
+  from: number; to: number; first_date: string; last_date: string;
+}
+
+export interface CapacitySummary {
+  id: CapacityId;
+  label: string;
+  /** Sesiones en las que se trabajó. */
+  sessions: number;
+  /** Ejercicios con seguimiento (≥3 sesiones) y cuántos mejoraron. */
+  tracked: number;
+  improved: number;
+  top: Highlight | null;
+  /** Parte del trabajo de las últimas 4 semanas (0–1), entre ejercicios clasificados. */
+  recent_share: number;
 }
 
 export interface Progress {
   stats: ProgressStats;
   months: Array<{ month: string; count: number }>;
   exercises: ExerciseSeries[];
-  highlights: Array<{ key: string; name: string; unit: Unit; from: number; to: number; first_date: string; last_date: string }>;
+  highlights: Highlight[];
+  capacities: CapacitySummary[];
 }
 
 export interface SessionForProgress {
   date: string;
-  parsed: ParsedSessionBody;
+  routine: Routine;
 }
+
+/** Metadatos de la biblioteca: nombre elegido por el coach y capacidad. */
+export type ExerciseInfo = (key: string, name: string) => { name?: string; capacity: CapacityId | null };
 
 const ALIASES: Record<string, string> = {
   yiwto: 'iywto',
@@ -65,15 +93,14 @@ export function exerciseKey(name: string): string {
   return aliased.split(' ').sort().join(' ');
 }
 
+/** Clave de un ítem de rutina (nombre + dosis tal como se escribió). */
+export const itemKey = (it: RoutineItem): string => exerciseKey(exerciseName(itemText(it)));
+
 /** Ítems "propios" del alumno: sin variantes de otros y sin la base que su variante reemplaza. */
-function ownItems(parsed: ParsedSessionBody, who: string): ParsedItem[] {
-  const groups: ParsedItem[][] = [
-    ...parsed.circuits.flatMap((c) => c.stations),
-    ...(parsed.strength?.lines.map((l) => l.items) ?? []),
-  ];
+export function ownItems(routine: Routine, who: string): RoutineItem[] {
   const me = fold(who);
-  const out: ParsedItem[] = [];
-  for (const g of groups) {
+  const out: RoutineItem[] = [];
+  for (const g of exerciseGroups(routine)) {
     g.forEach((it, i) => {
       if (it.who) return; // variantes: se muestran, pero no se grafican
       const next = g[i + 1];
@@ -96,10 +123,20 @@ const weekStart = (date: string): number => {
   const d = new Date(`${date}T00:00:00Z`);
   return d.getTime() - ((d.getUTCDay() + 6) % 7) * 86400000;
 };
+const isoDate = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-export function buildProgress(studentName: string, sessions: SessionForProgress[], today = new Date()): Progress {
+const NO_INFO: ExerciseInfo = () => ({ capacity: null });
+
+export function buildProgress(
+  studentName: string,
+  sessions: SessionForProgress[],
+  info: ExerciseInfo = NO_INFO,
+  today = new Date(),
+): Progress {
   const sorted = [...sessions].filter((s) => s.date).sort((a, b) => a.date.localeCompare(b.date));
   const who = firstName(studentName);
+  const todayIso = isoDate(today);
 
   // ── estadísticas ──
   const weeks = new Set(sorted.map((s) => isoWeek(s.date)));
@@ -110,7 +147,8 @@ export function buildProgress(studentName: string, sessions: SessionForProgress[
     const span = Math.max(1, Math.round((weekStart(last) - weekStart(first)) / (7 * 86400000)) + 1);
     perWeek = Math.round((sorted.length / span) * 10) / 10;
   }
-  const monthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  const processWeek = first ? Math.max(1, Math.floor((weekStart(todayIso) - weekStart(first)) / (7 * 86400000)) + 1) : 0;
+  const monthKey = todayIso.slice(0, 7);
   let streak = 0;
   if (last) {
     let w = weekStart(last);
@@ -137,29 +175,46 @@ export function buildProgress(studentName: string, sessions: SessionForProgress[
     }
   }
 
-  // ── series por ejercicio ──
+  // ── series por ejercicio + trabajo por capacidad ──
   interface Raw { date: string; s: number[]; reps: number[]; kg: number[]; text: string; name: string }
   const byKey = new Map<string, Raw[]>();
-  for (const s of sorted) {
+  const capOf = new Map<string, CapacityId | null>();
+  const nameOf = new Map<string, string | undefined>();
+  const capSessions = new Map<CapacityId, Set<string>>();
+  const recentFrom = last ? isoDate(new Date(new Date(`${last}T12:00:00`).getTime() - 27 * 86400000)) : '';
+  const recent = new Map<CapacityId, number>();
+
+  sorted.forEach((s, si) => {
     const seen = new Map<string, Raw>();
-    for (const it of ownItems(s.parsed, who)) {
-      if (!it.name) continue;
-      const key = exerciseKey(it.name);
+    for (const it of ownItems(s.routine, who)) {
+      const display = exerciseName(itemText(it));
+      if (!display) continue;
+      const key = exerciseKey(display);
       if (!key) continue;
-      const d = doseOf(it.text);
+      if (!capOf.has(key)) {
+        const meta = info(key, it.name);
+        capOf.set(key, meta.capacity);
+        nameOf.set(key, meta.name);
+      }
+      const cap = capOf.get(key) ?? null;
+      if (cap) {
+        capSessions.set(cap, (capSessions.get(cap) ?? new Set()).add(`${si}`));
+        if (s.date >= recentFrom) recent.set(cap, (recent.get(cap) ?? 0) + 1);
+      }
+      const d = doseOf(itemText(it));
       if (!d.seconds.length && !d.reps.length && !d.kg.length) continue;
       const prev = seen.get(key);
       if (prev) {
         // Mismo ejercicio dos veces en la sesión: se juntan las cantidades.
         prev.s.push(...d.seconds); prev.reps.push(...d.reps); prev.kg.push(...d.kg);
-        prev.text += ` · ${it.text}`;
+        prev.text += ` · ${itemText(it)}`;
         continue;
       }
-      const raw: Raw = { date: s.date, s: d.seconds, reps: d.reps, kg: d.kg, text: it.text, name: it.name };
+      const raw: Raw = { date: s.date, s: d.seconds, reps: d.reps, kg: d.kg, text: itemText(it), name: it.name };
       seen.set(key, raw);
       byKey.set(key, [...(byKey.get(key) ?? []), raw]);
     }
-  }
+  });
 
   const exercises: ExerciseSeries[] = [];
   for (const [key, rows] of byKey) {
@@ -177,27 +232,41 @@ export function buildProgress(studentName: string, sessions: SessionForProgress[
       if (!pick || spread > pick.spread) pick = { unit, pts, spread };
     }
     if (!pick) continue;
-    // Nombre visible: la forma más frecuente con la que lo escribió el coach.
+    // Nombre visible: el que eligió el coach, o la forma más frecuente con la que lo escribió.
     const freq = new Map<string, number>();
     for (const r of rows) freq.set(r.name, (freq.get(r.name) ?? 0) + 1);
     const top = [...freq.entries()].sort((a, b) => b[1] - a[1])[0]![0];
-    const name = top.charAt(0).toUpperCase() + top.slice(1);
+    const name = nameOf.get(key) ?? top.charAt(0).toUpperCase() + top.slice(1);
     const vals = pick.pts.map((p) => p.value);
     exercises.push({
-      key, name, unit: pick.unit, points: pick.pts,
+      key, name, capacity: capOf.get(key) ?? null, unit: pick.unit, points: pick.pts,
       first: vals[0]!, last: vals[vals.length - 1]!, best: Math.max(...vals),
     });
   }
   exercises.sort((a, b) => b.points.length - a.points.length || a.name.localeCompare(b.name));
 
-  const highlights = exercises
-    .filter((e) => e.last > e.first && e.first > 0)
-    .sort((a, b) => (b.last - b.first) / b.first - (a.last - a.first) / a.first)
-    .slice(0, 6)
-    .map((e) => ({
-      key: e.key, name: e.name, unit: e.unit, from: e.first, to: e.last,
-      first_date: e.points[0]!.date, last_date: e.points[e.points.length - 1]!.date,
-    }));
+  const gain = (e: { first: number; last: number }) => (e.last - e.first) / e.first;
+  const toHighlight = (e: ExerciseSeries): Highlight => ({
+    key: e.key, name: e.name, capacity: e.capacity, unit: e.unit, from: e.first, to: e.last,
+    first_date: e.points[0]!.date, last_date: e.points[e.points.length - 1]!.date,
+  });
+  const improved = exercises.filter((e) => e.last > e.first && e.first > 0).sort((a, b) => gain(b) - gain(a));
+  const highlights = improved.slice(0, 6).map(toHighlight);
+
+  const recentTotal = [...recent.values()].reduce((a, b) => a + b, 0);
+  const capacities: CapacitySummary[] = CAPACITIES.filter((c) => capSessions.has(c.id)).map((c) => {
+    const mine = exercises.filter((e) => e.capacity === c.id);
+    const best = improved.find((e) => e.capacity === c.id);
+    return {
+      id: c.id,
+      label: c.label,
+      sessions: capSessions.get(c.id)?.size ?? 0,
+      tracked: mine.length,
+      improved: mine.filter((e) => e.last > e.first && e.first > 0).length,
+      top: best ? toHighlight(best) : null,
+      recent_share: recentTotal ? Math.round(((recent.get(c.id) ?? 0) / recentTotal) * 1000) / 1000 : 0,
+    };
+  });
 
   return {
     stats: {
@@ -205,6 +274,7 @@ export function buildProgress(studentName: string, sessions: SessionForProgress[
       first_date: first,
       last_date: last,
       weeks_active: weeks.size,
+      process_week: processWeek,
       per_week: perWeek,
       this_month: sorted.filter((s) => s.date.startsWith(monthKey)).length,
       streak_weeks: streak,
@@ -212,5 +282,6 @@ export function buildProgress(studentName: string, sessions: SessionForProgress[
     months,
     exercises,
     highlights,
+    capacities,
   };
 }

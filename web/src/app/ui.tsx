@@ -27,11 +27,43 @@ export const Icon = {
   logout: svg(<><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" /><path d="M10 16l-4-4 4-4M6 12h10" /></>),
   key: svg(<><circle cx="8" cy="15" r="4" /><path d="M11 12l8-8M16 7l2 2M14 9l2 2" /></>),
   share: svg(<><path d="M12 15V4M8 8l4-4 4 4" /><path d="M5 12v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6" /></>),
+  check: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
+    </svg>
+  ),
+  bell: svg(<><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15L6 16z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></>),
+  grip: svg(<><circle cx="9" cy="6" r="1.2" /><circle cx="15" cy="6" r="1.2" /><circle cx="9" cy="12" r="1.2" /><circle cx="15" cy="12" r="1.2" /><circle cx="9" cy="18" r="1.2" /><circle cx="15" cy="18" r="1.2" /></>),
+  calendar: svg(<><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M4 9.5h16M8.5 3v4M15.5 3v4" /><path d="M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01" /></>),
+  book: svg(<><path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5z" /><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19M9 7h6M9 10.5h4" /></>),
+  note: svg(<><path d="M5 4h14v11l-5 5H5z" /><path d="M14 20v-5h5M8.5 8.5h7M8.5 12h4" /></>),
+  flame: svg(<path d="M12 21c-3.9 0-6.5-2.6-6.5-6.2 0-3.1 2.2-5.1 3.6-7.4.5 1.5 1.3 2.6 2.4 3.1C11.5 7.4 12.6 4.7 14.8 3c.2 3 3.7 5.4 3.7 10.4C18.5 18.1 15.8 21 12 21z" />),
+  copyPrev: svg(<><path d="M9 14l-4-4 4-4" /><path d="M5 10h9a5 5 0 0 1 0 10h-2" /></>),
+  blank: svg(<><rect x="5" y="3.5" width="14" height="17" rx="2" /><path d="M12 9v6M9 12h6" /></>),
+  paste: svg(<><rect x="6" y="4" width="12" height="17" rx="2" /><path d="M9.5 3h5v3h-5zM9 11h6M9 14.5h6M9 18h3.5" /></>),
+  dup: svg(<><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></>),
+  x: svg(<path d="M6 6l12 12M18 6L6 18" />),
+  plus: svg(<path d="M12 5v14M5 12h14" />),
+  play: svg(<path d="M8 5.5v13l10.5-6.5z" />),
+  star: svg(<path d="M12 3.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8L12 16.9 6.7 19.6l1-5.8-4.2-4.1 5.9-.9z" />),
 };
+
+/** Etiqueta de capacidad: color + nombre escrito (nunca sólo color). */
+export function CapTag({ id, label, lg, muted }: { id: string; label: string; lg?: boolean; muted?: boolean }) {
+  return (
+    <span className={`cap${lg ? ' lg' : ''}${muted ? ' muted' : ''}`} style={{ ['--c' as string]: `var(--cap-${id})` }}>
+      <i aria-hidden="true" />{label}
+    </span>
+  );
+}
 
 // ── estructura ──────────────────────────────────────────────────────────────
 
-export function TopHeader({ title, sub, onBack, right }: { title: string; sub?: ReactNode; onBack?: () => void; right?: ReactNode }) {
+export function TopHeader({ title, sub, onBack, right, below }: {
+  title: string; sub?: ReactNode; onBack?: () => void; right?: ReactNode;
+  /** Va dentro del header sticky (ej. barra de progreso de la rutina). */
+  below?: ReactNode;
+}) {
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
     const on = () => setScrolled(window.scrollY > 4);
@@ -49,6 +81,7 @@ export function TopHeader({ title, sub, onBack, right }: { title: string; sub?: 
         <div className="top-right">{right}</div>
       </div>
       {sub && <div className="sub">{sub}</div>}
+      {below}
     </header>
   );
 }

@@ -7,6 +7,9 @@ import request from 'supertest';
 import { doseOf, exerciseName, fixDates, parseBody, splitSessions } from '../training/parser';
 import { buildProgress, exerciseKey } from '../training/progress';
 import { InMemoryTrainingRepository } from '../training/repository';
+import { routineFromParsed } from '../training/routine';
+import { suggestCapacity } from '../training/capacities';
+import { nextSessions, occurrences } from '../training/schedule';
 import { createAuthRouter, createStudentRouter, createTrainingRouter } from '../api/router-training';
 import { createRouter } from '../api/router';
 import { InMemoryRepository } from '../db/repository';
@@ -133,16 +136,64 @@ describe('parser — sesiones y fechas', () => {
   });
 });
 
+describe('rutina en bloques', () => {
+  const r = routineFromParsed(parseBody(SESSION, [ANA, BETO]));
+
+  test('el texto se convierte en bloques con ids estables', () => {
+    expect(r.blocks.map((b) => [b.kind, b.title, b.rounds])).toEqual([
+      ['list', 'Movilidad', null], ['circuit', 'Circuito', 2], ['superset', 'Bloque principal', 3], ['notes', 'Notas', null],
+    ]);
+    const station = r.blocks[1]!.groups[1]!.items;
+    expect(station.map((i) => [i.id, i.name, i.dose])).toEqual([
+      ['b1g1i0', 'High side plank', '10r'], ['b1g1i1', 'Copenhagen', '30s+10r'],
+    ]);
+    // "SL 8" queda con el nombre completo del ejercicio que modifica.
+    expect(r.blocks[1]!.groups[2]!.items[1]).toMatchObject({ name: 'Rolling Tabletop SL', dose: '8' });
+    expect(r.blocks[2]!.groups[1]!.items[2]).toMatchObject({ who: 'Ana', name: '15 inclined' });
+  });
+
+  test('capacidad sugerida por el nombre (el coach la puede cambiar)', () => {
+    expect(suggestCapacity('CMJ')).toBe('reactividad');
+    expect(suggestCapacity('Chair Jump Squat')).toBe('reactividad');
+    expect(suggestCapacity('Hip CARs')).toBe('movilidad');
+    expect(suggestCapacity('Jefferson to plank')).toBe('movilidad');
+    expect(suggestCapacity('SL No eyes')).toBe('control_motor');
+    expect(suggestCapacity('Copenhagen')).toBe('estabilidad');
+    expect(suggestCapacity('Wall sit')).toBe('fuerza');
+    expect(suggestCapacity('Skater Sq')).toBe('fuerza');
+    expect(suggestCapacity('Supine thumbs up')).toBeNull();
+  });
+});
+
+describe('agenda', () => {
+  const sched = { weekly: [{ weekday: 1, time: '18:00' }, { weekday: 4, time: '18:00' }], once: [{ date: '2026-10-24', time: '10:00', note: 'recupera' }], skip: ['2026-10-22'] };
+
+  test('días fijos, fecha puntual y día cancelado', () => {
+    expect(occurrences(sched, '2026-10-19', '2026-10-26').map((o) => `${o.date} ${o.time}`)).toEqual([
+      '2026-10-19 18:00', '2026-10-24 10:00', '2026-10-26 18:00',
+    ]);
+  });
+
+  test('la de hoy cuenta si todavía no pasó su hora', () => {
+    expect(nextSessions(sched, 1, { date: '2026-10-19', time: '17:00' })[0]).toMatchObject({ date: '2026-10-19' });
+    expect(nextSessions(sched, 1, { date: '2026-10-19', time: '19:00' })[0]).toMatchObject({ date: '2026-10-24' });
+    expect(nextSessions(null)).toEqual([]);
+  });
+});
+
 describe('progreso', () => {
-  const s = (date: string, body: string) => ({ date, parsed: parseBody(body, [ANA, BETO]) });
+  const s = (date: string, body: string) => ({ date, routine: routineFromParsed(parseBody(body, [ANA, BETO])) });
   const sessions = [
     s('2026-02-01', '[Wall sit 1:05min - Push up iso 30s/ ana inclined] x2'),
     s('2026-03-01', '[Wall sit 1:30min - Push up iso 40s/ ana inclined] x2'),
     s('2026-04-01', '[Wall sit 2:30min - Push up iso 45s/ ana inclined] x2'),
   ];
 
-  test('serie por ejercicio con la dosis escrita y logros', () => {
-    const p = buildProgress('Beto', sessions, new Date('2026-04-15'));
+  test('serie por ejercicio con la dosis escrita, logros y capacidades', () => {
+    const p = buildProgress('Beto', sessions, (_k, name) => ({ capacity: suggestCapacity(name) }), new Date('2026-04-15'));
+    expect(p.capacities.map((c) => [c.id, c.tracked, c.improved])).toEqual([['fuerza', 2, 2]]);
+    expect(p.capacities[0]!.top).toMatchObject({ name: 'Wall sit', from: 65, to: 150 });
+    expect(p.stats.process_week).toBeGreaterThan(9);
     const wall = p.exercises.find((e) => e.name === 'Wall sit')!;
     expect(wall.unit).toBe('s');
     expect(wall.points.map((x) => x.value)).toEqual([65, 90, 150]);
@@ -152,7 +203,7 @@ describe('progreso', () => {
   });
 
   test('la base que reemplaza una variante personal no cuenta para esa persona', () => {
-    const p = buildProgress('Ana Pérez', sessions, new Date('2026-04-15'));
+    const p = buildProgress('Ana Pérez', sessions, undefined, new Date('2026-04-15'));
     expect(p.exercises.find((e) => e.name === 'Push up iso')).toBeUndefined();
     expect(p.exercises.find((e) => e.name === 'Wall sit')).toBeDefined();
   });
@@ -248,6 +299,81 @@ describe('API — alumnos, sesiones y permisos', () => {
     const reset = await request(a).post(`/api/training/students/${ana.body.student.id}/password`).set('Authorization', auth).send({});
     expect(reset.body.password).toMatch(/^ana-/);
     expect((await request(a).post('/api/login').send({ username: 'ana', password: reset.body.password })).status).toBe(200);
+  });
+
+  test('rutina asignada: el alumno tilda, anota, termina y al profe le llega', async () => {
+    const a = app();
+    const auth = await coach(a);
+    const ana = await request(a).post('/api/training/students').set('Authorization', auth).send({ name: 'Ana' });
+    const routine = {
+      blocks: [
+        { id: 'm', kind: 'list', title: 'Movilidad', rounds: null, groups: [{ id: 'g0', items: [{ id: 'i0', name: 'Hip CARs', dose: '5' }] }] },
+        { id: 'f', kind: 'superset', title: 'Fuerza', rounds: 3, groups: [{ id: 'g1', items: [{ id: 'i1', name: 'Wall sit', dose: '1min' }, { id: 'i2', name: 'CMJ', dose: '3' }] }] },
+      ],
+    };
+    const created = await request(a).post('/api/training/sessions/routine').set('Authorization', auth)
+      .send({ date: '2026-10-20', status: 'planned', participant_ids: [ana.body.student.id], routine });
+    expect(created.status).toBe(201);
+    expect(created.body.session.routine.blocks[1].groups[0].items.map((i: { capacity: string }) => i.capacity)).toEqual(['fuerza', 'reactividad']);
+    const sid = created.body.session.id;
+
+    const tok = `Bearer ${(await request(a).post('/api/login').send({ username: 'ana', password: ana.body.password })).body.token}`;
+    const prog = await request(a).put(`/api/me/sessions/${sid}/progress`).set('Authorization', tok)
+      .send({ checks: ['i1'], notes: { i1: 'hice 50s, me ardía' } });
+    expect(prog.status).toBe(200);
+    expect(prog.body.completion.completed_at).toBeNull();
+
+    const done = await request(a).post(`/api/me/sessions/${sid}/complete`).set('Authorization', tok).send({ checks: ['i0', 'i1', 'i2'] });
+    expect(done.body.completion.completed_at).toBeTruthy();
+    const fb = await request(a).post(`/api/me/sessions/${sid}/complete`).set('Authorization', tok).send({ feeling: 4, comment: 'Bien' });
+    expect(fb.body.completion.completed_at).toBe(done.body.completion.completed_at); // no se pisa la hora
+    expect(fb.body.completion.notes).toEqual({ i1: 'hice 50s, me ardía' });
+
+    const act = await request(a).get('/api/training/activity').set('Authorization', auth);
+    expect(act.body.unseen).toBe(1);
+    expect(act.body.items[0]).toMatchObject({ student_name: 'Ana', feeling: 4, checks: 3, total: 3 });
+    expect(act.body.items[0].notes).toEqual([{ item: 'Wall sit 1min', note: 'hice 50s, me ardía' }]);
+    await request(a).post('/api/training/activity/seen').set('Authorization', auth);
+    expect((await request(a).get('/api/training/activity').set('Authorization', auth)).body.unseen).toBe(0);
+
+    // Otro alumno no puede tocar esa sesión.
+    const beto = await request(a).post('/api/training/students').set('Authorization', auth).send({ name: 'Beto' });
+    const tb = `Bearer ${(await request(a).post('/api/login').send({ username: 'beto', password: beto.body.password })).body.token}`;
+    expect((await request(a).post(`/api/me/sessions/${sid}/complete`).set('Authorization', tb).send({})).status).toBe(404);
+  });
+
+  test('biblioteca: ejercicios de todos los alumnos y capacidad fijada por el coach', async () => {
+    const a = app();
+    const auth = await coach(a);
+    const ana = await request(a).post('/api/training/students').set('Authorization', auth).send({ name: 'Ana' });
+    await request(a).post('/api/training/sessions').set('Authorization', auth)
+      .send({ text: '1/9/2026\n[Kickstand 10 - Wall sit 1min] x2', student_ids: [ana.body.student.id] });
+    const lib = await request(a).get('/api/training/exercises').set('Authorization', auth);
+    const kick = lib.body.exercises.find((e: { name: string }) => e.name === 'Kickstand');
+    expect(kick).toMatchObject({ uses: 1, students: ['Ana'], capacity: 'fuerza', capacity_source: 'auto' });
+    await request(a).put(`/api/training/exercises/${encodeURIComponent(kick.key)}`).set('Authorization', auth)
+      .send({ name: 'Kickstand RDL', capacity: 'control_motor' });
+    const lib2 = await request(a).get('/api/training/exercises').set('Authorization', auth);
+    expect(lib2.body.exercises.find((e: { key: string }) => e.key === kick.key))
+      .toMatchObject({ name: 'Kickstand RDL', capacity: 'control_motor', capacity_source: 'coach' });
+    const custom = await request(a).post('/api/training/exercises').set('Authorization', auth).send({ name: 'Turkish get up', capacity: 'estabilidad' });
+    expect(custom.status).toBe(201);
+  });
+
+  test('agenda del alumno: la próxima sesión aparece en la lista', async () => {
+    const a = app();
+    const auth = await coach(a);
+    const ana = await request(a).post('/api/training/students').set('Authorization', auth).send({ name: 'Ana' });
+    const all = [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, time: null }));
+    const r = await request(a).patch(`/api/training/students/${ana.body.student.id}`).set('Authorization', auth)
+      .send({ schedule: { weekly: all, once: [], skip: [] } });
+    expect(r.status).toBe(200);
+    expect(r.body.next_sessions).toHaveLength(3);
+    const list = await request(a).get('/api/training/students').set('Authorization', auth);
+    expect(list.body.students[0].next_session).toBeTruthy();
+    const bad = await request(a).patch(`/api/training/students/${ana.body.student.id}`).set('Authorization', auth)
+      .send({ schedule: { weekly: [{ weekday: 9, time: '25:00' }], once: [], skip: [] } });
+    expect(bad.status).toBe(400);
   });
 
   test('el usuario del profe está reservado', async () => {

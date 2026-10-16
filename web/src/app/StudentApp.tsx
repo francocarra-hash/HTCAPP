@@ -1,71 +1,65 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../api';
-import { firstName, initials, longDate, Profile, relDays, Session, shortDate, studentApi } from './data';
-import { ProgressView } from './ProgressView';
-import { HistoryList, SessionCard } from './SessionView';
-import { Enter, Icon, Seg, Skeleton, TabBar, TabDef, TopHeader, useToast } from './ui';
+import {
+  CAP_LABEL, firstName, initials, longDate, Occurrence, ProcessPhase, Profile, relDays, Session, studentApi, todayIso,
+  whenLabel, cap,
+} from './data';
+import { ProgressView, WinCard } from './ProgressView';
+import { HistoryList, RoutineBlocks, RoutinePlayer } from './RoutineView';
+import { CapTag, Enter, Icon, Skeleton, TabBar, TabDef, TopHeader, useToast } from './ui';
 
-type Tab = 'rutina' | 'progreso' | 'historial' | 'perfil';
+type Tab = 'hoy' | 'progreso' | 'historial' | 'perfil';
 
 const TABS: TabDef<Tab>[] = [
-  { id: 'rutina', label: 'Rutina', icon: Icon.routine },
+  { id: 'hoy', label: 'Hoy', icon: Icon.routine },
   { id: 'progreso', label: 'Progreso', icon: Icon.progress },
   { id: 'historial', label: 'Historial', icon: Icon.history },
   { id: 'perfil', label: 'Perfil', icon: Icon.user },
 ];
 
-export function partnersOf(session: Session, selfId: string, names: Map<string, string>): string {
-  const others = session.participant_ids.filter((id) => id !== selfId).map((id) => firstName(names.get(id) ?? ''));
-  return others.filter(Boolean).join(' y ');
+/** Rutina asignada que el alumno todavía no terminó (la más próxima o atrasada). */
+export function pendingSession(p: Profile): Session | undefined {
+  const mine = (s: Session) => s.completions.find((c) => c.student_id === p.student.id);
+  const pending = p.sessions.filter((s) => s.status === 'planned' && !mine(s)?.completed_at);
+  const today = todayIso();
+  return pending.filter((s) => s.date <= today).pop() ?? pending.find((s) => s.date > today);
 }
 
-/** Rutina: la última sesión (o una de las 3 últimas) como tarjetas numeradas. */
-export function RoutineView({ profile, viewer }: { profile: Profile; viewer: string | undefined }) {
-  const recent = [...profile.sessions].reverse().slice(0, 3);
-  const [pick, setPick] = useState(recent[0]?.id ?? '');
-  const session = recent.find((s) => s.id === pick) ?? recent[0];
-  const names = new Map(profile.partners.map((p) => [p.id, p.name]));
-  if (!session) {
-    return (
-      <p className="empty">
-        {viewer ? 'Tu profe todavía no cargó tu primera rutina.' : 'Todavía no hay sesiones. Cargá la primera desde “Cargar”.'}
-      </p>
-    );
-  }
-  const partner = partnersOf(session, profile.student.id, names);
+/** Última sesión realizada (por el profe o terminada por el alumno). */
+export function lastRealized(p: Profile): Session | undefined {
+  return [...p.sessions].reverse().find((s) => s.status === 'done' || s.completions.some((c) => c.student_id === p.student.id && c.completed_at));
+}
+
+export function partnersOf(session: Session, selfId: string, names: Map<string, string>): string {
+  return session.participant_ids.filter((id) => id !== selfId).map((id) => firstName(names.get(id) ?? '')).filter(Boolean).join(' y ');
+}
+
+export function NextCard({ next, you }: { next: Occurrence | undefined; you: boolean }) {
+  if (!next) return null;
   return (
-    <>
-      {recent.length > 1 && (
-        <Seg small value={session.id} onChange={setPick}
-          options={recent.map((s, i): [string, string] => [s.id, i === 0 ? `Última · ${shortDate(s.date)}` : shortDate(s.date)])} />
-      )}
-      {(session.title || partner) && (
-        <div className="phase">
-          <span className="ph-tag">{session.title ? 'Foco' : 'Dúo'}</span>
-          <div>
-            {session.title && <b>{session.title}. </b>}
-            {partner && <span>{viewer ? 'Entrenaste' : 'Entrenó'} con {partner}.</span>}
-          </div>
-        </div>
-      )}
-      {!viewer && session.date_note && (
-        <div className="phase warn"><span className="ph-tag">Fecha</span><div>{session.date_note}</div></div>
-      )}
-      <SessionCard key={session.id} session={session} viewer={viewer} />
-    </>
+    <div className="next">
+      <span className="ic" aria-hidden="true">{Icon.calendar}</span>
+      <div>
+        <span>{you ? 'Tu próxima sesión' : 'Próxima sesión'}</span>
+        <b>{cap(whenLabel(next))}</b>
+        {next.note && <span>{next.note}</span>}
+      </div>
+    </div>
   );
 }
 
 export default function StudentApp({ onLogout }: { onLogout: () => void }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>('rutina');
+  const [tab, setTab] = useState<Tab>('hoy');
+  const [prog, setProg] = useState<{ done: number; total: number } | null>(null);
   const [toast, showToast] = useToast();
 
   const load = useCallback(() => {
     studentApi.me().then(setProfile).catch((e: Error) => setError(e.message));
   }, []);
   useEffect(load, [load]);
+  const onProgress = useCallback((done: number, total: number) => setProg({ done, total }), []);
 
   const go = (t: Tab) => {
     if (t === tab) window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -73,29 +67,40 @@ export default function StudentApp({ onLogout }: { onLogout: () => void }) {
   };
 
   const s = profile?.student;
-  const viewer = s ? firstName(s.name) : undefined;
-  const last = profile?.sessions[profile.sessions.length - 1];
-  const titles: Record<Tab, string> = { rutina: 'Rutina', progreso: 'Progreso', historial: 'Historial', perfil: 'Perfil' };
+  const pending = profile ? pendingSession(profile) : undefined;
+  const last = profile ? lastRealized(profile) : undefined;
+  const titles: Record<Tab, string> = { hoy: pending ? 'Tu rutina' : 'Hoy', progreso: 'Progreso', historial: 'Historial', perfil: 'Perfil' };
   const sub = !profile ? null
-    : tab === 'rutina' ? (last ? <><span>Última sesión: <b>{longDate(last.date)}</b></span><span>{relDays(last.date)}</span></> : <span>Hola, {viewer}</span>)
-    : tab === 'progreso' ? <span>Cómo vas mejorando sesión a sesión</span>
-    : tab === 'historial' ? <span>{profile.sessions.length} sesiones registradas</span>
-    : <span>Tus datos y tu cuenta</span>;
+    : tab === 'hoy'
+      ? pending
+        ? <><span>Para el <b>{longDate(pending.date)}</b></span>{prog && <span><b>{prog.done}</b> de {prog.total}</span>}</>
+        : <span>Hola, {firstName(profile.student.name)} 👋</span>
+      : tab === 'progreso' ? <span>Tus avances, por capacidad</span>
+      : tab === 'historial' ? <span>{profile.sessions.length} sesiones</span>
+      : <span>Tu proceso de entrenamiento</span>;
+  const below = tab === 'hoy' && pending && prog
+    ? <div className={`pbar${prog.done === prog.total && prog.total ? ' full' : ''}`} role="progressbar" aria-valuemin={0} aria-valuemax={prog.total} aria-valuenow={prog.done} aria-label="Ejercicios hechos"><i style={{ width: `${prog.total ? (prog.done / prog.total) * 100 : 0}%` }} /></div>
+    : null;
 
   return (
     <div className="bt">
       <div className="bt-page">
         <div className="wrap">
-          <TopHeader title={titles[tab]} sub={sub}
+          <TopHeader title={titles[tab]} sub={sub} below={below}
             right={s && <button className={`avatar${tab === 'perfil' ? ' on' : ''}`} onClick={() => go('perfil')} aria-label="Perfil">{initials(s.name)}</button>} />
           <main aria-live="polite">
             {error ? <p className="empty">No se pudo cargar tu información: {error}</p>
               : !profile ? <Skeleton />
               : (
                 <Enter k={tab}>
-                  {tab === 'rutina' && <RoutineView profile={profile} viewer={viewer} />}
+                  {tab === 'hoy' && (pending
+                    ? (
+                      <RoutinePlayer key={pending.id} session={pending} studentId={profile.student.id} studentName={profile.student.name}
+                        onProgress={onProgress} onDone={() => { setProg(null); load(); }} />
+                    )
+                    : <TodayIdle profile={profile} last={last} />)}
                   {tab === 'progreso' && <ProgressView progress={profile.progress} you />}
-                  {tab === 'historial' && <HistoryList sessions={profile.sessions} viewer={viewer} />}
+                  {tab === 'historial' && <HistoryList sessions={profile.sessions} viewer={firstName(profile.student.name)} studentId={profile.student.id} />}
                   {tab === 'perfil' && <ProfileTab profile={profile} onLogout={onLogout} onSaved={() => showToast('Contraseña actualizada')} />}
                 </Enter>
               )}
@@ -108,15 +113,78 @@ export default function StudentApp({ onLogout }: { onLogout: () => void }) {
   );
 }
 
+function TodayIdle({ profile, last }: { profile: Profile; last: Session | undefined }) {
+  const names = new Map(profile.partners.map((p) => [p.id, p.name]));
+  const partner = last ? partnersOf(last, profile.student.id, names) : '';
+  const own = last?.completions.find((c) => c.student_id === profile.student.id);
+  return (
+    <>
+      <NextCard next={profile.next_sessions[0]} you />
+      <div className="phase" style={{ marginTop: 12 }}>
+        <span className="ph-tag">Al día</span>
+        <div>Tu profe te asigna la próxima rutina y aparece acá para que la hagas y la tildes.</div>
+      </div>
+      {last && (
+        <>
+          <div className="card-h" style={{ marginTop: 20 }}>
+            <h2>Tu última sesión</h2>
+            <span className="mini">{relDays(last.date)}</span>
+          </div>
+          <p className="hint" style={{ marginTop: 2 }}>
+            {cap(longDate(last.date))}{partner ? ` · con ${partner}` : ''}{own?.completed_at ? ' · terminada ✓' : ''}
+          </p>
+          <RoutineBlocks routine={last.routine} viewer={firstName(profile.student.name)} defaultOpen={null} />
+        </>
+      )}
+    </>
+  );
+}
+
+/** Hitos reales por cantidad de sesiones, cuando el profe no cargó etapas. */
+function autoPhases(sessions: number, first: string | null): ProcessPhase[] {
+  const marks = [10, 25, 50, 75, 100, 150, 200];
+  const phases: ProcessPhase[] = [{ id: 'start', title: 'Arrancaste', description: first ? `El ${longDate(first)}.` : null, status: 'done' }];
+  let next = false;
+  for (const m of marks) {
+    if (sessions >= m) phases.push({ id: `m${m}`, title: `${m} sesiones`, description: null, status: 'done' });
+    else if (!next) {
+      next = true;
+      phases.push({ id: `m${m}`, title: `${m} sesiones`, description: `Te ${m - sessions === 1 ? 'falta 1' : `faltan ${m - sessions}`}.`, status: 'current' });
+    }
+  }
+  return phases.slice(-5);
+}
+
+export function ProcessTimeline({ phases }: { phases: ProcessPhase[] }) {
+  return (
+    <ol className="tl">
+      {phases.map((p, i) => (
+        <li key={p.id} className={p.status}>
+          <span className="dot" aria-hidden="true">{p.status === 'done' ? Icon.check : i + 1}</span>
+          <div>
+            <b>{p.title}</b>{p.status === 'current' && <span className="here">Estás acá</span>}
+            {p.description && <p>{p.description}</p>}
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 function ProfileTab({ profile, onLogout, onSaved }: { profile: Profile; onLogout: () => void; onSaved: () => void }) {
   const s = profile.student;
+  const { stats, highlights, capacities } = profile.progress;
   const [cur, setCur] = useState('');
   const [next, setNext] = useState('');
   const [rep, setRep] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  const line = [s.age ? `${s.age} años` : null, profile.partners[0] ? `entrena con ${firstName(profile.partners[0].name)}` : null]
-    .filter(Boolean).join(' · ');
+  const phases = useMemo(
+    () => (s.process?.length ? s.process : autoPhases(stats.sessions, stats.first_date)),
+    [s.process, stats.sessions, stats.first_date],
+  );
+  const partner = profile.partners[0] ? firstName(profile.partners[0].name) : null;
+  const improvedTotal = capacities.reduce((a, c) => a + c.improved, 0);
 
   const save = async () => {
     setErr('');
@@ -139,16 +207,58 @@ function ProfileTab({ profile, onLogout, onSaved }: { profile: Profile; onLogout
           <div className="avatar-lg" aria-hidden="true">{initials(s.name)}</div>
           <div style={{ minWidth: 0 }}>
             <h2>{s.name}</h2>
-            {line && <p>{line}</p>}
+            <p>{[s.age ? `${s.age} años` : null, partner ? `entrena con ${partner}` : null].filter(Boolean).join(' · ') || 'Tu espacio de entrenamiento'}</p>
           </div>
         </div>
+        {stats.sessions > 0 && (
+          <div className="mhero" style={{ marginTop: 18 }}>
+            <div className="wk">Semana {stats.process_week}<small>de tu proceso · {stats.sessions} sesiones</small></div>
+            <div className="side">
+              <b>{Icon.flame}{stats.streak_weeks}</b>
+              <small>{stats.streak_weeks === 1 ? 'semana seguida' : 'semanas seguidas'}</small>
+            </div>
+          </div>
+        )}
+        <NextCard next={profile.next_sessions[0]} you />
       </section>
+
       {s.goal && (
         <section className="card">
-          <h2>Objetivo</h2>
-          <p style={{ margin: '8px 0 0', fontSize: 15 }}>{s.goal}</p>
+          <div className="label">Tu objetivo</div>
+          <p style={{ margin: '6px 0 0', fontSize: 16, fontWeight: 500 }}>{s.goal}</p>
         </section>
       )}
+
+      <section className="card">
+        <h2>Tu proceso</h2>
+        <div className="hint">{s.process?.length ? 'Las etapas que armó tu profe para vos.' : 'Tus hitos de constancia.'}</div>
+        <ProcessTimeline phases={phases} />
+      </section>
+
+      {highlights.length > 0 && (
+        <section className="card">
+          <h2>Tus mejores avances</h2>
+          <div className="hint">{improvedTotal} ejercicios mejoraron desde que empezaste.</div>
+          <div className="wins">{highlights.slice(0, 3).map((h, i) => <WinCard key={h.key} h={h} i={i} />)}</div>
+        </section>
+      )}
+
+      {capacities.length > 0 && (
+        <section className="card">
+          <h2>Tus capacidades</h2>
+          <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+            {capacities.map((c) => (
+              <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+                <CapTag id={c.id} label={CAP_LABEL[c.id]} lg />
+                <span style={{ fontFamily: 'var(--f-data)', fontSize: 12.5, color: 'var(--muted)', textAlign: 'right' }}>
+                  {c.improved ? `${c.improved} ${c.improved === 1 ? 'mejoró' : 'mejoraron'}` : `${c.sessions} sesiones`}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="card">
         <h2>Cuenta</h2>
         <div className="hint">Entrás con el usuario <b style={{ fontFamily: 'var(--f-data)' }}>{s.username}</b>.</div>

@@ -5,34 +5,44 @@ import V3App from '../v3/V3App';
 import { api as v3api, DOMAIN_ES } from '../v3/shared';
 import { AssessmentSummary } from '../v3/types';
 import {
-  coachApi, daysSince, firstName, initials, longDate, PreviewSession, Profile, relDays, Session, sessionSummary,
-  SEX_LABEL, Sex, shortDate, Student, StudentListItem, todayIso,
+  ActivityItem, coachApi, daysSince, firstName, initials, localDateOf, longDate, ProcessPhase, Profile, relDays, Session,
+  SEX_LABEL, Sex, shortDate, Student, StudentListItem, timeAgo, todayIso, uid, whenLabel, cap,
 } from './data';
+import { AgendaEditor } from './Agenda';
+import { ExerciseLibrary, useLibrary } from './ExerciseLibrary';
+import { PlanSession } from './Plan';
 import { ProgressView } from './ProgressView';
-import { HistoryList, SessionCard, SessionCompact } from './SessionView';
-import { RoutineView } from './StudentApp';
+import { HistoryList, RoutineBlocks } from './RoutineView';
+import { lastRealized, NextCard, ProcessTimeline } from './StudentApp';
 import { Enter, Icon, Seg, Sheet, Skeleton, TabBar, TabDef, TopHeader, useToast } from './ui';
 
-type Tab = 'alumnos' | 'cargar' | 'evaluaciones';
-type DetailTab = 'rutina' | 'progreso' | 'historial' | 'datos';
+type Tab = 'alumnos' | 'planificar' | 'ejercicios' | 'evaluaciones';
+type DetailTab = 'rutina' | 'progreso' | 'historial' | 'agenda' | 'datos';
 
 const TABS: TabDef<Tab>[] = [
   { id: 'alumnos', label: 'Alumnos', icon: Icon.users },
-  { id: 'cargar', label: 'Cargar', icon: Icon.add },
+  { id: 'planificar', label: 'Planificar', icon: Icon.add },
+  { id: 'ejercicios', label: 'Ejercicios', icon: Icon.book },
   { id: 'evaluaciones', label: 'Evaluaciones', icon: Icon.eval },
 ];
 
 interface EvalCtx { key: number; studentId?: string; prefill?: { key: number; name: string; age: number | null; sex: Sex | null }; openId?: { key: number; id: string } }
+interface PlanCtx { key: number; ids: string[]; editing: Session | null; back?: string }
+
+const FEEL_LABEL = ['', 'muy duro', 'duro', 'bien', 'muy bien', 'genial'];
 
 export default function CoachApp({ onLogout, authEnabled }: { onLogout: () => void; authEnabled: boolean }) {
   const [tab, setTab] = useState<Tab>('alumnos');
   const [students, setStudents] = useState<StudentListItem[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [loadFor, setLoadFor] = useState<{ key: number; ids: string[] } | null>(null);
+  const [plan, setPlan] = useState<PlanCtx>({ key: 0, ids: [], editing: null });
   const [evalCtx, setEvalCtx] = useState<EvalCtx | null>(null);
   const [legacy, setLegacy] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [activity, setActivity] = useState<{ items: ActivityItem[]; unseen: number } | null>(null);
+  const [showActivity, setShowActivity] = useState(false);
+  const [library, reloadLibrary] = useLibrary();
   const [toast, showToast] = useToast();
 
   const refresh = useCallback(() => {
@@ -40,19 +50,40 @@ export default function CoachApp({ onLogout, authEnabled }: { onLogout: () => vo
   }, []);
   useEffect(refresh, [refresh]);
 
+  // Actividad de los alumnos (sesiones terminadas): se consulta cada minuto y al volver a la app.
+  const loadActivity = useCallback(() => { coachApi.activity().then(setActivity).catch(() => undefined); }, []);
+  useEffect(() => {
+    loadActivity();
+    const t = window.setInterval(loadActivity, 60_000);
+    window.addEventListener('focus', loadActivity);
+    return () => { window.clearInterval(t); window.removeEventListener('focus', loadActivity); };
+  }, [loadActivity]);
+
   const go = (t: Tab) => {
     if (t === tab) {
       if (t === 'alumnos') setSelected(null);
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
+    if (t === 'planificar' && !plan.editing && !plan.ids.length && selected) setPlan({ key: Date.now(), ids: [selected], editing: null });
     setTab(t);
     window.scrollTo(0, 0);
   };
   const openStudent = (id: string) => { setSelected(id); setTab('alumnos'); window.scrollTo(0, 0); };
+  const startPlan = (ids: string[], editing: Session | null = null) => {
+    setPlan({ key: Date.now(), ids, editing, back: selected ?? undefined });
+    setTab('planificar');
+    window.scrollTo(0, 0);
+  };
 
-  const avatar = (
-    <button className={`avatar${menu ? ' on' : ''}`} onClick={() => setMenu(true)} aria-label="Cuenta del profe">PR</button>
+  const right = (
+    <>
+      <button className="avatar bell" onClick={() => setShowActivity(true)} aria-label={`Actividad${activity?.unseen ? `: ${activity.unseen} nuevas` : ''}`}>
+        {Icon.bell}
+        {activity && activity.unseen > 0 && <span className="count">{activity.unseen}</span>}
+      </button>
+      <button className={`avatar${menu ? ' on' : ''}`} onClick={() => setMenu(true)} aria-label="Cuenta del profe">PR</button>
+    </>
   );
 
   const onAssessed = async (assessmentId: string) => {
@@ -71,19 +102,19 @@ export default function CoachApp({ onLogout, authEnabled }: { onLogout: () => vo
       {tab !== 'evaluaciones' ? (
         <div className="bt">
           <div className="bt-page">
-            <div className="wrap">
+            <div className={`wrap${tab === 'planificar' ? ' wide' : ''}`}>
               {tab === 'alumnos' && (selected
                 ? (
                   <StudentDetail
                     key={selected}
                     id={selected}
                     all={students ?? []}
-                    avatar={avatar}
+                    right={right}
                     toast={showToast}
                     onBack={() => { setSelected(null); refresh(); window.scrollTo(0, 0); }}
                     onDeleted={() => { setSelected(null); refresh(); showToast('Alumno eliminado'); }}
                     onChanged={refresh}
-                    onLoad={(ids) => { setLoadFor({ key: Date.now(), ids }); setTab('cargar'); window.scrollTo(0, 0); }}
+                    onPlan={startPlan}
                     onEvaluate={(s) => {
                       setEvalCtx({ key: Date.now(), studentId: s.id, prefill: { key: Date.now(), name: s.name, age: s.age, sex: s.sex } });
                       setLegacy(false);
@@ -96,23 +127,29 @@ export default function CoachApp({ onLogout, authEnabled }: { onLogout: () => vo
                     }}
                   />
                 )
-                : <StudentList students={students} error={listError} avatar={avatar} onOpen={openStudent} onCreated={(id) => { refresh(); openStudent(id); }} toast={showToast} />
+                : <StudentList students={students} error={listError} right={right} onOpen={openStudent}
+                    onCreated={(id) => { refresh(); openStudent(id); }} toast={showToast} />
               )}
-              {tab === 'cargar' && (
-                <LoadSessions
-                  key={loadFor?.key ?? 0}
+              {tab === 'planificar' && (
+                <PlanSession
+                  key={plan.key}
                   students={students ?? []}
-                  initialIds={loadFor?.ids ?? []}
-                  avatar={avatar}
-                  onSaved={(ids, n) => {
+                  initialIds={plan.ids}
+                  editing={plan.editing}
+                  avatar={right}
+                  library={library}
+                  toast={showToast}
+                  onCancel={plan.back ? () => openStudent(plan.back!) : undefined}
+                  onSaved={(ids, msg) => {
                     refresh();
-                    showToast(`${n} ${n === 1 ? 'sesión cargada' : 'sesiones cargadas'}`);
-                    setLoadFor(null);
-                    if (ids.length === 1) openStudent(ids[0]!);
-                    else { setSelected(null); setTab('alumnos'); }
+                    reloadLibrary();
+                    showToast(msg);
+                    setPlan({ key: Date.now(), ids: [], editing: null });
+                    if (ids.length >= 1) openStudent(ids[0]!);
                   }}
                 />
               )}
+              {tab === 'ejercicios' && <ExerciseLibrary avatar={right} toast={(m) => { showToast(m); reloadLibrary(); }} />}
             </div>
           </div>
           <TabBar tabs={TABS} current={tab} onChange={go} />
@@ -132,19 +169,13 @@ export default function CoachApp({ onLogout, authEnabled }: { onLogout: () => vo
                     </button>
                   </>
                 }
-                right={avatar}
+                right={right}
               />
             </div>
           </div>
           <div className="mx-auto max-w-6xl px-4 pb-28 pt-2 sm:px-6">
             {legacy ? <LegacyV2 /> : (
-              <V3App
-                key={evalCtx?.key ?? 0}
-                embedded
-                prefill={evalCtx?.prefill}
-                openId={evalCtx?.openId}
-                onAssessed={onAssessed}
-              />
+              <V3App key={evalCtx?.key ?? 0} embedded prefill={evalCtx?.prefill} openId={evalCtx?.openId} onAssessed={onAssessed} />
             )}
           </div>
           <div className="bt">
@@ -163,28 +194,66 @@ export default function CoachApp({ onLogout, authEnabled }: { onLogout: () => vo
           )}
         </Sheet>
       )}
+      {showActivity && (
+        <ActivitySheet data={activity} onClose={() => setShowActivity(false)}
+          onSeen={() => { coachApi.activitySeen().then(() => setActivity((a) => (a ? { ...a, unseen: 0 } : a))).catch(() => undefined); }}
+          onOpen={(id) => { setShowActivity(false); openStudent(id); }} />
+      )}
     </>
+  );
+}
+
+// ── actividad ───────────────────────────────────────────────────────────────
+
+function ActivitySheet({ data, onClose, onSeen, onOpen }: {
+  data: { items: ActivityItem[]; unseen: number } | null; onClose: () => void; onSeen: () => void; onOpen: (studentId: string) => void;
+}) {
+  useEffect(() => { if (data?.unseen) onSeen(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <Sheet title="Actividad" onClose={onClose}>
+      <p className="hint" style={{ margin: 0 }}>Sesiones que terminaron tus alumnos, con lo que anotaron.</p>
+      {!data ? <Skeleton /> : !data.items.length ? <p className="empty">Todavía nadie terminó una rutina asignada.</p> : (
+        <div>
+          {data.items.map((a) => (
+            <div key={`${a.session_id}${a.student_id}`} className="act">
+              <div className="act-h">
+                <b>{!a.seen && <span className="new" aria-label="nuevo" />}{a.student_name} terminó su sesión</b>
+                <span>{timeAgo(a.completed_at)}</span>
+              </div>
+              <div className="hint" style={{ margin: 0 }}>
+                {a.session_title ? `${a.session_title} · ` : ''}{a.session_date ? cap(longDate(a.session_date)) : ''} · {a.checks} de {a.total} ejercicios
+                {a.feeling ? ` · se sintió ${a.feeling}/5 (${FEEL_LABEL[a.feeling]})` : ''}
+              </div>
+              {a.comment && <div className="quote">“{a.comment}”</div>}
+              {a.notes.map((n, i) => <div key={i} className="nt"><b>{n.item}:</b> {n.note}</div>)}
+              <div><button className="btn ghost sm" style={{ paddingLeft: 0 }} onClick={() => onOpen(a.student_id)}>Ver perfil →</button></div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Sheet>
   );
 }
 
 // ── lista de alumnos ────────────────────────────────────────────────────────
 
-function StudentList({ students, error, avatar, onOpen, onCreated, toast }: {
-  students: StudentListItem[] | null; error: string | null; avatar: ReactNode;
+function StudentList({ students, error, right, onOpen, onCreated, toast }: {
+  students: StudentListItem[] | null; error: string | null; right: ReactNode;
   onOpen: (id: string) => void; onCreated: (id: string) => void; toast: (m: string) => void;
 }) {
   const [q, setQ] = useState('');
   const [creating, setCreating] = useState(false);
   const [creds, setCreds] = useState<{ student: Student; password: string } | null>(null);
-  const total = students?.reduce((a, s) => a + s.sessions_count, 0) ?? 0;
   const shown = (students ?? []).filter((s) => !q || s.name.toLowerCase().includes(q.toLowerCase()));
+  const today = todayIso();
+  const todays = (students ?? []).filter((s) => s.next_session?.date === today);
 
   return (
     <>
       <TopHeader
         title="Alumnos"
-        sub={students && <><span><b>{students.length}</b> {students.length === 1 ? 'alumno' : 'alumnos'}</span><span><b>{total}</b> sesiones</span></>}
-        right={avatar}
+        sub={students && <><span><b>{students.length}</b> {students.length === 1 ? 'alumno' : 'alumnos'}</span>{todays.length > 0 && <span><b>{todays.length}</b> entrenan hoy</span>}</>}
+        right={right}
       />
       {error ? <p className="empty">No se pudo cargar la lista: {error}</p> : !students ? <Skeleton /> : (
         <Enter>
@@ -195,19 +264,27 @@ function StudentList({ students, error, avatar, onOpen, onCreated, toast }: {
             <input className="search" type="search" placeholder="Buscar alumno…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar alumno" style={{ marginTop: 12 }} />
           )}
           {!students.length ? (
-            <p className="empty">Todavía no hay alumnos. Creá el primero y después cargale sus sesiones.</p>
+            <p className="empty">Todavía no hay alumnos. Creá el primero y después planificale su rutina.</p>
           ) : (
             <div>
-              {shown.map((s) => {
+              {[...shown].sort((a, b) => (a.next_session?.date ?? '9999').localeCompare(b.next_session?.date ?? '9999') || a.name.localeCompare(b.name)).map((s) => {
                 const d = daysSince(s.last_date);
-                const line = [s.age ? `${s.age} años` : null, s.partners.length ? `con ${s.partners.map(firstName).join(' y ')}` : null, s.goal]
+                const trainedToday = Boolean(s.last_completed_at && localDateOf(s.last_completed_at) === today);
+                const line = [s.age ? `${s.age} años` : null, s.partners.length ? `con ${s.partners.map(firstName).join(' y ')}` : null]
                   .filter(Boolean).join(' · ');
                 return (
                   <button key={s.id} className="stu" onClick={() => onOpen(s.id)}>
                     <span className="avatar" aria-hidden="true">{initials(s.name)}</span>
-                    <span style={{ minWidth: 0, display: 'grid', gap: 3 }}>
+                    <span style={{ minWidth: 0, display: 'grid', gap: 4 }}>
                       <span className="stu-name">{s.name}</span>
                       <span className="stu-line">{line || `@${s.username}`}</span>
+                      <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <span className={`pill${s.next_session?.date === today ? ' accent' : ''}`}>
+                          {s.next_session ? `Próx. ${whenLabel(s.next_session)}` : 'Sin agenda'}
+                        </span>
+                        {trainedToday && <span className="pill done">✓ Entrenó hoy</span>}
+                        {!trainedToday && s.pending_count > 0 && <span className="pill">Rutina asignada</span>}
+                      </span>
                     </span>
                     <span className="stu-r">
                       <b>{s.sessions_count}</b>
@@ -333,15 +410,15 @@ function CredentialsSheet({ student, password, toast, onClose }: { student: Stud
 
 // ── perfil del alumno (vista del coach) ─────────────────────────────────────
 
-function StudentDetail({ id, all, avatar, toast, onBack, onDeleted, onChanged, onLoad, onEvaluate, onOpenAssessment }: {
-  id: string; all: StudentListItem[]; avatar: ReactNode; toast: (m: string) => void;
-  onBack: () => void; onDeleted: () => void; onChanged: () => void; onLoad: (ids: string[]) => void;
+function StudentDetail({ id, all, right, toast, onBack, onDeleted, onChanged, onPlan, onEvaluate, onOpenAssessment }: {
+  id: string; all: StudentListItem[]; right: ReactNode; toast: (m: string) => void;
+  onBack: () => void; onDeleted: () => void; onChanged: () => void;
+  onPlan: (ids: string[], editing?: Session | null) => void;
   onEvaluate: (s: Student) => void; onOpenAssessment: (studentId: string, assessmentId: string) => void;
 }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<DetailTab>('rutina');
-  const [editing, setEditing] = useState<Session | null>(null);
 
   const load = useCallback(() => {
     coachApi.student(id).then(setProfile).catch((e: Error) => setError(e.message));
@@ -350,7 +427,9 @@ function StudentDetail({ id, all, avatar, toast, onBack, onDeleted, onChanged, o
 
   const names = useMemo(() => new Map(all.map((s) => [s.id, s.name])), [all]);
   const s = profile?.student;
-  const last = profile?.sessions[profile.sessions.length - 1];
+  const last = profile ? lastRealized(profile) : undefined;
+  const planned = (profile?.sessions ?? []).filter((x) => x.status === 'planned' && !x.completions.some((c) => c.student_id === id && c.completed_at));
+  const partnerIds = last?.participant_ids.filter((p) => p !== id) ?? [];
 
   const remove = async (sess: Session) => {
     if (!window.confirm(`¿Borrar la sesión del ${longDate(sess.date)}?${sess.participant_ids.length > 1 ? ' Se borra para todos los que la compartían.' : ''}`)) return;
@@ -366,26 +445,61 @@ function StudentDetail({ id, all, avatar, toast, onBack, onDeleted, onChanged, o
         onBack={onBack}
         sub={s && profile && (
           <>
-            <span>@{s.username}</span>
-            <span><b>{profile.sessions.length}</b> sesiones</span>
-            {last && <span>última {relDays(last.date)}</span>}
+            <span>Semana <b>{profile.progress.stats.process_week || '—'}</b></span>
+            <span><b>{profile.progress.stats.sessions}</b> sesiones</span>
+            <span>próx. {whenLabel(profile.next_sessions[0])}</span>
           </>
         )}
-        right={avatar}
+        right={right}
       />
       {error ? <p className="empty">No se pudo cargar: {error}</p> : !profile || !s ? <Skeleton /> : (
         <>
-          <Seg value={tab} onChange={(t) => setTab(t)}
-            options={[['rutina', 'Rutina'], ['progreso', 'Progreso'], ['historial', 'Historial'], ['datos', 'Datos']]} />
+          <Seg small value={tab} onChange={(t) => setTab(t)}
+            options={[['rutina', 'Rutina'], ['progreso', 'Progreso'], ['historial', 'Historial'], ['agenda', 'Agenda'], ['datos', 'Datos']]} />
           <Enter k={tab}>
             {tab === 'rutina' && (
               <>
-                <RoutineView profile={profile} viewer={undefined} />
-                <div className="actions" style={{ marginTop: 16 }}>
-                  <button className="btn primary wide" onClick={() => onLoad([s.id, ...(last?.participant_ids.filter((p) => p !== s.id) ?? [])])}>
-                    {Icon.add} Cargar sesión{last && last.participant_ids.length > 1 ? ` (con ${last.participant_ids.filter((p) => p !== s.id).map((p) => firstName(names.get(p) ?? '')).join(' y ')})` : ''}
+                <NextCard next={profile.next_sessions[0]} you={false} />
+                <div className="actions" style={{ marginTop: 12 }}>
+                  <button className="btn primary wide" onClick={() => onPlan([s.id, ...partnerIds])}>
+                    {Icon.add} Planificar próxima{partnerIds.length ? ` (con ${partnerIds.map((p) => firstName(names.get(p) ?? '')).join(' y ')})` : ''}
                   </button>
                 </div>
+                {planned.map((p) => (
+                  <div key={p.id}>
+                    <div className="card-h" style={{ marginTop: 20 }}>
+                      <h2>Asignada · {shortDate(p.date)}</h2>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="btn sm" onClick={() => onPlan(p.participant_ids, p)}>{Icon.edit} Editar</button>
+                        <button className="btn sm danger" aria-label="Borrar" onClick={() => remove(p)}>{Icon.trash}</button>
+                      </div>
+                    </div>
+                    <p className="hint" style={{ marginTop: 2 }}>
+                      {p.title ? `${p.title} · ` : ''}{p.completions.some((c) => c.checks.length) ? 'La está haciendo' : 'Todavía no la empezó'}
+                    </p>
+                    <RoutineBlocks routine={p.routine} viewer={undefined} completions={p.completions} names={names} defaultOpen={null} />
+                  </div>
+                ))}
+                {last ? (
+                  <>
+                    <div className="card-h" style={{ marginTop: 20 }}>
+                      <h2>Última sesión</h2>
+                      <span className="mini">{relDays(last.date)}</span>
+                    </div>
+                    <p className="hint" style={{ marginTop: 2 }}>
+                      {cap(longDate(last.date))}{last.title ? ` · ${last.title}` : ''}
+                      {last.participant_ids.length > 1 ? ` · con ${last.participant_ids.filter((p) => p !== id).map((p) => firstName(names.get(p) ?? '')).join(' y ')}` : ''}
+                    </p>
+                    {last.completions.filter((c) => c.completed_at).map((c) => (
+                      <div key={c.student_id} className="done-banner" style={{ marginTop: 8 }}>
+                        {Icon.check} {firstName(names.get(c.student_id) ?? '')} la terminó {timeAgo(c.completed_at!)}
+                        {c.feeling ? ` · ${c.feeling}/5` : ''}{c.comment ? ` · “${c.comment}”` : ''}
+                      </div>
+                    ))}
+                    {last.date_note && <div className="phase warn"><span className="ph-tag">Fecha</span><div>{last.date_note}</div></div>}
+                    <RoutineBlocks routine={last.routine} viewer={undefined} completions={last.completions} names={names} />
+                  </>
+                ) : !planned.length && <p className="empty">Todavía no tiene sesiones. Planificale la primera.</p>}
               </>
             )}
             {tab === 'progreso' && <ProgressView progress={profile.progress} you={false} />}
@@ -397,8 +511,13 @@ function StudentDetail({ id, all, avatar, toast, onBack, onDeleted, onChanged, o
                     <div>Hay {profile.sessions.filter((x) => x.date_note).length} fechas que estaban fuera de orden y se corrigieron solas. Abrí cada una (⚠) y confirmalas o editalas.</div>
                   </div>
                 )}
-                <HistoryList sessions={profile.sessions} viewer={undefined} names={names} onEdit={setEditing} onDelete={remove} />
+                <HistoryList sessions={profile.sessions} viewer={undefined} studentId={s.id} names={names}
+                  onEdit={(x) => onPlan(x.participant_ids, x)} onDelete={remove} />
               </>
+            )}
+            {tab === 'agenda' && (
+              <AgendaEditor student={s} sessions={profile.sessions} toast={toast}
+                onSaved={(st) => { setProfile({ ...profile, student: st }); load(); onChanged(); }} />
             )}
             {tab === 'datos' && (
               <DataTab profile={profile} toast={toast} onEvaluate={() => onEvaluate(s)}
@@ -409,11 +528,64 @@ function StudentDetail({ id, all, avatar, toast, onBack, onDeleted, onChanged, o
           </Enter>
         </>
       )}
-      {editing && (
-        <EditSessionSheet session={editing} all={all} onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); toast('Sesión actualizada'); load(); onChanged(); }} />
-      )}
     </>
+  );
+}
+
+// ── proceso ─────────────────────────────────────────────────────────────────
+
+function ProcessEditor({ student, toast, onSaved }: { student: Student; toast: (m: string) => void; onSaved: (s: Student) => void }) {
+  const [phases, setPhases] = useState<ProcessPhase[]>(student.process ?? []);
+  const [dirty, setDirty] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const edit = (fn: (p: ProcessPhase[]) => ProcessPhase[]) => { setPhases(fn); setDirty(true); };
+  const set = (i: string, patch: Partial<ProcessPhase>) => edit((p) => p.map((x) => (x.id === i ? { ...x, ...patch } : x)));
+  const moveBy = (i: number, d: number) => edit((p) => {
+    const n = [...p];
+    const [x] = n.splice(i, 1);
+    n.splice(Math.max(0, Math.min(n.length, i + d)), 0, x!);
+    return n;
+  });
+  const save = async () => {
+    setBusy(true);
+    try {
+      const clean = phases.filter((p) => p.title.trim()).map((p) => ({ ...p, title: p.title.trim(), description: p.description?.trim() || null }));
+      const r = await coachApi.updateStudent(student.id, { process: clean });
+      setPhases(clean);
+      setDirty(false);
+      onSaved(r.student);
+      toast('Proceso guardado');
+    } catch (e) { toast((e as ApiError).message); } finally { setBusy(false); }
+  };
+  return (
+    <section className="card">
+      <div className="card-h">
+        <h2>Proceso</h2>
+        <button className="btn sm" onClick={() => edit((p) => [...p, { id: uid(), title: '', description: null, status: p.length ? 'next' : 'current' }])}>{Icon.plus} Etapa</button>
+      </div>
+      <div className="hint">Las etapas que ve el alumno en su perfil, con la actual marcada. Ej.: “Base de movilidad”, “Fuerza”, “Reactividad”.</div>
+      {phases.length > 0 && (
+        <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+          {phases.map((p, i) => (
+            <div key={p.id} className="bgroup" style={{ padding: 10, gap: 8 }}>
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                <span className="lbl">{i + 1}</span>
+                <input className="search" style={{ marginTop: 0, minHeight: 40, padding: '6px 10px' }} value={p.title} placeholder="Nombre de la etapa"
+                  onChange={(e) => set(p.id, { title: e.target.value })} />
+                <button className="xbtn" aria-label="Subir" disabled={i === 0} onClick={() => moveBy(i, -1)} style={{ transform: 'rotate(90deg)' }}>{Icon.back}</button>
+                <button className="xbtn" aria-label="Bajar" disabled={i === phases.length - 1} onClick={() => moveBy(i, 1)} style={{ transform: 'rotate(-90deg)' }}>{Icon.back}</button>
+                <button className="xbtn" aria-label="Quitar etapa" onClick={() => edit((x) => x.filter((y) => y.id !== p.id))}>{Icon.x}</button>
+              </div>
+              <div className="field"><textarea value={p.description ?? ''} placeholder="Qué se trabaja (opcional)" onChange={(e) => set(p.id, { description: e.target.value })} style={{ minHeight: 56 }} /></div>
+              <Seg small value={p.status} onChange={(v) => set(p.id, { status: v })}
+                options={[['done', 'Hecha'], ['current', 'Actual'], ['next', 'Próxima']]} />
+            </div>
+          ))}
+        </div>
+      )}
+      {phases.length > 0 && !dirty && <ProcessTimeline phases={phases} />}
+      {dirty && <div className="actions"><button className="btn primary wide" disabled={busy} onClick={save}>{busy ? 'Guardando…' : 'Guardar proceso'}</button></div>}
+    </section>
   );
 }
 
@@ -468,6 +640,8 @@ function DataTab({ profile, toast, onEvaluate, onOpenAssessment, onSaved, onDele
           </div>
         </div>
       </section>
+
+      <ProcessEditor student={s} toast={toast} onSaved={onSaved} />
 
       <section className="card">
         <h2>Evaluaciones HTC</h2>
@@ -533,169 +707,5 @@ function DataTab({ profile, toast, onEvaluate, onOpenAssessment, onSaved, onDele
 
       {creds && <CredentialsSheet student={s} password={creds} toast={toast} onClose={() => setCreds(null)} />}
     </>
-  );
-}
-
-// ── cargar sesiones ─────────────────────────────────────────────────────────
-
-const PLACEHOLDER = `16/10/2026
-Cat/Cow - Spinal Bridge - Hip CARs - RDL SL
-[Rotational Plank 45s/ Crawling 1min - Copenhagen 30s+10r - Wall sit 2min] x2
-A1 - Skater sq 12 + CMJ 3
-A2 - Swimmers 15 + Push ups 20/25/30
-x3`;
-
-function LoadSessions({ students, initialIds, avatar, onSaved }: {
-  students: StudentListItem[]; initialIds: string[]; avatar: ReactNode; onSaved: (ids: string[], n: number) => void;
-}) {
-  const [ids, setIds] = useState<string[]>(initialIds);
-  const [date, setDate] = useState(todayIso());
-  const [text, setText] = useState('');
-  const [preview, setPreview] = useState<{ sessions: PreviewSession[]; warnings: string[] } | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-  const names = useMemo(() => new Map(students.map((s) => [s.id, s.name])), [students]);
-
-  const toggle = (id: string) => { setIds((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id])); setPreview(null); };
-  const run = async (save: boolean) => {
-    setBusy(true); setErr('');
-    try {
-      if (save) {
-        const r = await coachApi.saveSessions(text, ids, date);
-        onSaved(ids, r.sessions.length);
-      } else {
-        setPreview(await coachApi.preview(text, ids, date));
-        window.setTimeout(() => document.getElementById('preview')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
-      }
-    } catch (e) {
-      setErr((e as ApiError).message);
-    } finally { setBusy(false); }
-  };
-
-  return (
-    <>
-      <TopHeader title="Cargar" sub={<span>Pegá una o varias sesiones con tu formato de siempre</span>} right={avatar} />
-      <Enter>
-        <section className="card" style={{ marginTop: 4 }}>
-          <h2>¿Quiénes entrenaron?</h2>
-          <div className="hint">Si entrenan juntos, elegí a los dos: la sesión queda en ambos perfiles.</div>
-          {students.length ? (
-            <div className="chipset" style={{ marginTop: 12 }}>
-              {students.map((s) => (
-                <button key={s.id} className="tog" aria-pressed={ids.includes(s.id)} onClick={() => toggle(s.id)}>{s.name}</button>
-              ))}
-            </div>
-          ) : <p className="hint">Primero creá un alumno en la pestaña Alumnos.</p>}
-        </section>
-
-        <section className="card">
-          <div className="fields" style={{ marginTop: 0 }}>
-            <div className="field full">
-              <label htmlFor="ld-text">Sesiones</label>
-              <textarea id="ld-text" className="mono" value={text} placeholder={PLACEHOLDER} spellCheck={false}
-                onChange={(e) => { setText(e.target.value); setPreview(null); }} />
-              <small>
-                Cada sesión arranca con su fecha (13/2/2026). Si una sesión es sólo de uno, poné el nombre al lado: <b>26/6/2026 - Carlos</b>.
-                Variantes personales dentro de la sesión: <b>push ups 25/30/30/ ceci 15 inclined</b>.
-              </small>
-            </div>
-            <div className="field">
-              <label htmlFor="ld-date">Fecha si el texto no la trae</label>
-              <input id="ld-date" type="date" value={date} onChange={(e) => { setDate(e.target.value); setPreview(null); }} />
-            </div>
-          </div>
-          {err && <p className="err">{err}</p>}
-          <div className="actions">
-            <button className="btn primary wide" disabled={busy || !ids.length || !text.trim()} onClick={() => run(false)}>
-              {busy && !preview ? 'Leyendo…' : 'Vista previa'}
-            </button>
-          </div>
-        </section>
-
-        {preview && (
-          <section id="preview" style={{ scrollMarginTop: 90 }}>
-            <div className="card">
-              <div className="card-h">
-                <h2>{preview.sessions.length} {preview.sessions.length === 1 ? 'sesión' : 'sesiones'}</h2>
-                <span className="mini">{preview.sessions.filter((x) => x.date_note).length} fechas a revisar</span>
-              </div>
-              {preview.warnings.map((w, i) => <p key={i} className="flag" style={{ marginBottom: 0 }}>⚠ {w}</p>)}
-              <div style={{ marginTop: 8 }}>
-                {preview.sessions.map((p, i) => (
-                  <details className="sess" key={i}>
-                    <summary>
-                      <span className="st">{p.title ?? longDate(p.date)}</span>
-                      <span className="sd">{shortDate(p.date)}</span>
-                      <span className="sm">
-                        {sessionSummary(p.parsed)} · {p.participant_ids.map((x) => firstName(names.get(x) ?? '')).join(' y ')}
-                        {p.date_note && <><br /><span className="flag">⚠ {p.date_note}</span></>}
-                      </span>
-                    </summary>
-                    <div className="sbody"><SessionCompact parsed={p.parsed} viewer={undefined} /></div>
-                  </details>
-                ))}
-              </div>
-            </div>
-            {preview.sessions.length === 1 && (
-              <SessionCard session={preview.sessions[0]!} viewer={undefined} />
-            )}
-            <div className="actions" style={{ marginTop: 16 }}>
-              <button className="btn primary wide" disabled={busy || !preview.sessions.length} onClick={() => run(true)}>
-                {busy ? 'Guardando…' : `Guardar ${preview.sessions.length} ${preview.sessions.length === 1 ? 'sesión' : 'sesiones'}`}
-              </button>
-            </div>
-          </section>
-        )}
-      </Enter>
-    </>
-  );
-}
-
-function EditSessionSheet({ session, all, onClose, onSaved }: { session: Session; all: StudentListItem[]; onClose: () => void; onSaved: () => void }) {
-  const [date, setDate] = useState(session.date);
-  const [title, setTitle] = useState(session.title ?? '');
-  const [body, setBody] = useState(session.body);
-  const [ids, setIds] = useState<string[]>(session.participant_ids);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-  const save = async () => {
-    setBusy(true); setErr('');
-    try {
-      await coachApi.updateSession(session.id, {
-        ...(date !== session.date || session.date_note ? { date } : {}),
-        title: title.trim() || null, body, participant_ids: ids,
-      });
-      onSaved();
-    } catch (e) { setErr((e as ApiError).message); } finally { setBusy(false); }
-  };
-  return (
-    <Sheet title="Editar sesión" onClose={onClose}>
-      {session.date_note && <div className="phase warn" style={{ marginTop: 0 }}><span className="ph-tag">Fecha</span><div>{session.date_note} Al guardar, queda confirmada.</div></div>}
-      <div className="fields" style={{ marginTop: 0 }}>
-        <div className="field">
-          <label htmlFor="es-date">Fecha</label>
-          <input id="es-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        </div>
-        <div className="field">
-          <label htmlFor="es-title">Título (opcional)</label>
-          <input id="es-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ej. Hombros" />
-        </div>
-        <div className="field full">
-          <span className="lab">Quiénes</span>
-          <div className="chipset">
-            {all.map((s) => (
-              <button key={s.id} type="button" className="tog" aria-pressed={ids.includes(s.id)}
-                onClick={() => setIds((p) => (p.includes(s.id) ? p.filter((x) => x !== s.id) : [...p, s.id]))}>{s.name}</button>
-            ))}
-          </div>
-        </div>
-        <div className="field full">
-          <label htmlFor="es-body">Sesión</label>
-          <textarea id="es-body" className="mono" value={body} onChange={(e) => setBody(e.target.value)} spellCheck={false} />
-        </div>
-      </div>
-      {err && <p className="err">{err}</p>}
-      <button className="btn primary wide" disabled={busy || !ids.length || !body.trim()} onClick={save}>{busy ? 'Guardando…' : 'Guardar'}</button>
-    </Sheet>
   );
 }

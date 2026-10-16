@@ -1,11 +1,17 @@
 /**
- * Persistencia de alumnos y sesiones. Misma política que v2/v3: PostgreSQL si hay
- * DATABASE_URL, memoria si no (tests / desarrollo local).
+ * Persistencia de alumnos, sesiones, biblioteca de ejercicios y sesiones
+ * completadas. Misma política que v2/v3: PostgreSQL si hay DATABASE_URL,
+ * memoria si no (tests / desarrollo local).
  */
 import { randomUUID } from 'crypto';
 import { Pool } from 'pg';
+import { CapacityId } from './capacities';
+import { ProcessPhase } from './process';
+import { Routine } from './routine';
+import { Schedule } from './schedule';
 
 export type Sex = 'MALE' | 'FEMALE';
+export type SessionStatus = 'planned' | 'done';
 
 export interface Student {
   id: string;
@@ -15,10 +21,13 @@ export interface Student {
   sex: Sex | null;
   goal: string | null;
   notes: string | null;
+  schedule: Schedule | null;
+  process: ProcessPhase[] | null;
   created_at: string;
 }
 
-export type StudentPatch = Partial<Pick<Student, 'name' | 'username' | 'age' | 'sex' | 'goal' | 'notes'>>;
+export type StudentPatch = Partial<Pick<Student, 'name' | 'username' | 'age' | 'sex' | 'goal' | 'notes' | 'schedule' | 'process'>>;
+type NewStudent = Omit<Student, 'id' | 'created_at' | 'schedule' | 'process'> & { password_hash: string };
 
 export interface NewSession {
   date: string;
@@ -27,6 +36,9 @@ export interface NewSession {
   title: string | null;
   body: string;
   seq: number;
+  status: SessionStatus;
+  /** null = se deriva del texto. */
+  routine: Routine | null;
   participant_ids: string[];
 }
 
@@ -35,12 +47,44 @@ export interface StoredSession extends NewSession {
   created_at: string;
 }
 
+export interface ExerciseMeta {
+  key: string;
+  name: string;
+  capacity: CapacityId | null;
+  description: string | null;
+  custom: boolean;
+  updated_at: string;
+}
+
+export interface Completion {
+  session_id: string;
+  student_id: string;
+  checks: string[];
+  notes: Record<string, string>;
+  completed_at: string | null;
+  feeling: number | null;
+  comment: string | null;
+  coach_seen_at: string | null;
+  updated_at: string;
+}
+
+export interface CompletionUpdate {
+  session_id: string;
+  student_id: string;
+  checks?: string[];
+  notes?: Record<string, string>;
+  /** true = marca como terminada ahora (si ya lo estaba, conserva la fecha original). */
+  complete?: boolean;
+  feeling?: number | null;
+  comment?: string | null;
+}
+
 export interface TrainingRepository {
   listStudents(): Promise<Student[]>;
   getStudent(id: string): Promise<Student | undefined>;
   findByUsername(username: string): Promise<{ id: string; password_hash: string } | undefined>;
   getPasswordHash(id: string): Promise<string | undefined>;
-  createStudent(s: Omit<Student, 'id' | 'created_at'> & { password_hash: string }): Promise<Student>;
+  createStudent(s: NewStudent): Promise<Student>;
   updateStudent(id: string, patch: StudentPatch): Promise<Student | undefined>;
   setPasswordHash(id: string, hash: string): Promise<boolean>;
   /** Borra al alumno y las sesiones que quedan sin participantes. */
@@ -55,10 +99,22 @@ export interface TrainingRepository {
   listAssessmentLinks(studentId: string): Promise<string[]>;
   linkAssessment(studentId: string, assessmentId: string): Promise<void>;
   unlinkAssessment(studentId: string, assessmentId: string): Promise<void>;
+
+  listExerciseMeta(): Promise<ExerciseMeta[]>;
+  upsertExerciseMeta(m: Omit<ExerciseMeta, 'updated_at'>): Promise<ExerciseMeta>;
+  deleteExerciseMeta(key: string): Promise<boolean>;
+
+  listCompletions(filter: { studentId?: string; sessionIds?: string[] }): Promise<Completion[]>;
+  saveCompletion(u: CompletionUpdate): Promise<Completion>;
+  /** Sesiones terminadas por alumnos, más recientes primero. */
+  listActivity(limit: number): Promise<Completion[]>;
+  markActivitySeen(): Promise<void>;
 }
 
 const bySessionOrder = (a: StoredSession, b: StoredSession): number =>
   a.date.localeCompare(b.date) || a.seq - b.seq || a.created_at.localeCompare(b.created_at);
+
+const clone = <T>(v: T): T => (v == null ? v : (JSON.parse(JSON.stringify(v)) as T));
 
 // ── memoria ─────────────────────────────────────────────────────────────────
 
@@ -66,10 +122,12 @@ export class InMemoryTrainingRepository implements TrainingRepository {
   private students = new Map<string, Student & { password_hash: string }>();
   private sessions = new Map<string, StoredSession>();
   private links = new Map<string, Set<string>>();
+  private exercises = new Map<string, ExerciseMeta>();
+  private completions = new Map<string, Completion>();
 
   private pub(s: Student & { password_hash: string }): Student {
     const { password_hash: _h, ...rest } = s;
-    return { ...rest };
+    return clone(rest);
   }
 
   async listStudents(): Promise<Student[]> {
@@ -86,9 +144,9 @@ export class InMemoryTrainingRepository implements TrainingRepository {
   async getPasswordHash(id: string): Promise<string | undefined> {
     return this.students.get(id)?.password_hash;
   }
-  async createStudent(s: Omit<Student, 'id' | 'created_at'> & { password_hash: string }): Promise<Student> {
+  async createStudent(s: NewStudent): Promise<Student> {
     if ([...this.students.values()].some((x) => x.username === s.username)) throw new Error('USERNAME_TAKEN');
-    const full = { ...s, id: randomUUID(), created_at: new Date().toISOString() };
+    const full = { ...s, schedule: null, process: null, id: randomUUID(), created_at: new Date().toISOString() };
     this.students.set(full.id, full);
     return this.pub(full);
   }
@@ -98,7 +156,7 @@ export class InMemoryTrainingRepository implements TrainingRepository {
     if (patch.username && [...this.students.values()].some((x) => x.id !== id && x.username === patch.username)) {
       throw new Error('USERNAME_TAKEN');
     }
-    Object.assign(s, patch);
+    Object.assign(s, clone(patch));
     return this.pub(s);
   }
   async setPasswordHash(id: string, hash: string): Promise<boolean> {
@@ -110,6 +168,7 @@ export class InMemoryTrainingRepository implements TrainingRepository {
   async deleteStudent(id: string): Promise<boolean> {
     if (!this.students.delete(id)) return false;
     this.links.delete(id);
+    for (const [k, c] of this.completions) if (c.student_id === id) this.completions.delete(k);
     for (const [sid, sess] of this.sessions) {
       sess.participant_ids = sess.participant_ids.filter((p) => p !== id);
       if (!sess.participant_ids.length) this.sessions.delete(sid);
@@ -120,26 +179,26 @@ export class InMemoryTrainingRepository implements TrainingRepository {
   async listSessions(studentId?: string): Promise<StoredSession[]> {
     return [...this.sessions.values()]
       .filter((s) => !studentId || s.participant_ids.includes(studentId))
-      .map((s) => ({ ...s, participant_ids: [...s.participant_ids] }))
+      .map((s) => clone(s))
       .sort(bySessionOrder);
   }
   async getSession(id: string): Promise<StoredSession | undefined> {
-    const s = this.sessions.get(id);
-    return s && { ...s, participant_ids: [...s.participant_ids] };
+    return clone(this.sessions.get(id));
   }
   async createSessions(list: NewSession[]): Promise<StoredSession[]> {
     const now = new Date().toISOString();
-    const out = list.map((n) => ({ ...n, participant_ids: [...n.participant_ids], id: randomUUID(), created_at: now }));
+    const out = list.map((n) => ({ ...clone(n), id: randomUUID(), created_at: now }));
     for (const s of out) this.sessions.set(s.id, s);
-    return out.map((s) => ({ ...s, participant_ids: [...s.participant_ids] }));
+    return out.map((s) => clone(s));
   }
   async updateSession(id: string, patch: Partial<NewSession>): Promise<StoredSession | undefined> {
     const s = this.sessions.get(id);
     if (!s) return undefined;
-    Object.assign(s, patch, patch.participant_ids ? { participant_ids: [...patch.participant_ids] } : {});
-    return { ...s, participant_ids: [...s.participant_ids] };
+    Object.assign(s, clone(patch));
+    return clone(s);
   }
   async deleteSession(id: string): Promise<boolean> {
+    for (const [k, c] of this.completions) if (c.session_id === id) this.completions.delete(k);
     return this.sessions.delete(id);
   }
 
@@ -154,11 +213,63 @@ export class InMemoryTrainingRepository implements TrainingRepository {
   async unlinkAssessment(studentId: string, assessmentId: string): Promise<void> {
     this.links.get(studentId)?.delete(assessmentId);
   }
+
+  async listExerciseMeta(): Promise<ExerciseMeta[]> {
+    return [...this.exercises.values()].map((e) => clone(e));
+  }
+  async upsertExerciseMeta(m: Omit<ExerciseMeta, 'updated_at'>): Promise<ExerciseMeta> {
+    const full = { ...m, updated_at: new Date().toISOString() };
+    this.exercises.set(m.key, full);
+    return clone(full);
+  }
+  async deleteExerciseMeta(key: string): Promise<boolean> {
+    return this.exercises.delete(key);
+  }
+
+  async listCompletions(filter: { studentId?: string; sessionIds?: string[] }): Promise<Completion[]> {
+    return [...this.completions.values()]
+      .filter((c) => (!filter.studentId || c.student_id === filter.studentId)
+        && (!filter.sessionIds || filter.sessionIds.includes(c.session_id)))
+      .map((c) => clone(c));
+  }
+  async saveCompletion(u: CompletionUpdate): Promise<Completion> {
+    const k = `${u.session_id}:${u.student_id}`;
+    const now = new Date().toISOString();
+    const prev = this.completions.get(k) ?? {
+      session_id: u.session_id, student_id: u.student_id, checks: [], notes: {}, completed_at: null,
+      feeling: null, comment: null, coach_seen_at: null, updated_at: now,
+    };
+    const next: Completion = {
+      ...prev,
+      ...(u.checks ? { checks: [...u.checks] } : {}),
+      ...(u.notes ? { notes: { ...u.notes } } : {}),
+      ...(u.feeling !== undefined ? { feeling: u.feeling } : {}),
+      ...(u.comment !== undefined ? { comment: u.comment } : {}),
+      completed_at: u.complete ? prev.completed_at ?? now : prev.completed_at,
+      coach_seen_at: u.complete && !prev.completed_at ? null : prev.coach_seen_at,
+      updated_at: now,
+    };
+    this.completions.set(k, next);
+    return clone(next);
+  }
+  async listActivity(limit: number): Promise<Completion[]> {
+    return [...this.completions.values()]
+      .filter((c) => c.completed_at)
+      .sort((a, b) => b.completed_at!.localeCompare(a.completed_at!))
+      .slice(0, limit)
+      .map((c) => clone(c));
+  }
+  async markActivitySeen(): Promise<void> {
+    const now = new Date().toISOString();
+    for (const c of this.completions.values()) if (c.completed_at && !c.coach_seen_at) c.coach_seen_at = now;
+  }
 }
 
 // ── PostgreSQL ──────────────────────────────────────────────────────────────
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+const ts = (v: any): string | null => (v == null ? null : v instanceof Date ? v.toISOString() : String(v));
+
 const toStudent = (r: any): Student => ({
   id: r.id,
   name: r.name,
@@ -167,7 +278,9 @@ const toStudent = (r: any): Student => ({
   sex: r.sex ?? null,
   goal: r.goal ?? null,
   notes: r.notes ?? null,
-  created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+  schedule: r.schedule ?? null,
+  process: r.process ?? null,
+  created_at: ts(r.created_at)!,
 });
 
 const toSession = (r: any): StoredSession => ({
@@ -176,19 +289,36 @@ const toSession = (r: any): StoredSession => ({
   date_raw: r.date_raw ?? null,
   date_note: r.date_note ?? null,
   title: r.title ?? null,
-  body: r.body,
+  body: r.body ?? '',
   seq: r.seq,
-  created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+  status: r.status ?? 'done',
+  routine: r.routine ?? null,
+  created_at: ts(r.created_at)!,
   participant_ids: (r.participant_ids ?? []) as string[],
 });
 
-const STUDENT_COLS = 'id, name, username, age, sex, goal, notes, created_at';
+const toCompletion = (r: any): Completion => ({
+  session_id: r.session_id,
+  student_id: r.student_id,
+  checks: r.checks ?? [],
+  notes: r.notes ?? {},
+  completed_at: ts(r.completed_at),
+  feeling: r.feeling ?? null,
+  comment: r.comment ?? null,
+  coach_seen_at: ts(r.coach_seen_at),
+  updated_at: ts(r.updated_at)!,
+});
+
+const STUDENT_COLS = 'id, name, username, age, sex, goal, notes, schedule, process, created_at';
 const SESSION_SELECT = `
   SELECT s.id, to_char(s.session_date, 'YYYY-MM-DD') AS date, s.date_raw, s.date_note, s.title, s.body, s.seq,
-         s.created_at,
+         s.status, s.routine, s.created_at,
          COALESCE(array_agg(p.student_id::text) FILTER (WHERE p.student_id IS NOT NULL), '{}') AS participant_ids
     FROM training_sessions s
     LEFT JOIN training_session_participants p ON p.session_id = s.id`;
+const COMPLETION_COLS =
+  'session_id::text AS session_id, student_id::text AS student_id, checks, notes, completed_at, feeling, comment, coach_seen_at, updated_at';
+const json = (v: unknown): string | null => (v == null ? null : JSON.stringify(v));
 
 export class PgTrainingRepository implements TrainingRepository {
   constructor(private pool: Pool) {}
@@ -224,7 +354,7 @@ export class PgTrainingRepository implements TrainingRepository {
     const r = await this.pool.query('SELECT password_hash FROM training_students WHERE id = $1', [id]);
     return r.rows[0]?.password_hash;
   }
-  async createStudent(s: Omit<Student, 'id' | 'created_at'> & { password_hash: string }): Promise<Student> {
+  async createStudent(s: NewStudent): Promise<Student> {
     try {
       const r = await this.pool.query(
         `INSERT INTO training_students (id, name, username, password_hash, age, sex, goal, notes)
@@ -238,13 +368,14 @@ export class PgTrainingRepository implements TrainingRepository {
     }
   }
   async updateStudent(id: string, patch: StudentPatch): Promise<Student | undefined> {
-    const cols = (['name', 'username', 'age', 'sex', 'goal', 'notes'] as const).filter((k) => k in patch);
+    const cols = (['name', 'username', 'age', 'sex', 'goal', 'notes', 'schedule', 'process'] as const).filter((k) => k in patch);
     if (!cols.length) return this.getStudent(id);
+    const value = (c: (typeof cols)[number]) => (c === 'schedule' || c === 'process' ? json(patch[c]) : patch[c] ?? null);
     try {
       const r = await this.pool.query(
         `UPDATE training_students SET ${cols.map((c, i) => `${c} = $${i + 2}`).join(', ')}
           WHERE id = $1 RETURNING ${STUDENT_COLS}`,
-        [id, ...cols.map((c) => patch[c] ?? null)],
+        [id, ...cols.map(value)],
       );
       return r.rows[0] ? toStudent(r.rows[0]) : undefined;
     } catch (err) {
@@ -285,9 +416,9 @@ export class PgTrainingRepository implements TrainingRepository {
       for (const n of list) {
         const id = randomUUID();
         await q(
-          `INSERT INTO training_sessions (id, session_date, date_raw, date_note, title, body, seq)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-          [id, n.date, n.date_raw, n.date_note, n.title, n.body, n.seq],
+          `INSERT INTO training_sessions (id, session_date, date_raw, date_note, title, body, seq, status, routine)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [id, n.date, n.date_raw, n.date_note, n.title, n.body, n.seq, n.status, json(n.routine)],
         );
         for (const sid of n.participant_ids) {
           await q('INSERT INTO training_session_participants (session_id, student_id) VALUES ($1,$2)', [id, sid]);
@@ -302,14 +433,16 @@ export class PgTrainingRepository implements TrainingRepository {
   async updateSession(id: string, patch: Partial<NewSession>): Promise<StoredSession | undefined> {
     const map: Record<string, string> = {
       date: 'session_date', date_raw: 'date_raw', date_note: 'date_note', title: 'title', body: 'body', seq: 'seq',
+      status: 'status', routine: 'routine',
     };
     const keys = Object.keys(map).filter((k) => k in patch) as Array<keyof NewSession>;
+    const value = (k: keyof NewSession) => (k === 'routine' ? json(patch.routine) : patch[k] ?? null);
     const found = await this.tx(async (q) => {
       if (keys.length) {
         const r = await q(
           `UPDATE training_sessions SET ${keys.map((k, i) => `${map[k]} = $${i + 2}`).join(', ')}
             WHERE id = $1 RETURNING id`,
-          [id, ...keys.map((k) => patch[k] ?? null)],
+          [id, ...keys.map(value)],
         );
         if (!r.rows.length) return false;
       } else {
@@ -349,5 +482,72 @@ export class PgTrainingRepository implements TrainingRepository {
     await this.pool.query('DELETE FROM training_student_assessments WHERE student_id = $1 AND assessment_id = $2', [
       studentId, assessmentId,
     ]);
+  }
+
+  async listExerciseMeta(): Promise<ExerciseMeta[]> {
+    const r = await this.pool.query('SELECT key, name, capacity, description, custom, updated_at FROM training_exercises');
+    return r.rows.map((x) => ({ ...x, updated_at: ts(x.updated_at)! }));
+  }
+  async upsertExerciseMeta(m: Omit<ExerciseMeta, 'updated_at'>): Promise<ExerciseMeta> {
+    const r = await this.pool.query(
+      `INSERT INTO training_exercises (key, name, capacity, description, custom, updated_at)
+       VALUES ($1,$2,$3,$4,$5, now())
+       ON CONFLICT (key) DO UPDATE SET name = $2, capacity = $3, description = $4, custom = $5, updated_at = now()
+       RETURNING key, name, capacity, description, custom, updated_at`,
+      [m.key, m.name, m.capacity, m.description, m.custom],
+    );
+    return { ...r.rows[0], updated_at: ts(r.rows[0].updated_at)! };
+  }
+  async deleteExerciseMeta(key: string): Promise<boolean> {
+    const r = await this.pool.query('DELETE FROM training_exercises WHERE key = $1 RETURNING key', [key]);
+    return r.rows.length > 0;
+  }
+
+  async listCompletions(filter: { studentId?: string; sessionIds?: string[] }): Promise<Completion[]> {
+    const cond: string[] = [];
+    const params: unknown[] = [];
+    if (filter.studentId) { params.push(filter.studentId); cond.push(`student_id = $${params.length}`); }
+    if (filter.sessionIds) {
+      if (!filter.sessionIds.length) return [];
+      params.push(filter.sessionIds); cond.push(`session_id = ANY($${params.length}::uuid[])`);
+    }
+    const r = await this.pool.query(
+      `SELECT ${COMPLETION_COLS} FROM training_completions ${cond.length ? `WHERE ${cond.join(' AND ')}` : ''}`,
+      params as any[],
+    );
+    return r.rows.map(toCompletion);
+  }
+  async saveCompletion(u: CompletionUpdate): Promise<Completion> {
+    const r = await this.pool.query(
+      `INSERT INTO training_completions (session_id, student_id, checks, notes, completed_at, feeling, comment, updated_at)
+       VALUES ($1, $2, COALESCE($3::jsonb, '[]'), COALESCE($4::jsonb, '{}'), CASE WHEN $5 THEN now() END, $6, $7, now())
+       ON CONFLICT (session_id, student_id) DO UPDATE SET
+         checks       = COALESCE($3::jsonb, training_completions.checks),
+         notes        = COALESCE($4::jsonb, training_completions.notes),
+         completed_at = CASE WHEN $5 THEN COALESCE(training_completions.completed_at, now()) ELSE training_completions.completed_at END,
+         coach_seen_at = CASE WHEN $5 AND training_completions.completed_at IS NULL THEN NULL ELSE training_completions.coach_seen_at END,
+         feeling      = CASE WHEN $8 THEN $6 ELSE training_completions.feeling END,
+         comment      = CASE WHEN $9 THEN $7 ELSE training_completions.comment END,
+         updated_at   = now()
+       RETURNING ${COMPLETION_COLS}`,
+      [
+        u.session_id, u.student_id, json(u.checks ?? null), json(u.notes ?? null), Boolean(u.complete),
+        u.feeling ?? null, u.comment ?? null, u.feeling !== undefined, u.comment !== undefined,
+      ],
+    );
+    return toCompletion(r.rows[0]);
+  }
+  async listActivity(limit: number): Promise<Completion[]> {
+    const r = await this.pool.query(
+      `SELECT ${COMPLETION_COLS} FROM training_completions WHERE completed_at IS NOT NULL
+        ORDER BY completed_at DESC LIMIT $1`,
+      [limit],
+    );
+    return r.rows.map(toCompletion);
+  }
+  async markActivitySeen(): Promise<void> {
+    await this.pool.query(
+      'UPDATE training_completions SET coach_seen_at = now() WHERE completed_at IS NOT NULL AND coach_seen_at IS NULL',
+    );
   }
 }
