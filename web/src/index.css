@@ -1,7 +1,8 @@
 @import "tailwindcss";
+@import "./app/bitacora.css";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 html {
@@ -9,7 +10,10 @@ html {
 }
 
 body {
-  @apply bg-slate-100 text-slate-900 antialiased;
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   -webkit-tap-highlight-color: transparent;
   overflow-x: hidden;
 }
@@ -21,12 +25,5 @@ body {
   select,
   textarea {
     font-size: 16px !important;
-  }
-}
-
-/* Respeta el notch / barra inferior en iPhone. */
-@supports (padding: max(0px)) {
-  body {
-    padding-bottom: env(safe-area-inset-bottom);
   }
 }

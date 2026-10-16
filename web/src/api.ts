@@ -14,7 +14,7 @@ export const clearToken = (): void => localStorage.removeItem(TOKEN_KEY);
 let onUnauthorized: (() => void) | null = null;
 export const setUnauthorizedHandler = (fn: () => void): void => { onUnauthorized = fn; };
 
-async function req<T>(path: string, init?: RequestInit): Promise<T> {
+export async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   const res = await fetch(`/api${path}`, {
     ...init,
@@ -35,8 +35,16 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+export type Role = 'coach' | 'student';
+
 export const api = {
-  login: (password: string) => req<{ token: string | null; auth_enabled: boolean }>('/login', { method: 'POST', body: JSON.stringify({ password }) }),
+  login: (username: string, password: string) =>
+    req<{ token: string | null; auth_enabled: boolean; role: Role; name?: string }>('/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+  session: () =>
+    req<{ role: Role; auth_enabled: boolean; student?: { id: string; name: string } }>('/session'),
   tests: () => req<{ tests: CanonicalTest[] }>('/canonical/tests'),
   version: () => req<{ canonical_version: string; auth_enabled: boolean }>('/canonical/version'),
   clients: () => req<{ clients: ClientSummary[] }>('/clients'),

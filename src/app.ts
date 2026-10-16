@@ -16,6 +16,8 @@ import { createRouter } from './api/router';
 import { createRouterV3, loadCompiledV3 } from './api/router-v3';
 import { InMemoryV3Repository, PgV3Repository } from './v3/repository';
 import { authEnabled } from './api/auth';
+import { createAuthRouter, createStudentRouter, createTrainingRouter } from './api/router-training';
+import { InMemoryTrainingRepository, PgTrainingRepository } from './training/repository';
 
 const CANONICAL_DIR = process.env.HTC_CANONICAL_DIR ?? path.join(__dirname, '..', 'canonical');
 const WEB_DIST = path.join(__dirname, '..', 'web', 'dist');
@@ -62,6 +64,13 @@ async function main(): Promise<void> {
   } catch (e) {
     console.error(`[canonical-v3] NO disponible: ${e instanceof Error ? e.message : e}`);
   }
+
+  // Alumnos y sesiones de entrenamiento. Login con rol (coach / alumno) antes que
+  // el router v2, que tiene su propio /login de un solo usuario.
+  const trainingRepo = pool ? new PgTrainingRepository(pool) : new InMemoryTrainingRepository();
+  app.use('/api', createAuthRouter(trainingRepo));
+  app.use('/api/training', createTrainingRouter(trainingRepo));
+  app.use('/api/me', createStudentRouter(trainingRepo));
 
   // Single mount point: everything under /api (auth middleware guards it).
   app.use('/api', createRouter(compiled, repo));

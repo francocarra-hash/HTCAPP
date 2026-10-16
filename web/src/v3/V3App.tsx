@@ -11,7 +11,18 @@ type View =
   | { name: 'new' }
   | { name: 'result'; assessment: AssessmentV3; confirmation: CoachConfirmation | null };
 
-export default function V3App() {
+export interface V3AppProps {
+  /** Arranca una evaluación nueva con los datos de un alumno (cambia `key` para volver a disparar). */
+  prefill?: { key: number; name: string; age: number | null; sex: 'MALE' | 'FEMALE' | null };
+  /** Abre una evaluación existente. */
+  openId?: { key: number; id: string };
+  /** Se llama con el id de cada evaluación nueva (para vincularla al alumno). */
+  onAssessed?: (assessmentId: string) => void;
+  /** Dentro del panel del coach: el título lo pone el header de la app. */
+  embedded?: boolean;
+}
+
+export default function V3App({ prefill, openId, onAssessed, embedded }: V3AppProps = {}) {
   const [view, setView] = useState<View>({ name: 'dashboard' });
   const [cat, setCat] = useState<Catalogue | null>(null);
   const [rubrics, setRubrics] = useState<Rubrics>({});
@@ -112,6 +123,7 @@ export default function V3App() {
         }),
       });
       setView({ name: 'result', assessment: res.assessment, confirmation: null });
+      onAssessed?.(res.assessment.assessment_id);
       loadList();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e) {
@@ -120,6 +132,18 @@ export default function V3App() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally { setBusy(false); }
   };
+
+  // Evaluación nueva para un alumno: datos del cliente precargados.
+  useEffect(() => {
+    if (!prefill) return;
+    reset();
+    setName(prefill.name);
+    setAge(prefill.age ? String(prefill.age) : '');
+    if (prefill.sex) setSex(prefill.sex);
+    setView({ name: 'new' });
+    window.scrollTo(0, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill?.key]);
 
   const open = async (id: string) => {
     try {
@@ -131,6 +155,11 @@ export default function V3App() {
       setError({ code: err.code ?? 'ERROR', message: err.message });
     }
   };
+
+  useEffect(() => {
+    if (openId) void open(openId.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openId?.key]);
 
   if (!cat && !error) return <div className="py-20 text-center text-slate-400">Cargando catálogo v3…</div>;
 
@@ -152,10 +181,12 @@ export default function V3App() {
     return (
       <div className="space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Evaluaciones</h1>
-            <p className="mt-1 text-sm text-slate-500">HTC OS v3.0 · Health Gates → Clasificación → Movement → Roadmap</p>
-          </div>
+          {embedded ? <div /> : (
+            <div>
+              <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Evaluaciones</h1>
+              <p className="mt-1 text-sm text-slate-500">HTC OS v3.0 · Health Gates → Clasificación → Movement → Roadmap</p>
+            </div>
+          )}
           <button onClick={() => { reset(); setView({ name: 'new' }); }}
             className="w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 sm:w-auto">
             + Nueva evaluación
@@ -376,7 +407,11 @@ export default function V3App() {
         </div>
       </Card>
 
-      <div className="sticky bottom-3 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur sm:bottom-4 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4">
+      <div
+        className="sticky flex flex-col gap-3 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4"
+        // Por encima de la tab bar inferior de la app.
+        style={{ bottom: 'calc(var(--nav-h, 62px) + 12px + env(safe-area-inset-bottom, 0px))' }}
+      >
         <p className="text-sm text-slate-500">
           {testsLoaded} pruebas · {levelsLoaded} niveles de movimiento
           {safetyOnly && ' · gate de seguridad activo'}
