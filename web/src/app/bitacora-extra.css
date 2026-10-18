@@ -247,4 +247,11 @@
   .bt .act .nt b { font-weight: 600; }
   .bt .pill.done { background: var(--good-soft); color: var(--good); }
   .bt .pill.accent { background: var(--accent-soft); color: var(--accent); }
+
+  /* alumnos sin actividad reciente */
+  .bt details.older { margin-top: 18px; }
+  .bt details.older > summary { list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 44px; padding: 0 4px; cursor: pointer; font-family: var(--f-data); font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-top: 1px solid var(--line); }
+  .bt details.older > summary::-webkit-details-marker { display: none; }
+  .bt details.older > summary b { color: var(--ink-2); margin-left: 4px; }
+  .bt details.older .stu { opacity: .85; }
 }

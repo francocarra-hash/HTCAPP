@@ -37,6 +37,9 @@ const DATE = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const Sex = z.enum(['MALE', 'FEMALE']);
 const Status = z.enum(['planned', 'done']);
 const opt = <T extends z.ZodTypeAny>(t: T) => t.nullable().optional();
+/** Texto de una sesión comparable entre pegados (espacios, guiones y mayúsculas no cuentan). */
+const bodyKey = (b: string): string =>
+  b.replace(/[–—]/g, '-').replace(/->/g, '→').replace(/\s+/g, ' ').trim().toLowerCase();
 
 const StudentInput = z.object({
   name: z.string().trim().min(1).max(80),
@@ -45,7 +48,7 @@ const StudentInput = z.object({
   age: opt(z.number().int().min(5).max(110)),
   sex: opt(Sex),
   goal: opt(z.string().trim().max(500)),
-  notes: opt(z.string().trim().max(2000)),
+  notes: opt(z.string().trim().max(10_000)),
 });
 const StudentPatchInput = StudentInput.omit({ password: true }).partial().extend({
   schedule: ScheduleSchema.nullable().optional(),
@@ -411,7 +414,18 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
     if (missing.length) return { error: `Alumnos inexistentes: ${missing.join(', ')}` } as const;
     const participants = (students as Student[]).map((s) => ({ id: s.id, name: s.name, username: s.username }));
     const { sessions, warnings } = splitSessions(input.text, participants, input.default_date ?? localNow().date);
+    // Sesiones que ya están cargadas (mismo texto y misma fecha, corregida o como se escribió):
+    // así se puede volver a pegar la nota entera y sólo entran las nuevas.
+    const loaded = new Set<string>();
+    for (const p of participants) {
+      for (const s of await repo.listSessions(p.id)) {
+        if (!s.body) continue;
+        loaded.add(`${s.date}|${bodyKey(s.body)}`);
+        if (s.date_raw) loaded.add(`${s.date_raw}|${bodyKey(s.body)}`);
+      }
+    }
     const drafts: NewSession[] = [];
+    const existing: boolean[] = [];
     sessions.forEach((s, i) => {
       if (!s.date) {
         warnings.push(`Sesión ${i + 1} sin fecha válida (${s.dateRaw ?? '—'}): no se carga.`);
@@ -426,8 +440,10 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
         status: 'done', routine: null,
         participant_ids: s.onlyFor ? [s.onlyFor] : participants.map((p) => p.id),
       });
+      const k = bodyKey(s.body);
+      existing.push(loaded.has(`${s.date}|${k}`) || Boolean(s.dateRaw && loaded.has(`${s.dateRaw}|${k}`)));
     });
-    return { drafts, warnings, participants } as const;
+    return { drafts, existing, warnings, participants } as const;
   };
 
   router.post('/sessions/preview', handle(async (req, res) => {
@@ -438,8 +454,9 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
     }
     const info = await exerciseInfo(repo);
     res.json({
-      sessions: r.drafts.map((d) => ({
+      sessions: r.drafts.map((d, i) => ({
         ...d,
+        existing: r.existing[i],
         routine: withCapacities(
           routineFromParsed(parseBody(d.body, r.participants.filter((p) => d.participant_ids.includes(p.id)))), info),
       })),
@@ -457,8 +474,14 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
       fail(res, 400, 'NOTHING_TO_SAVE', r.warnings.join(' ') || 'No se encontró ninguna sesión en el texto.');
       return;
     }
-    const saved = await repo.createSessions(r.drafts);
-    res.status(201).json({ sessions: await sessionViews(repo, saved), warnings: r.warnings });
+    const fresh = r.drafts.filter((_d, i) => !r.existing[i]);
+    const skipped = r.drafts.length - fresh.length;
+    if (!fresh.length) {
+      fail(res, 400, 'NOTHING_TO_SAVE', `Las ${skipped} sesiones ya estaban cargadas.`);
+      return;
+    }
+    const saved = await repo.createSessions(fresh);
+    res.status(201).json({ sessions: await sessionViews(repo, saved), skipped, warnings: r.warnings });
   }));
 
   /** Sesión armada en el editor de bloques. */

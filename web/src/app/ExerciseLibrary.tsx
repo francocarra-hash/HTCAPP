@@ -10,11 +10,18 @@ export function useLibrary(): [ExerciseEntry[], () => void] {
   return [list, load];
 }
 
+const PAGE = 80;
+const whoUses = (names: string[]): string =>
+  names.length > 3 ? `${names.slice(0, 3).join(', ')} y ${names.length - 3} más` : names.join(', ');
+
 export function ExerciseLibrary({ avatar, toast }: { avatar: ReactNode; toast: (m: string) => void }) {
   const [list, setList] = useState<ExerciseEntry[] | null>(null);
   const [q, setQ] = useState('');
   const [capSel, setCapSel] = useState<CapacityId | 'none' | null>(null);
   const [editing, setEditing] = useState<ExerciseEntry | 'new' | null>(null);
+  // Son miles: se muestran de a tandas para que la lista no trabe el celular.
+  const [limit, setLimit] = useState(PAGE);
+  useEffect(() => setLimit(PAGE), [q, capSel]);
 
   const load = useCallback(() => { coachApi.exercises().then((r) => setList(r.exercises)).catch(() => setList([])); }, []);
   useEffect(load, [load]);
@@ -53,7 +60,7 @@ export function ExerciseLibrary({ avatar, toast }: { avatar: ReactNode; toast: (
           </div>
           <section className="card" style={{ paddingTop: 4, paddingBottom: 4, marginTop: 6 }}>
             {!shown.length && <p className="empty">No hay ejercicios con ese filtro.</p>}
-            {shown.map((e) => (
+            {shown.slice(0, limit).map((e) => (
               <button key={e.key} className="lib-row" onClick={() => setEditing(e)}>
                 <b>{e.name}</b>
                 {e.capacity
@@ -63,11 +70,16 @@ export function ExerciseLibrary({ avatar, toast }: { avatar: ReactNode; toast: (
                     </span>
                   : <span className="tag">sin clasificar</span>}
                 <span className="m">
-                  {e.uses ? `${e.uses} usos · ${e.students.join(', ')}${e.last_text ? ` · último: ${e.last_text}` : ''}` : 'Creado a mano · todavía sin usar'}
+                  {e.uses ? `${e.uses} usos · ${whoUses(e.students)}${e.last_text ? ` · último: ${e.last_text}` : ''}` : 'Creado a mano · todavía sin usar'}
                 </span>
               </button>
             ))}
           </section>
+          {shown.length > limit && (
+            <button className="btn wide" style={{ marginTop: 10 }} onClick={() => setLimit(limit + PAGE * 2)}>
+              Mostrar más · quedan {shown.length - limit}
+            </button>
+          )}
         </Enter>
       )}
       {editing && (

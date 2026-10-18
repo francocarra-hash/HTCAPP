@@ -239,15 +239,25 @@ function PasteSheet({ ids, date, onClose, onRoutine, onImported }: {
       </div>
       {!ids.length && <p className="err">Elegí primero para quién es.</p>}
       {err && <p className="err">{err}</p>}
-      {preview ? (
+      {preview ? (() => {
+        const all = preview.sessions;
+        const fresh = all.filter((s) => !s.existing);
+        const dates = all.map((s) => s.date).sort();
+        return (
         <>
-          <p style={{ margin: 0 }}>Encontré <b>{preview.sessions.length} sesiones</b> ({preview.sessions.map((s) => shortDate(s.date)).join(', ')}).</p>
-          <button className="btn primary wide" disabled={busy} onClick={importAll}>{busy ? 'Importando…' : `Importar las ${preview.sessions.length} como hechas`}</button>
+          <p style={{ margin: 0 }}>
+            Encontré <b>{all.length} sesiones</b> ({all.length > 6 ? `del ${shortDate(dates[0]!)} al ${shortDate(dates[dates.length - 1]!)}` : all.map((s) => shortDate(s.date)).join(', ')}).
+            {fresh.length < all.length && <> <b>{all.length - fresh.length}</b> ya estaban cargadas y no se repiten.</>}
+          </p>
+          <button className="btn primary wide" disabled={busy || !fresh.length} onClick={importAll}>
+            {busy ? 'Importando…' : !fresh.length ? 'Ya estaban todas cargadas' : fresh.length === all.length ? `Importar las ${all.length} como hechas` : `Importar las ${fresh.length} nuevas como hechas`}
+          </button>
           <button className="btn wide" onClick={() => onRoutine(cloneRoutine(preview.sessions[preview.sessions.length - 1]!.routine))}>
             Usar sólo la última para editarla
           </button>
         </>
-      ) : (
+        );
+      })() : (
         <button className="btn primary wide" disabled={busy || !text.trim() || !ids.length} onClick={read}>{busy ? 'Leyendo…' : 'Convertir en bloques'}</button>
       )}
     </Sheet>

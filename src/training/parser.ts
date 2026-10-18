@@ -41,7 +41,11 @@ export interface ParsedStrength {
 export interface ParsedSessionBody {
   warmup: string[];
   circuits: ParsedCircuit[];
+  /** Primer bloque principal (A1, A2…); todos están en `strengths`. */
   strength: ParsedStrength | null;
+  strengths: ParsedStrength[];
+  /** Orden en que aparecen circuitos y bloques principales en el texto. */
+  order: Array<{ kind: 'circuit' | 'strength'; index: number }>;
   extras: string[];
   /** Sesión sin estructura (ej. "Trabajo articular de seguimiento pieza por pieza"). */
   note: string | null;
@@ -75,11 +79,16 @@ const normalize = (s: string): string =>
 
 /** Guion separador: con espacio al menos de un lado ("a - b", "12- b", "10r  -b"); no "t-rotation". */
 const HYPHEN_SEP = /\s+-+\s*|\s*-+\s+/;
-/** "/" seguido de letra separa ejercicios ("Crawling f/ tabletop b"); seguido de número son series ("20/25/30"). */
-const SLASH_ITEM = /\s*\/\s*(?=[A-Za-zÀ-ÿ])/;
-const MODIFIER = /^(sl|sa)$/i;
+/**
+ * "/" con espacio y seguido de letra separa ejercicios ("Crawling f/ tabletop b");
+ * seguido de número son series ("20/25/30"); sin espacios es un nombre ("Flex/Ext", "IR/ER").
+ */
+const SLASH_ITEM = /(?:\s+\/\s*|\/\s+)(?=[A-Za-zÀ-ÿ])/;
+/** Alternativa del ejercicio anterior: "Rolling Tabletop 15/ SL 8", "Plank 45s/ Dynamic 30s". */
+export const MODIFIER = /^(sl|sa|dynamic|dinamico|dinámico|iso)$/i;
 
-const UNIT_ANY = '(?:min|mins|minutos|seg|segs|sec|s|reps?|repes|r|kg|k)';
+/** "m" son minutos en estas notas ("Horse Stance 2m", "1:30m"); nunca metros. */
+const UNIT_ANY = '(?:min|mins|minutos|m|seg|segs|sec|s|reps?|repes|r|kg|k)';
 
 const num = (s: string): number => Number(s.replace(',', '.'));
 
@@ -121,7 +130,7 @@ export function doseOf(text: string): Dose {
     seconds.push(Number(a) * 60 + Number(b));
     return ' ';
   });
-  t = t.replace(/(\d+(?:[.,]\d+)?)\s*(?:min|mins|minutos)\b/gi, (_m, a: string) => {
+  t = t.replace(/(\d+(?:[.,]\d+)?)\s*(?:min|mins|minutos|m)\b/gi, (_m, a: string) => {
     seconds.push(num(a) * 60);
     return ' ';
   });
@@ -156,13 +165,23 @@ function toItems(tokens: string[], names: Map<string, string>): ParsedItem[] {
     let name = exerciseName(text);
     const prev = out[out.length - 1];
     // "Rolling Tabletop 15/ SL 8": "SL" modifica al ejercicio anterior.
-    if (MODIFIER.test(name) && prev && !prev.who) name = `${prev.name} ${name.toUpperCase()}`;
+    if (MODIFIER.test(name) && prev && !prev.who) name = `${prev.name} ${name.length <= 2 ? name.toUpperCase() : name}`;
     out.push(who ? { text, name, who } : { text, name });
   }
   return out;
 }
 
-const splitHyphen = (s: string): string[] => s.split(HYPHEN_SEP).map((x) => x.trim()).filter(Boolean);
+/** "15", "30s", "1min+12r": sólo dosis, sin nombre de ejercicio ("90/90" es un ejercicio). */
+const isDoseOnly = (t: string): boolean => /\d/.test(t) && !exerciseName(t) && !/^90\s*\/\s*90\b/.test(t);
+/** "Inverted Bridge 15 - 15 - 15": las series siguen al ejercicio, no son ejercicios nuevos. */
+const splitHyphen = (s: string): string[] =>
+  // Un guion entre paréntesis ("Tempo Push ups (4- 2-1)") no separa ejercicios.
+  s.replace(/\([^)]*\)/g, (p) => p.replace(/-/g, '\u0001')).split(HYPHEN_SEP)
+    .map((x) => x.replace(/\u0001/g, '-').trim()).filter(Boolean).reduce<string[]>((out, t) => {
+    if (out.length && isDoseOnly(t)) out[out.length - 1] += ` - ${t}`;
+    else out.push(t);
+    return out;
+  }, []);
 const splitSlash = (s: string): string[] => s.split(SLASH_ITEM).map((x) => x.trim()).filter(Boolean);
 
 function parseCircuit(inner: string, rounds: string | undefined, names: Map<string, string>): ParsedCircuit {
@@ -203,51 +222,114 @@ export function parseBody(body: string, participants: Participant[]): ParsedSess
   const names = participantNames(participants);
   const text = normalize(body);
   const circuits: ParsedCircuit[] = [];
-  const outside: Array<{ text: string; afterBracket: boolean }> = [];
-  const re = /\[([\s\S]*?)\]\s*(?:[xX×][ \t]*(\d+)?)?/g;
-  let last = 0;
-  let seenBracket = false;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text))) {
-    outside.push({ text: text.slice(last, m.index), afterBracket: seenBracket });
-    circuits.push(parseCircuit(m[1] ?? '', m[2], names));
-    seenBracket = true;
-    last = re.lastIndex;
-  }
-  outside.push({ text: text.slice(last), afterBracket: seenBracket });
-
+  const strengths: ParsedStrength[] = [];
+  const order: ParsedSessionBody['order'] = [];
   const warmupLines: string[] = [];
   const extras: string[] = [];
-  let strength: ParsedStrength | null = null;
+  /** Líneas sueltas desde el último bloque: si sigue un "x2", forman un circuito. */
+  let pending: string[] = [];
+  /** Hubo una línea en blanco: si lo que sigue no es un "x2", empieza otro grupo. */
+  let gap = false;
+  /** Bloque principal al que todavía no se le anotaron las vueltas. */
+  let open: ParsedStrength | null = null;
 
-  for (const chunk of outside) {
-    for (const rawLine of chunk.text.split('\n')) {
-      const line = rawLine.trim();
-      if (!line) continue;
-      const sl = STRENGTH_LINE.exec(line);
-      if (sl && sl[3]) {
-        strength ??= { rounds: null, lines: [] };
-        strength.lines.push({ label: `${sl[1]}${sl[2]}`, items: parseStrengthItems(sl[3], names) });
-        continue;
-      }
-      const rl = ROUNDS_LINE.exec(line);
-      if (rl && strength && strength.rounds === null) {
-        strength.rounds = Number(rl[1]);
-        continue;
-      }
-      if (!chunk.afterBracket && !strength) warmupLines.push(line);
-      else extras.push(line);
+  const started = (): boolean => order.length > 0;
+  const release = (): void => {
+    (started() ? extras : warmupLines).push(...pending);
+    pending = [];
+  };
+  const addCircuit = (c: ParsedCircuit): void => {
+    circuits.push(c);
+    order.push({ kind: 'circuit', index: circuits.length - 1 });
+    open = null;
+  };
+
+  const line = (raw: string): void => {
+    let l = raw.trim().replace(/^[•·]\s*/, '');
+    if (!l) {
+      gap = true;
+      return;
     }
+    // "… ISO Row 30s] x2" sin "[": es el final de un circuito al que le faltó abrir el corchete.
+    const stray = !l.includes('[') ? /^(.*\S)\s*\]\s*([xX×]\s*\d+)$/.exec(l) : null;
+    if (stray) {
+      line(stray[1]!);
+      l = stray[2]!.replace(/\s+/g, '');
+    }
+    const sl = STRENGTH_LINE.exec(l);
+    // "Plank 35s - Superman 35s x2": las vueltas de esa línea, escritas al final.
+    const inline = !(sl && sl[3]) && HYPHEN_SEP.test(l) ? /^(.*\S)\s+[xX×]\s*(\d+)$/.exec(l) : null;
+    if (inline) {
+      gap = true;
+      open = null;
+      line(inline[1]!);
+      line(`x${inline[2]}`);
+      return;
+    }
+    const hadGap = gap;
+    if (gap && !ROUNDS_LINE.test(l)) release();
+    gap = false;
+    if (sl && sl[3]) {
+      release();
+      // "A1, A2 · línea en blanco · B1, B2 x3": otra letra después de un corte es otro bloque.
+      if (open && hadGap && open.lines[open.lines.length - 1]?.label[0] !== sl[1]) open = null;
+      if (!open) {
+        open = { rounds: null, lines: [] };
+        strengths.push(open);
+        order.push({ kind: 'strength', index: strengths.length - 1 });
+      }
+      open.lines.push({ label: `${sl[1]}${sl[2]}`, items: parseStrengthItems(sl[3], names) });
+      return;
+    }
+    const rl = ROUNDS_LINE.exec(l);
+    if (rl && open) {
+      // Vueltas del bloque principal; lo anotado entre medio queda como nota.
+      release();
+      open.rounds = Number(rl[1]);
+      open = null;
+      return;
+    }
+    if (rl && pending.length) {
+      // Así anotaba antes de usar corchetes: líneas seguidas de "x2" son un circuito.
+      let lines = pending;
+      pending = [];
+      // Lo que va antes y no tiene dosis (la movilidad del principio, un título o una
+      // indicación) no entra en las vueltas.
+      let k = 0;
+      while (k < lines.length - 1 && !/\d/.test(lines[k]!)) k++;
+      (started() ? extras : warmupLines).push(...lines.slice(0, k));
+      lines = lines.slice(k);
+      const stations = lines.flatMap(splitHyphen).map((st) => toItems(splitSlash(st), names)).filter((st) => st.length > 0);
+      addCircuit({ rounds: Number(rl[1]), stations });
+      return;
+    }
+    if (rl) {
+      extras.push(l);
+      return;
+    }
+    pending.push(l);
+  };
+
+  const re = /\[([\s\S]*?)\]\s*(?:[xX×][ \t]*(\d+)?)?/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    text.slice(last, m.index).split('\n').forEach(line);
+    release();
+    addCircuit(parseCircuit(m[1] ?? '', m[2], names));
+    last = re.lastIndex;
   }
+  text.slice(last).split('\n').forEach(line);
+  release();
 
   let warmup = warmupLines.flatMap(splitHyphen);
   let note: string | null = null;
   const only = warmup[0];
-  if (circuits.length === 0 && !strength && warmup.length === 1 && only && !/\d/.test(only) && only.split(/\s+/).length >= 4) {
+  if (!started() && warmup.length === 1 && only && !/\d/.test(only) && only.split(/\s+/).length >= 4) {
     note = only;
     warmup = [];
   }
-  return { warmup, circuits, strength, extras, note };
+  return { warmup, circuits, strength: strengths[0] ?? null, strengths, order, extras, note };
 }
 
 // ── división en sesiones + fechas ───────────────────────────────────────────
@@ -272,6 +354,8 @@ const dmy = (v: Ymd): string => `${v.d}/${v.m}/${v.y}`;
  * la secuencia ordenada más larga y, para cada fecha fuera de ella, la primera
  * corrección que encaja entre sus vecinas. Toda corrección queda anotada para que
  * el coach la revise; si ninguna encaja, la fecha se conserva y se marca.
+ * Una fecha imposible que se lee bien con día y mes invertidos ("8/22/2025", escrita
+ * mes/día) se toma invertida, también anotada.
  */
 export function fixDates(raw: Array<Ymd | null>): Array<{ date: string | null; note: string | null }> {
   const idx = raw.map((v, i) => (v && isValid(v) ? i : -1)).filter((i) => i >= 0);
@@ -300,14 +384,26 @@ export function fixDates(raw: Array<Ymd | null>): Array<{ date: string | null; n
 
   for (let i = 0; i < raw.length; i++) {
     const v = raw[i];
-    if (!v || !isValid(v) || kept.has(i)) continue;
+    if (!v || kept.has(i)) continue;
+    const swapped: Ymd = { y: v.y, m: v.d, d: v.m };
+    if (!isValid(v) && !isValid(swapped)) continue;
     let prev: Ymd | null = null;
     for (let j = i - 1; j >= 0 && !prev; j--) prev = resolved[j] ?? null;
     let next: Ymd | null = null;
     for (let j = i + 1; j < raw.length && !next; j++) if (kept.has(j)) next = raw[j] ?? null;
     const fits = (c: Ymd): boolean =>
       isValid(c) && (!prev || ord(prev) <= ord(c)) && (!next || ord(c) <= ord(next));
-    const candidates: Ymd[] = [{ y: v.y, m: v.d, d: v.m }];
+    if (!isValid(v)) {
+      const alt = [swapped, ...[prev, next].filter((n): n is Ymd => Boolean(n && n.y !== v.y)).map((n) => ({ ...swapped, y: n.y }))];
+      const fix = alt.find(fits) ?? swapped;
+      resolved[i] = fix;
+      out[i] = {
+        date: iso(fix),
+        note: `Escrita como ${dmy(v)} (mes/día); se tomó como ${dmy(fix)}${fits(fix) ? '' : ', pero queda fuera de orden'}. Revisala.`,
+      };
+      continue;
+    }
+    const candidates: Ymd[] = [swapped];
     for (const n of [prev, next]) if (n && n.y !== v.y) candidates.push({ y: n.y, m: v.m, d: v.d });
     for (const n of [prev, next]) if (n) candidates.push({ y: n.y, m: n.m, d: v.d });
     const fix = candidates.find(fits);
@@ -370,7 +466,8 @@ export function splitSessions(
   }
   const dates = fixDates(heads.map((h) => h.ymd));
   const sessions = heads.map((h, i): SplitSession => {
-    const restKey = fold(h.rest);
+    // "Carlos", "(Carlos)", "solo Carlos", "Carlos solo" → sesión sólo de Carlos.
+    const restKey = fold(h.rest).replace(/^\(\s*(.*?)\s*\)$/, '$1').replace(/^solo\s+|\s+solo$/, '').trim();
     const onlyFor = restKey && byName.has(restKey) ? byName.get(restKey)! : null;
     return {
       date: dates[i]?.date ?? null,

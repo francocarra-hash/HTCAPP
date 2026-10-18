@@ -69,7 +69,9 @@ export function RoutineBuilder({ value, onChange, library, participants }: {
     return `${items.length} ${items.length === 1 ? 'ejercicio' : 'ejercicios'}${b.rounds ? ` · ×${b.rounds}` : ''} · ${items.slice(0, 3).map((i) => i.name).join(', ')}${items.length > 3 ? '…' : ''}`;
   };
   const byName = useMemo(() => new Map(library.map((e) => [fold(e.name), e])), [library]);
-  const names = useMemo(() => [...new Set(library.map((e) => e.name))].sort((a, b) => a.localeCompare(b)), [library]);
+  // Para autocompletar: lo que se usó más de una vez o se cargó a mano (lo de una sola vez suele ser una anotación).
+  const names = useMemo(() => [...new Set(library.filter((e) => e.uses !== 1 || e.capacity_source === 'coach').map((e) => e.name))]
+    .sort((a, b) => a.localeCompare(b)), [library]);
 
   const setBlocks = (blocks: RoutineBlock[]) => onChange({ ...value, blocks });
   const updBlock = (id: string, fn: (b: RoutineBlock) => RoutineBlock) => setBlocks(value.blocks.map((b) => (b.id === id ? fn(b) : b)));

@@ -247,6 +247,37 @@ function StudentList({ students, error, right, onOpen, onCreated, toast }: {
   const shown = (students ?? []).filter((s) => !q || s.name.toLowerCase().includes(q.toLowerCase()));
   const today = todayIso();
   const todays = (students ?? []).filter((s) => s.next_session?.date === today);
+  // Sin agenda, sin rutina asignada y sin entrenar hace más de 2 meses: van aparte (salvo al buscar).
+  const isOld = (s: StudentListItem) => !q && !s.next_session && !s.pending_count && (daysSince(s.last_date) ?? 0) > 60;
+  const current = shown.filter((s) => !isOld(s))
+    .sort((a, b) => (a.next_session?.date ?? '9999').localeCompare(b.next_session?.date ?? '9999') || a.name.localeCompare(b.name));
+  const older = shown.filter(isOld).sort((a, b) => (b.last_date ?? '').localeCompare(a.last_date ?? ''));
+  const row = (s: StudentListItem) => {
+    const d = daysSince(s.last_date);
+    const trainedToday = Boolean(s.last_completed_at && localDateOf(s.last_completed_at) === today);
+    const line = [s.age ? `${s.age} años` : null, s.partners.length ? `con ${s.partners.map(firstName).join(' y ')}` : null]
+      .filter(Boolean).join(' · ');
+    return (
+      <button key={s.id} className="stu" onClick={() => onOpen(s.id)}>
+        <span className="avatar" aria-hidden="true">{initials(s.name)}</span>
+        <span style={{ minWidth: 0, display: 'grid', gap: 4 }}>
+          <span className="stu-name">{s.name}</span>
+          <span className="stu-line">{line || `@${s.username}`}</span>
+          <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <span className={`pill${s.next_session?.date === today ? ' accent' : ''}`}>
+              {s.next_session ? `Próx. ${whenLabel(s.next_session)}` : 'Sin agenda'}
+            </span>
+            {trainedToday && <span className="pill done">✓ Entrenó hoy</span>}
+            {!trainedToday && s.pending_count > 0 && <span className="pill">Rutina asignada</span>}
+          </span>
+        </span>
+        <span className="stu-r">
+          <b>{s.sessions_count}</b>
+          <span className={`pill${d === null ? '' : d <= 10 ? ' ok' : d > 21 ? ' low' : ''}`}>{relDays(s.last_date)}</span>
+        </span>
+      </button>
+    );
+  };
 
   return (
     <>
@@ -267,32 +298,17 @@ function StudentList({ students, error, right, onOpen, onCreated, toast }: {
             <p className="empty">Todavía no hay alumnos. Creá el primero y después planificale su rutina.</p>
           ) : (
             <div>
-              {[...shown].sort((a, b) => (a.next_session?.date ?? '9999').localeCompare(b.next_session?.date ?? '9999') || a.name.localeCompare(b.name)).map((s) => {
-                const d = daysSince(s.last_date);
-                const trainedToday = Boolean(s.last_completed_at && localDateOf(s.last_completed_at) === today);
-                const line = [s.age ? `${s.age} años` : null, s.partners.length ? `con ${s.partners.map(firstName).join(' y ')}` : null]
-                  .filter(Boolean).join(' · ');
-                return (
-                  <button key={s.id} className="stu" onClick={() => onOpen(s.id)}>
-                    <span className="avatar" aria-hidden="true">{initials(s.name)}</span>
-                    <span style={{ minWidth: 0, display: 'grid', gap: 4 }}>
-                      <span className="stu-name">{s.name}</span>
-                      <span className="stu-line">{line || `@${s.username}`}</span>
-                      <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        <span className={`pill${s.next_session?.date === today ? ' accent' : ''}`}>
-                          {s.next_session ? `Próx. ${whenLabel(s.next_session)}` : 'Sin agenda'}
-                        </span>
-                        {trainedToday && <span className="pill done">✓ Entrenó hoy</span>}
-                        {!trainedToday && s.pending_count > 0 && <span className="pill">Rutina asignada</span>}
-                      </span>
-                    </span>
-                    <span className="stu-r">
-                      <b>{s.sessions_count}</b>
-                      <span className={`pill${d === null ? '' : d <= 10 ? ' ok' : d > 21 ? ' low' : ''}`}>{relDays(s.last_date)}</span>
-                    </span>
-                  </button>
-                );
-              })}
+              {current.map(row)}
+              {q && !shown.length && <p className="empty">Ningún alumno se llama así.</p>}
+              {older.length > 0 && (
+                <details className="older">
+                  <summary>
+                    <span>Sin entrenar hace más de 2 meses <b>{older.length}</b></span>
+                    {Icon.chev}
+                  </summary>
+                  {older.map(row)}
+                </details>
+              )}
             </div>
           )}
         </Enter>

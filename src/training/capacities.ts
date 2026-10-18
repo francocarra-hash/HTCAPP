@@ -22,9 +22,9 @@ export const CAPACITY_IDS = CAPACITIES.map((c) => c.id) as CapacityId[];
 const RULES: Array<[CapacityId, RegExp]> = [
   ['reactividad', /\b(cmj|pogo|hops?|jumps?|salto|saltos|skates?|burpees?|rayuela|bounds?|pliometri\w*|lateral kick)\b/],
   ['control_motor', /(no eyes|ojos cerrados|vestibular|crawl|tennis ball|perturbac|airplane|comandos?|\brdl sl\b|\bsl rdl\b|balance|equilibrio)/],
-  ['movilidad', /(cat ?\/? ?cow|\bcars\b|spinal|90\/90|switch|shin box|jefferson|thoracic|stretch|estiramiento|cuclillas|deep squat|deep tier|bjj bridge|capsule|pails|waves)/],
-  ['estabilidad', /\b(planks?|plancha|copenhagen|hollow|superman|tabletop|dead ?bug|bird ?dog|swimmers?|l-sit|rolling abs?|pallof|long bridge|star)\b/],
-  ['fuerza', /\b(squats?|sq|sentadillas?|pistol|lunges?|estocadas?|wall sit|push ?ups?|flexiones|pike|chin ?ups?|rows?|press|curl|nordic|hinge|bridge|puente|clam ?shell|calf|iywto|yiwto|triceps?|cossack|deadlift|rdl|kickstand|knight|skaters?|horse stance|good morning|gm)\b/],
+  ['movilidad', /(cat ?\/? ?cow|\bcars\b|spinal|90\/90|switch|shin box|jefferson|thoracic|stretch|estiramiento|cuclillas|deep squat|deep tier|bjj bridge|capsule|pails|rails|waves|circles?\b|\bhang\b|taiji|movilidad|mobility)/],
+  ['estabilidad', /\b(planks?|plancha|copenhagen|hollow|superman|tabletop|dead ?bug|bicho muerto|bird ?dog|swimmers?|l-sit|rolling abs?|pallof|long bridge|star|shoulder taps?|ring stand)\b/],
+  ['fuerza', /\b(squats?|sq|sentadillas?|bulgar\w*|pistol|lunges?|estocadas?|wall sit|push ?ups?|flexiones|pike|chin ?ups?|rows?|remos?|press|curl|nordic|hinge|bridge|puente|hip thr?u?st|clam ?shell|calf|gemelos?|iywto|yiwto|triceps?|dips?|archer|raises?|vuelos?|reverse hyper|sliders?|cossack|deadlift|rdl|kickstand|knight|skaters?|horse stance|good morning|gm)\b/],
   ['resistencia', /\b(4x4|intervalos?|bike|bici|remo ergo|run|correr|trote|cardio)\b/],
 ];
 

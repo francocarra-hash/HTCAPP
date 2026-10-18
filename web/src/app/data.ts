@@ -136,7 +136,8 @@ export interface ActivityItem {
   notes: Array<{ item: string; note: string }>; seen: boolean;
 }
 
-export type PreviewSession = Omit<Session, 'id' | 'completions'>;
+/** `existing`: ya estaba cargada (mismo texto y fecha); al importar no se repite. */
+export type PreviewSession = Omit<Session, 'id' | 'completions'> & { existing: boolean };
 
 const json = (method: string, body?: unknown): RequestInit => ({
   method,
@@ -156,7 +157,7 @@ export const coachApi = {
   preview: (text: string, student_ids: string[], default_date: string) =>
     req<{ sessions: PreviewSession[]; warnings: string[] }>('/training/sessions/preview', json('POST', { text, student_ids, default_date })),
   saveSessions: (text: string, student_ids: string[], default_date: string) =>
-    req<{ sessions: Session[]; warnings: string[] }>('/training/sessions', json('POST', { text, student_ids, default_date })),
+    req<{ sessions: Session[]; skipped: number; warnings: string[] }>('/training/sessions', json('POST', { text, student_ids, default_date })),
   createRoutine: (body: { date: string; title: string | null; status: 'planned' | 'done'; participant_ids: string[]; routine: Routine }) =>
     req<{ session: Session }>('/training/sessions/routine', json('POST', body)),
   updateSession: (id: string, body: { date?: string; title?: string | null; status?: 'planned' | 'done'; participant_ids?: string[]; routine?: Routine }) =>

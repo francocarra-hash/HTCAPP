@@ -11,7 +11,7 @@
  * los checks del alumno siguen apuntando al mismo ejercicio.
  */
 import { z } from 'zod';
-import { fold, ParsedItem, ParsedSessionBody } from './parser';
+import { exerciseName, fold, MODIFIER, ParsedItem, ParsedSessionBody } from './parser';
 
 export type BlockKind = 'list' | 'circuit' | 'superset' | 'notes';
 
@@ -67,7 +67,7 @@ function splitItem(it: ParsedItem, id: string): RoutineItem {
   }
   // "SL 8" después de "Rolling Tabletop 15": el parser ya le dio el nombre completo.
   const first = t.split(/\s+/)[0] ?? '';
-  if (/^(sl|sa)$/i.test(first) && fold(it.name).endsWith(` ${fold(first)}`)) {
+  if (MODIFIER.test(first) && fold(it.name).endsWith(` ${fold(first)}`)) {
     return { id, name: it.name, dose: t.slice(first.length).trim() };
   }
   const m = /^(.*?[A-Za-zÀ-ÿ)])\s+(\d.*)$/.exec(t);
@@ -83,13 +83,19 @@ export function routineFromParsed(p: ParsedSessionBody): Routine {
       groups: groups.map((items, g) => ({ id: `b${b}g${g}`, items: items.map((it, i) => ({ ...it, id: `b${b}g${g}i${i}` })) })),
     });
   };
-  if (p.warmup.length) add('list', 'Movilidad', null, p.warmup.map((w) => [{ id: '', name: w, dose: '' }]));
-  p.circuits.forEach((c, i) => {
-    add('circuit', p.circuits.length > 1 ? `Circuito ${i + 1}` : 'Circuito', c.rounds,
-      c.stations.map((st) => st.map((it) => splitItem(it, ''))));
-  });
-  if (p.strength) {
-    add('superset', 'Bloque principal', p.strength.rounds, p.strength.lines.map((l) => l.items.map((it) => splitItem(it, ''))));
+  if (p.warmup.length) add('list', 'Movilidad', null, p.warmup.map((w) => [splitItem({ text: w, name: exerciseName(w) }, '')]));
+  // En el orden en que están escritos (un circuito puede ir después del bloque principal).
+  for (const o of p.order) {
+    if (o.kind === 'circuit') {
+      const c = p.circuits[o.index]!;
+      add('circuit', p.circuits.length > 1 ? `Circuito ${o.index + 1}` : 'Circuito', c.rounds,
+        c.stations.map((st) => st.map((it) => splitItem(it, ''))));
+    } else {
+      const s = p.strengths[o.index]!;
+      const letter = s.lines[0]?.label[0] ?? '';
+      add('superset', p.strengths.length > 1 ? `Bloque ${letter}` : 'Bloque principal', s.rounds,
+        s.lines.map((l) => l.items.map((it) => splitItem(it, ''))));
+    }
   }
   if (p.extras.length) add('notes', 'Notas', null, p.extras.map((x) => [{ id: '', name: x, dose: '' }]));
   return { blocks, note: p.note };

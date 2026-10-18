@@ -73,6 +73,64 @@ describe('parser — cuerpo de la sesión', () => {
     expect(n.warmup).toEqual([]);
   });
 
+  test('formato sin corchetes: series "15 - 15 - 15", líneas seguidas de "x2" y bloques A/B con sus vueltas', () => {
+    const old = parseBody([
+      'Cat/Cow - Spinal bridge - Spinal AB',
+      'Plank 30s - Side Plank 25s - Superman 30s',
+      'x2',
+      'A1 - Push ups 20 - 20 - 20',
+      'A2 - Bulgarian Squats 12 - 12 - 12',
+      'x3',
+      'B1 - Chin ups 5 - 5 - 5',
+      'x3',
+      'IYWTO 6 - 6 - 6',
+      'Reverse Nordic no hip extension 12 -12 - 12',
+      'x3',
+      'respiracion cuadrada',
+    ].join('\n'), []);
+    expect(old.warmup).toEqual(['Cat/Cow', 'Spinal bridge', 'Spinal AB']);
+    expect(old.order.map((o) => o.kind)).toEqual(['circuit', 'strength', 'strength', 'circuit']);
+    expect(old.circuits[0]!.stations.map((s) => s[0]!.text)).toEqual(['Plank 30s', 'Side Plank 25s', 'Superman 30s']);
+    expect(old.circuits[1]!.stations.map((s) => s[0]!.text)).toEqual(['IYWTO 6 - 6 - 6', 'Reverse Nordic no hip extension 12 - 12 - 12']);
+    expect(old.strengths.map((s) => [s.rounds, s.lines.map((l) => l.items.map((i) => i.text).join(' | '))])).toEqual([
+      [3, ['Push ups 20 - 20 - 20', 'Bulgarian Squats 12 - 12 - 12']], [3, ['Chin ups 5 - 5 - 5']],
+    ]);
+    expect(old.extras).toEqual(['respiracion cuadrada']);
+    const r = routineFromParsed(old);
+    expect(r.blocks.map((b) => [b.kind, b.title, b.rounds])).toEqual([
+      ['list', 'Movilidad', null], ['circuit', 'Circuito 1', 2], ['superset', 'Bloque A', 3], ['superset', 'Bloque B', 3],
+      ['circuit', 'Circuito 2', 3], ['notes', 'Notas', null],
+    ]);
+    expect(r.blocks[2]!.groups[0]!.items[0]).toMatchObject({ name: 'Push ups', dose: '20 - 20 - 20' });
+  });
+
+  test('"x2" al final de la línea, bloques separados por una línea en blanco y "2m" en minutos', () => {
+    const q = parseBody([
+      'Cat/ Cow - Spinal Bridge',
+      'Plank 35s - Superman 35s - Hollow body 45s x2',
+      'A1 - Horse Stance 2m - 3m',
+      'A2 - Tempo Push ups (4- 2-1) 8 - 8',
+      '',
+      'B1 - RDL SL 15 - 15',
+      'x3',
+    ].join('\n'), []);
+    expect(q.warmup).toEqual(['Cat/ Cow', 'Spinal Bridge']);
+    expect(q.circuits[0]).toMatchObject({ rounds: 2 });
+    expect(q.circuits[0]!.stations.map((s) => s[0]!.text)).toEqual(['Plank 35s', 'Superman 35s', 'Hollow body 45s']);
+    expect(q.strengths.map((s) => [s.lines.map((l) => l.label), s.rounds])).toEqual([[['A1', 'A2'], null], [['B1'], 3]]);
+    expect(q.strengths[0]!.lines.map((l) => l.items.map((i) => i.text))).toEqual([['Horse Stance 2m - 3m'], ['Tempo Push ups (4- 2-1) 8 - 8']]);
+    expect(doseOf('Horse Stance 2m').seconds).toEqual([120]);
+  });
+
+  test('"Flex/Ext" es un nombre; "/ Dynamic 30s" es la variante del ejercicio anterior', () => {
+    const q = parseBody('[Flex/Ext Crawling iso 30s/ Band add - Plank 45s/ Dynamic 30s] x2', []);
+    expect(q.circuits[0]!.stations.map((s) => s.map((i) => i.name))).toEqual([
+      ['Flex Ext Crawling iso', 'Band add'], ['Plank', 'Plank Dynamic'],
+    ]);
+    const r = routineFromParsed(q);
+    expect(r.blocks[0]!.groups[1]!.items[1]).toMatchObject({ name: 'Plank Dynamic', dose: '30s' });
+  });
+
   test('circuito sin número de vueltas y dos circuitos en la misma sesión', () => {
     const q = parseBody('[Hollow body 35s - Kickstand 10+10s] x\nA1 - Pistol 8\n[SL Wall sit 25s - Long Bridge 45s] x1', []);
     expect(q.circuits.map((c) => c.rounds)).toEqual([null, 1]);
@@ -134,6 +192,23 @@ describe('parser — sesiones y fechas', () => {
     expect(r[2]!.note).toMatch(/3\/2\/2026/);
     expect(r[0]!.note).toBeNull();
   });
+
+  test('fecha escrita mes/día ("10/14/2025") se toma invertida y queda anotada', () => {
+    const r = fixDates([{ d: 7, m: 10, y: 2025 }, { d: 10, m: 14, y: 2025 }, { d: 16, m: 10, y: 2025 }]);
+    expect(r.map((x) => x.date)).toEqual(['2025-10-07', '2025-10-14', '2025-10-16']);
+    expect(r[1]!.note).toMatch(/10\/14\/2025 \(mes\/día\)/);
+    expect(fixDates([{ d: 40, m: 14, y: 2025 }])[0]).toEqual({ date: null, note: 'Fecha inválida (40/14/2025)' });
+  });
+
+  test('"solo Beto" y "(Beto)" también restringen la sesión a ese alumno', () => {
+    const { sessions } = splitSessions('1/9/2026 - solo Beto\nA1 - x 1\n2/9/2026 - (Beto)\nA1 - y 2\n3/9/2026 - Beto medio enfermo\nA1 - z 3', [ANA, BETO], null);
+    expect(sessions.map((s) => [s.onlyFor, s.title])).toEqual([['b', null], ['b', null], [null, 'Beto medio enfermo']]);
+  });
+});
+
+test('capacidad sugerida también para nombres en castellano', () => {
+  expect(['Bulgaras', 'Remos', 'Gemelos SL', 'Bicho muerto', 'Hip Circles', 'Dead Hang'].map(suggestCapacity))
+    .toEqual(['fuerza', 'fuerza', 'fuerza', 'estabilidad', 'movilidad', 'movilidad']);
 });
 
 describe('rutina en bloques', () => {
@@ -358,6 +433,30 @@ describe('API — alumnos, sesiones y permisos', () => {
       .toMatchObject({ name: 'Kickstand RDL', capacity: 'control_motor', capacity_source: 'coach' });
     const custom = await request(a).post('/api/training/exercises').set('Authorization', auth).send({ name: 'Turkish get up', capacity: 'estabilidad' });
     expect(custom.status).toBe(201);
+  });
+
+  test('volver a pegar la nota entera sólo carga las sesiones nuevas', async () => {
+    const a = app();
+    const auth = await coach(a);
+    const ana = await request(a).post('/api/training/students').set('Authorization', auth).send({ name: 'Ana' });
+    const ids = [ana.body.student.id];
+    const first = '1/9/2026\n[Wall sit 1min] x2\n4/9/2026\nA1 - Pistol 8';
+    expect((await request(a).post('/api/training/sessions').set('Authorization', auth).send({ text: first, student_ids: ids })).status).toBe(201);
+
+    // Mismo texto con otros espacios y una sesión más: sólo entra la nueva.
+    const again = '1/9/2026\n[Wall sit  1min] x2\n\n4/9/2026\nA1 -  Pistol 8\n8/9/2026\nA1 - Pistol 10';
+    const prev = await request(a).post('/api/training/sessions/preview').set('Authorization', auth).send({ text: again, student_ids: ids });
+    expect(prev.body.sessions.map((s: { existing: boolean }) => s.existing)).toEqual([true, true, false]);
+    const r = await request(a).post('/api/training/sessions').set('Authorization', auth).send({ text: again, student_ids: ids });
+    expect(r.status).toBe(201);
+    expect(r.body.skipped).toBe(2);
+    expect(r.body.sessions.map((s: { date: string }) => s.date)).toEqual(['2026-09-08']);
+
+    const dup = await request(a).post('/api/training/sessions').set('Authorization', auth).send({ text: again, student_ids: ids });
+    expect(dup.status).toBe(400);
+    expect(dup.body.error).toBe('NOTHING_TO_SAVE');
+    const detail = await request(a).get(`/api/training/students/${ids[0]}`).set('Authorization', auth);
+    expect(detail.body.sessions).toHaveLength(3);
   });
 
   test('agenda del alumno: la próxima sesión aparece en la lista', async () => {
