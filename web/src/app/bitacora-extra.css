@@ -230,7 +230,8 @@
   .bt .lib-row .m { font-family: var(--f-data); font-size: 11.5px; color: var(--muted); grid-column: 1 / -1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .bt .filters { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 6px; margin-top: 10px; scrollbar-width: none; }
   .bt .filters::-webkit-scrollbar { display: none; }
-  .bt .filters .tog { flex: none; min-height: 36px; padding: 6px 12px; font-size: 13px; }
+  .bt .filters .tog { flex: none; min-height: 36px; padding: 6px 12px; font-size: 13px; white-space: nowrap; }
+  .bt .filters .tog svg { width: 15px; height: 15px; flex: none; }
   .bt .filters .tog i { width: 9px; height: 9px; border-radius: 3px; background: var(--c); }
 
   /* actividad */
