@@ -12,6 +12,7 @@ import { suggestCapacity } from '../training/capacities';
 import { nextSessions, occurrences } from '../training/schedule';
 import { createAuthRouter, createStudentRouter, createTrainingRouter } from '../api/router-training';
 import { createRouter } from '../api/router';
+import { createSocialRouter } from '../api/router-social';
 import { InMemoryRepository } from '../db/repository';
 import { compiled } from './helpers';
 
@@ -295,8 +296,9 @@ describe('API — alumnos, sesiones y permisos', () => {
   function app() {
     const repo = new InMemoryTrainingRepository();
     const a = express();
-    a.use(express.json());
+    a.use(express.json({ limit: '1mb' }));
     a.use('/api', createAuthRouter(repo));
+    a.use('/api/social', createSocialRouter(repo));
     a.use('/api/training', createTrainingRouter(repo));
     a.use('/api/me', createStudentRouter(repo));
     a.use('/api', createRouter(compiled(), new InMemoryRepository()));
@@ -530,6 +532,97 @@ describe('API — alumnos, sesiones y permisos', () => {
     await request(a).post(`/api/me/reports/${me.body.reports[0].id}/seen`).set('Authorization', `Bearer ${tok}`);
     const again = await request(a).get('/api/me').set('Authorization', `Bearer ${tok}`);
     expect(again.body.reports[0].seen_at).toBeTruthy();
+  });
+
+  test('video por ejercicio: lo carga el profe y aparece en la rutina del alumno', async () => {
+    const a = app();
+    const auth = await coach(a);
+    const ana = await request(a).post('/api/training/students').set('Authorization', auth).send({ name: 'Ana' });
+    await request(a).post('/api/training/sessions').set('Authorization', auth)
+      .send({ text: '1/9/2026\n[Kickstand 10 - Wall sit 1min] x2', student_ids: [ana.body.student.id] });
+    const lib = await request(a).get('/api/training/exercises').set('Authorization', auth);
+    const kick = lib.body.exercises.find((e: { name: string }) => e.name === 'Kickstand');
+    const url = `/api/training/exercises/${encodeURIComponent(kick.key)}`;
+    expect((await request(a).put(url).set('Authorization', auth).send({ name: 'Kickstand', capacity: 'fuerza', video_url: 'no es un link' })).status).toBe(400);
+    await request(a).put(url).set('Authorization', auth).send({ name: 'Kickstand', capacity: 'fuerza', video_url: 'https://youtu.be/abc123' });
+    // Cambiar sólo el nombre conserva el video.
+    await request(a).put(url).set('Authorization', auth).send({ name: 'Kickstand RDL', capacity: 'fuerza' });
+    const lib2 = await request(a).get('/api/training/exercises').set('Authorization', auth);
+    expect(lib2.body.exercises.find((e: { key: string }) => e.key === kick.key)).toMatchObject({ name: 'Kickstand RDL', video_url: 'https://youtu.be/abc123' });
+    const tok = (await request(a).post('/api/login').send({ username: 'ana', password: ana.body.password })).body.token;
+    const me = await request(a).get('/api/me').set('Authorization', `Bearer ${tok}`);
+    const items = me.body.sessions[0].routine.blocks.flatMap((b: { groups: Array<{ items: unknown[] }> }) => b.groups.flatMap((g) => g.items));
+    expect(items.find((i: { name: string }) => i.name === 'Kickstand')).toMatchObject({ video: 'https://youtu.be/abc123' });
+  });
+
+  test('calidad del movimiento: el profe la registra, el alumno la ve y entra en el informe', async () => {
+    const a = app();
+    const auth = await coach(a);
+    const ana = await request(a).post('/api/training/students').set('Authorization', auth).send({ name: 'Ana' });
+    const id = ana.body.student.id;
+    // Ejercicio sostenido 10 semanas con la misma dosis.
+    const dates = ['1/7/2026', '8/7/2026', '15/7/2026', '22/7/2026', '29/7/2026', '5/8/2026', '12/8/2026', '19/8/2026', '26/8/2026', '2/9/2026', '9/9/2026'];
+    await request(a).post('/api/training/sessions').set('Authorization', auth)
+      .send({ text: dates.map((d) => `${d}\nA1 - Turkish get up 3 + Pistol 5`).join('\n'), student_ids: [id] });
+    const q1 = await request(a).post(`/api/training/students/${id}/quality`).set('Authorization', auth)
+      .send({ exercise_name: 'Turkish get up', day: '2026-07-01', score: 2, aspects: ['organizacion'] });
+    expect(q1.status).toBe(201);
+    await request(a).post(`/api/training/students/${id}/quality`).set('Authorization', auth)
+      .send({ exercise_name: 'Turkish get up', day: '2026-09-09', score: 4, aspects: ['transferencia', 'control'], note: 'Mucho más fluido' });
+    expect((await request(a).post(`/api/training/students/${id}/quality`).set('Authorization', auth)
+      .send({ exercise_name: 'X', day: '2026-09-09', score: 7 })).status).toBe(400);
+
+    const prof = await request(a).get(`/api/training/students/${id}`).set('Authorization', auth);
+    expect(prof.body.quality).toHaveLength(2);
+    expect(prof.body.progress.practice.map((p: { name: string }) => p.name)).toEqual(expect.arrayContaining(['Turkish get up']));
+    const tok = (await request(a).post('/api/login').send({ username: 'ana', password: ana.body.password })).body.token;
+    expect((await request(a).get('/api/me').set('Authorization', `Bearer ${tok}`)).body.quality).toHaveLength(2);
+    expect((await request(a).post(`/api/training/students/${id}/quality`).set('Authorization', `Bearer ${tok}`).send({})).status).toBe(401);
+
+    const rep = await request(a).get(`/api/training/students/${id}/reports/preview?start=2026-09-01`).set('Authorization', auth);
+    expect(rep.body.report.quality).toEqual([
+      { name: 'Turkish get up', from: 2, to: 4, aspects: ['transferencia', 'control'], note: 'Mucho más fluido' },
+    ]);
+    expect(rep.body.report.practice.map((p: { name: string }) => p.name)).toContain('Turkish get up');
+  });
+
+  test('comunidad, fotos y datos propios: cada uno edita lo suyo; el profe modera', async () => {
+    const a = app();
+    const auth = await coach(a);
+    const ana = await request(a).post('/api/training/students').set('Authorization', auth).send({ name: 'Ana' });
+    const beto = await request(a).post('/api/training/students').set('Authorization', auth).send({ name: 'Beto' });
+    const ta = `Bearer ${(await request(a).post('/api/login').send({ username: 'ana', password: ana.body.password })).body.token}`;
+    const tb = `Bearer ${(await request(a).post('/api/login').send({ username: 'beto', password: beto.body.password })).body.token}`;
+
+    await request(a).post('/api/social/community').set('Authorization', auth).send({ body: 'Este sábado no hay clase' });
+    const m2 = await request(a).post('/api/social/community').set('Authorization', ta).send({ body: 'Alguien va el domingo?' });
+    expect(m2.status).toBe(201);
+    const beto1 = await request(a).get('/api/social/community').set('Authorization', tb);
+    expect(beto1.body.unread).toBe(2);
+    expect(beto1.body.messages.map((m: { author: string; body: string }) => [m.author === 'coach' ? 'profe' : 'ana', m.body])).toEqual([
+      ['profe', 'Este sábado no hay clase'], ['ana', 'Alguien va el domingo?'],
+    ]);
+    await request(a).post('/api/social/community/read').set('Authorization', tb).send({ at: beto1.body.messages[1].created_at });
+    expect((await request(a).get('/api/social/community/unread').set('Authorization', tb)).body.unread).toBe(0);
+    // Beto no borra lo de Ana; el profe sí.
+    expect((await request(a).delete(`/api/social/community/${m2.body.message.id}`).set('Authorization', tb)).status).toBe(403);
+    expect((await request(a).delete(`/api/social/community/${m2.body.message.id}`).set('Authorization', auth)).status).toBe(200);
+    expect((await request(a).post('/api/social/community').send({ body: 'hola' })).status).toBe(401);
+
+    const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    expect((await request(a).put(`/api/social/avatars/${beto.body.student.id}`).set('Authorization', ta).send({ data: png })).status).toBe(403);
+    expect((await request(a).put(`/api/social/avatars/${ana.body.student.id}`).set('Authorization', ta).send({ data: png })).status).toBe(200);
+    const img = await request(a).get(`/api/social/avatars/${ana.body.student.id}`).set('Authorization', tb);
+    expect(img.headers['content-type']).toBe('image/png');
+    const people = await request(a).get('/api/social/people').set('Authorization', tb);
+    expect(people.body.people.find((p: { id: string }) => p.id === ana.body.student.id).avatar).toBeTruthy();
+    await request(a).put('/api/social/coach').set('Authorization', auth).send({ name: 'Nico' });
+    expect((await request(a).put('/api/social/coach').set('Authorization', ta).send({ name: 'X' })).status).toBe(403);
+
+    const upd = await request(a).patch('/api/me').set('Authorization', ta).send({ name: 'Ana P.', age: 40, phone: '5491100000000', about: 'Me duele la rodilla izquierda' });
+    expect(upd.status).toBe(200);
+    const coachView = await request(a).get(`/api/training/students/${ana.body.student.id}`).set('Authorization', auth);
+    expect(coachView.body.student).toMatchObject({ name: 'Ana P.', age: 40, about: 'Me duele la rodilla izquierda', billing: { telefono: '5491100000000' } });
   });
 
   test('agenda del alumno: la próxima sesión aparece en la lista', async () => {

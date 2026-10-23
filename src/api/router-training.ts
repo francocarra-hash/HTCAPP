@@ -23,7 +23,7 @@ import { Completion, NewSession, StoredSession, Student, TrainingRepository } fr
 import { AttendanceInput, BillingSchema, PaymentInput } from '../training/billing';
 import { buildReport, cycleOf, CYCLE_DAYS, ReportInput } from '../training/report';
 
-export interface RoutineItemView extends RoutineItem { capacity: CapacityId | null }
+export interface RoutineItemView extends RoutineItem { capacity: CapacityId | null; video: string | null }
 export interface SessionView extends Omit<StoredSession, 'routine'> {
   routine: Routine;
   /** Lo que hicieron los alumnos con la sesión (el alumno sólo ve lo suyo). */
@@ -57,6 +57,14 @@ const StudentPatchInput = StudentInput.omit({ password: true }).partial().extend
   process: ProcessSchema.nullable().optional(),
   billing: BillingSchema.nullable().optional(),
 });
+export const QUALITY_ASPECTS = ['organizacion', 'transferencia', 'sensibilidad', 'control', 'respiracion'] as const;
+const QualityInput = z.object({
+  exercise_name: z.string().trim().min(1).max(140),
+  day: DATE,
+  score: z.number().int().min(1).max(5),
+  aspects: z.array(z.enum(QUALITY_ASPECTS)).max(5).default([]),
+  note: z.string().trim().max(500).nullable().optional(),
+});
 const ReportPublishInput = z.object({
   start: DATE,
   message: z.string().trim().max(2000).nullable().optional(),
@@ -82,8 +90,10 @@ const SessionPatchInput = z.object({
   routine: RoutineSchema.optional(),
   participant_ids: z.array(z.string().uuid()).min(1).optional(),
 });
+const VideoUrl = z.string().trim().max(500).regex(/^https?:\/\/\S+$/, 'El video tiene que ser un link que empiece con http.');
 const ExerciseInput = z.object({
   name: z.string().trim().min(1).max(140),
+  video_url: VideoUrl.nullable().optional().or(z.literal('').transform(() => null)),
   capacity: z.string().nullable().optional().refine((v) => v == null || isCapacity(v), 'Capacidad inválida'),
   description: z.string().trim().max(1000).nullable().optional(),
 });
@@ -127,7 +137,7 @@ async function exerciseInfo(repo: TrainingRepository): Promise<ExerciseInfo> {
   const meta = new Map((await repo.listExerciseMeta()).map((m) => [m.key, m]));
   return (key, name) => {
     const m = meta.get(key);
-    return { name: m?.name, capacity: m?.capacity ?? suggestCapacity(m?.name ?? name) };
+    return { name: m?.name, capacity: m?.capacity ?? suggestCapacity(m?.name ?? name), video: m?.video_url ?? null };
   };
 }
 
@@ -149,10 +159,10 @@ function withCapacities(r: Routine, info: ExerciseInfo): Routine {
       ...b,
       groups: b.groups.map((g) => ({
         ...g,
-        items: g.items.map((it): RoutineItemView => ({
-          ...it,
-          capacity: b.kind === 'notes' || it.who ? null : info(itemKey(it), it.name).capacity,
-        })),
+        items: g.items.map((it): RoutineItemView => {
+          const meta = b.kind === 'notes' ? null : info(itemKey(it), it.name);
+          return { ...it, capacity: it.who ? null : meta?.capacity ?? null, video: meta?.video ?? null };
+        }),
       })),
     })),
   };
@@ -182,7 +192,10 @@ async function studentProfile(repo: TrainingRepository, student: Student, onlyOw
   const partners = [...partnerCount.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([id, shared]) => ({ id, name: all.get(id)?.name ?? '—', shared }));
-  return { student, sessions, progress, partners, next_sessions: nextSessions(student.schedule, 3) };
+  return {
+    student, sessions, progress, partners, next_sessions: nextSessions(student.schedule, 3),
+    quality: await repo.listQuality(student.id),
+  };
 }
 
 // ── informes de 4 semanas ───────────────────────────────────────────────────
@@ -200,6 +213,7 @@ async function reportInput(repo: TrainingRepository, student: Student): Promise<
     attendance: await repo.listAttendance(student.id),
     schedule: student.schedule,
     info: await exerciseInfo(repo),
+    quality: await repo.listQuality(student.id),
     firstDate: done[0]?.date ?? null,
   };
 }
@@ -409,6 +423,7 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
         capacity: m?.capacity ?? auto,
         capacity_source: m?.capacity ? 'coach' : auto ? 'auto' : null,
         description: m?.description ?? null,
+        video_url: m?.video_url ?? null,
         custom: m?.custom ?? false,
         uses: a?.uses ?? 0,
         students: a ? [...a.students].map((id) => byId.get(id)?.name ?? '—') : [],
@@ -424,7 +439,7 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
     const key = exerciseKey(exerciseName(input.name) || input.name);
     const saved = await repo.upsertExerciseMeta({
       key, name: input.name, capacity: (input.capacity as CapacityId | null | undefined) ?? null,
-      description: input.description ?? null, custom: true,
+      description: input.description ?? null, video_url: input.video_url ?? null, custom: true,
     });
     res.status(201).json({ exercise: saved });
   }));
@@ -434,7 +449,9 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
     const prev = (await repo.listExerciseMeta()).find((m) => m.key === req.params.key);
     const saved = await repo.upsertExerciseMeta({
       key: req.params.key!, name: input.name, capacity: (input.capacity as CapacityId | null | undefined) ?? null,
-      description: input.description ?? prev?.description ?? null, custom: prev?.custom ?? false,
+      description: input.description ?? prev?.description ?? null,
+      video_url: input.video_url !== undefined ? input.video_url : prev?.video_url ?? null,
+      custom: prev?.custom ?? false,
     });
     res.json({ exercise: saved });
   }));
@@ -703,6 +720,28 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
     res.status(201).json({ report });
   }));
 
+  // ── calidad del movimiento ──
+  router.post('/students/:id/quality', handle(async (req, res) => {
+    const q = QualityInput.parse(req.body);
+    if (!(await repo.getStudent(req.params.id!))) {
+      fail(res, 404, 'NOT_FOUND', 'Alumno inexistente.');
+      return;
+    }
+    const entry = await repo.createQuality({
+      student_id: req.params.id!, exercise_key: exerciseKey(exerciseName(q.exercise_name) || q.exercise_name),
+      exercise_name: q.exercise_name, day: q.day, score: q.score, aspects: q.aspects, note: q.note || null,
+    });
+    res.status(201).json({ entry });
+  }));
+
+  router.delete('/quality/:id', handle(async (req, res) => {
+    if (!(await repo.deleteQuality(req.params.id!))) {
+      fail(res, 404, 'NOT_FOUND', 'Registro inexistente.');
+      return;
+    }
+    res.json({ ok: true });
+  }));
+
   router.delete('/reports/:id', handle(async (req, res) => {
     if (!(await repo.deleteReport(req.params.id!))) {
       fail(res, 404, 'NOT_FOUND', 'Informe inexistente.');
@@ -751,7 +790,27 @@ export function createStudentRouter(repo: TrainingRepository): Router {
     if (!student) return;
     // Las notas y los honorarios son del coach: el alumno ve su objetivo y sus informes.
     const profile = await studentProfile(repo, { ...student, notes: null, billing: null }, true);
-    res.json({ ...profile, reports: await repo.listReports(student.id) });
+    // Su WhatsApp sí lo ve (lo puede editar); el resto de los honorarios, no.
+    res.json({ ...profile, reports: await repo.listReports(student.id), phone: student.billing?.telefono ?? null });
+  }));
+
+  /** El alumno edita sus datos: nombre, edad, WhatsApp y lo que quiere que su profe sepa. */
+  router.patch('/', handle(async (req, res) => {
+    const input = z.object({
+      name: z.string().trim().min(1).max(80).optional(),
+      age: z.number().int().min(5).max(110).nullable().optional(),
+      phone: z.string().trim().max(30).nullable().optional(),
+      about: z.string().trim().max(1000).nullable().optional(),
+    }).parse(req.body);
+    const student = await me(res);
+    if (!student) return;
+    const patch: Parameters<TrainingRepository['updateStudent']>[1] = {};
+    if (input.name !== undefined) patch.name = input.name;
+    if (input.age !== undefined) patch.age = input.age;
+    if (input.about !== undefined) patch.about = input.about || null;
+    if (input.phone !== undefined) patch.billing = BillingSchema.parse({ ...(student.billing ?? {}), telefono: input.phone || null });
+    const updated = await repo.updateStudent(student.id, patch);
+    res.json({ student: { ...updated!, notes: null, billing: null }, phone: updated?.billing?.telefono ?? null });
   }));
 
   router.post('/reports/:id/seen', handle(async (req, res) => {

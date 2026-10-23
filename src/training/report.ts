@@ -7,7 +7,7 @@ import { CAPACITIES, CapacityId } from './capacities';
 import { exerciseName, firstName } from './parser';
 import { buildProgress, ExerciseInfo, exerciseKey, ownItems, SessionForProgress, Unit } from './progress';
 import { itemText } from './routine';
-import { Attendance, Completion } from './repository';
+import { Attendance, Completion, QualityEntry } from './repository';
 import { occurrences, Schedule } from './schedule';
 
 export const CYCLE_DAYS = 28;
@@ -46,6 +46,10 @@ export interface ReportData {
   new_exercises: Array<{ name: string; capacity: CapacityId | null }>;
   feeling: { average: number; count: number } | null;
   comments: Array<{ date: string; text: string }>;
+  /** Calidad del movimiento que registró el profe en el ciclo (1 a 5). */
+  quality: Array<{ name: string; from: number | null; to: number; aspects: string[]; note: string | null }>;
+  /** Ejercicios que viene sosteniendo hace 8+ semanas y siguió puliendo en el ciclo. */
+  practice: Array<{ name: string; capacity: CapacityId | null; sessions: number; weeks: number }>;
 }
 
 export interface ReportInput {
@@ -57,6 +61,7 @@ export interface ReportInput {
   attendance: Attendance[];
   schedule: Schedule | null;
   info: ExerciseInfo;
+  quality?: QualityEntry[];
 }
 
 function shareByCapacity(sessions: SessionForProgress[], who: string, info: ExerciseInfo): Map<CapacityId, number> {
@@ -132,6 +137,38 @@ export function buildReport(input: ReportInput, cycle: Cycle, firstDate: string)
     })
     .slice(0, 8);
 
+  // Calidad: último registro del ciclo contra el anterior al ciclo (o el primero del ciclo).
+  const byEx = new Map<string, QualityEntry[]>();
+  for (const q of input.quality ?? []) byEx.set(q.exercise_key, [...(byEx.get(q.exercise_key) ?? []), q]);
+  const quality = [...byEx.values()].flatMap((list) => {
+    const sortedQ = [...list].sort((a, b) => a.day.localeCompare(b.day) || a.created_at.localeCompare(b.created_at));
+    const inside = sortedQ.filter((q) => q.day >= start && q.day <= end);
+    if (!inside.length) return [];
+    const before = sortedQ.filter((q) => q.day < start);
+    const last = inside[inside.length - 1]!;
+    const base = before.length ? before[before.length - 1]! : inside.length > 1 ? inside[0]! : null;
+    const aspects = [...new Set(inside.flatMap((q) => q.aspects))];
+    const note = [...inside].reverse().find((q) => q.note)?.note ?? null;
+    return [{ name: last.exercise_name, from: base ? base.score : null, to: last.score, aspects, note }];
+  }).sort((a, b) => (b.to - (b.from ?? b.to)) - (a.to - (a.from ?? a.to)));
+
+  // Práctica sostenida: apareció hace 8+ semanas y se trabajó 2+ veces en el ciclo.
+  const counts = new Map<string, number>();
+  for (const s2 of inPeriod) {
+    const seen = new Set<string>();
+    for (const it of ownItems(s2.routine, who)) {
+      const name = exerciseName(itemText(it));
+      const key = name ? exerciseKey(name) : '';
+      if (key && !seen.has(key)) { seen.add(key); counts.set(key, (counts.get(key) ?? 0) + 1); }
+    }
+  }
+  const practice = [...counts.entries()].flatMap(([key, n]) => {
+    const f = firstSeen.get(key);
+    if (!f || n < 2 || daysBetween(f.date, end) < 56) return [];
+    const meta = input.info(key, f.name);
+    return [{ name: meta.name ?? f.name, capacity: meta.capacity, sessions: n, weeks: Math.floor(daysBetween(f.date, end) / 7) }];
+  }).sort((a, b) => b.sessions - a.sessions || b.weeks - a.weeks).slice(0, 6);
+
   const done = input.completions.filter((c) => c.completed_at && c.date >= start && c.date <= end);
   const felt = done.map((c) => c.feeling).filter((f): f is number => typeof f === 'number');
   const firstWeek = (d: string) => Math.floor(daysBetween(firstDate, d) / 7) + 1;
@@ -161,5 +198,7 @@ export function buildReport(input: ReportInput, cycle: Cycle, firstDate: string)
     new_exercises,
     feeling: felt.length ? { average: Math.round((felt.reduce((a, b) => a + b, 0) / felt.length) * 10) / 10, count: felt.length } : null,
     comments: done.filter((c) => c.comment).map((c) => ({ date: c.date, text: c.comment! })).slice(0, 6),
+    quality,
+    practice,
   };
 }

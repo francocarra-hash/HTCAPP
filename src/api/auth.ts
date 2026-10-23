@@ -108,6 +108,21 @@ export function studentMiddleware(req: Request, res: Response, next: NextFunctio
   res.status(401).json({ error: 'UNAUTHORIZED', message: 'Login required.' });
 }
 
+/** Rutas compartidas (comunidad, fotos): profe o alumno. Deja el rol en res.locals. */
+export function anyUserMiddleware(req: Request, res: Response, next: NextFunction): void {
+  const p = readToken(bearer(req));
+  if (p?.sub === 'student' && p.sid) {
+    res.locals.role = 'student';
+    res.locals.studentId = p.sid;
+    return next();
+  }
+  if (p?.sub === 'coach' || !authEnabled()) {
+    res.locals.role = 'coach';
+    return next();
+  }
+  res.status(401).json({ error: 'UNAUTHORIZED', message: 'Login required.' });
+}
+
 // ── contraseñas de alumnos ──────────────────────────────────────────────────
 
 export function hashPassword(password: string): string {

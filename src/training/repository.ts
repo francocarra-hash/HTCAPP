@@ -25,11 +25,13 @@ export interface Student {
   schedule: Schedule | null;
   process: ProcessPhase[] | null;
   billing: Billing | null;
+  /** Lo que el alumno quiere que su profe sepa (lo escribe él). */
+  about: string | null;
   created_at: string;
 }
 
-export type StudentPatch = Partial<Pick<Student, 'name' | 'username' | 'age' | 'sex' | 'goal' | 'notes' | 'schedule' | 'process' | 'billing'>>;
-type NewStudent = Omit<Student, 'id' | 'created_at' | 'schedule' | 'process' | 'billing'> & { password_hash: string };
+export type StudentPatch = Partial<Pick<Student, 'name' | 'username' | 'age' | 'sex' | 'goal' | 'notes' | 'schedule' | 'process' | 'billing' | 'about'>>;
+type NewStudent = Omit<Student, 'id' | 'created_at' | 'schedule' | 'process' | 'billing' | 'about'> & { password_hash: string };
 
 export interface NewSession {
   date: string;
@@ -54,6 +56,8 @@ export interface ExerciseMeta {
   name: string;
   capacity: CapacityId | null;
   description: string | null;
+  /** Link a un video demostrativo. */
+  video_url: string | null;
   custom: boolean;
   updated_at: string;
 }
@@ -98,6 +102,29 @@ export interface StoredReport {
   seen_at: string | null;
 }
 export type NewReport = Omit<StoredReport, 'id' | 'published_at' | 'seen_at'>;
+
+export interface Avatar { mime: string; data: Buffer; updated_at: string }
+
+export interface Message {
+  id: string;
+  /** null = el profe. */
+  author_id: string | null;
+  body: string;
+  created_at: string;
+}
+
+export interface QualityEntry {
+  id: string;
+  student_id: string;
+  exercise_key: string;
+  exercise_name: string;
+  day: string;
+  score: number;
+  aspects: string[];
+  note: string | null;
+  created_at: string;
+}
+export type NewQuality = Omit<QualityEntry, 'id' | 'created_at'>;
 
 export interface CompletionUpdate {
   session_id: string;
@@ -154,6 +181,26 @@ export interface TrainingRepository {
   saveReport(r: NewReport): Promise<StoredReport>;
   deleteReport(id: string): Promise<boolean>;
   markReportSeen(id: string, studentId: string): Promise<void>;
+
+  /** Versión (fecha) de cada foto, para refrescar la caché del navegador. */
+  listAvatarVersions(): Promise<Map<string, string>>;
+  getAvatar(owner: string): Promise<Avatar | undefined>;
+  setAvatar(owner: string, mime: string, data: Buffer): Promise<string>;
+  deleteAvatar(owner: string): Promise<void>;
+
+  getSetting<T>(key: string): Promise<T | undefined>;
+  setSetting(key: string, value: unknown): Promise<void>;
+
+  listMessages(limit: number): Promise<Message[]>;
+  createMessage(authorId: string | null, body: string): Promise<Message>;
+  getMessage(id: string): Promise<Message | undefined>;
+  deleteMessage(id: string): Promise<boolean>;
+  getLastRead(reader: string): Promise<string | null>;
+  setLastRead(reader: string, at: string): Promise<void>;
+
+  listQuality(studentId: string): Promise<QualityEntry[]>;
+  createQuality(q: NewQuality): Promise<QualityEntry>;
+  deleteQuality(id: string): Promise<boolean>;
 }
 
 const bySessionOrder = (a: StoredSession, b: StoredSession): number =>
@@ -172,6 +219,11 @@ export class InMemoryTrainingRepository implements TrainingRepository {
   private payments = new Map<string, Payment>();
   private attendance = new Map<string, Attendance>();
   private reports = new Map<string, StoredReport>();
+  private avatars = new Map<string, Avatar>();
+  private settings = new Map<string, unknown>();
+  private messages: Array<Message & { deleted: boolean }> = [];
+  private reads = new Map<string, string>();
+  private quality = new Map<string, QualityEntry>();
 
   private pub(s: Student & { password_hash: string }): Student {
     const { password_hash: _h, ...rest } = s;
@@ -194,7 +246,7 @@ export class InMemoryTrainingRepository implements TrainingRepository {
   }
   async createStudent(s: NewStudent): Promise<Student> {
     if ([...this.students.values()].some((x) => x.username === s.username)) throw new Error('USERNAME_TAKEN');
-    const full = { ...s, schedule: null, process: null, billing: null, id: randomUUID(), created_at: new Date().toISOString() };
+    const full = { ...s, schedule: null, process: null, billing: null, about: null, id: randomUUID(), created_at: new Date().toISOString() };
     this.students.set(full.id, full);
     return this.pub(full);
   }
@@ -220,6 +272,9 @@ export class InMemoryTrainingRepository implements TrainingRepository {
     for (const [k, p] of this.payments) if (p.student_id === id) this.payments.delete(k);
     for (const [k, a] of this.attendance) if (a.student_id === id) this.attendance.delete(k);
     for (const [k, r] of this.reports) if (r.student_id === id) this.reports.delete(k);
+    for (const [k, q] of this.quality) if (q.student_id === id) this.quality.delete(k);
+    this.messages = this.messages.filter((m) => m.author_id !== id);
+    this.avatars.delete(id);
     for (const [sid, sess] of this.sessions) {
       sess.participant_ids = sess.participant_ids.filter((p) => p !== id);
       if (!sess.participant_ids.length) this.sessions.delete(sid);
@@ -362,6 +417,74 @@ export class InMemoryTrainingRepository implements TrainingRepository {
     const r = this.reports.get(id);
     if (r && r.student_id === studentId && !r.seen_at) r.seen_at = new Date().toISOString();
   }
+
+  async listAvatarVersions(): Promise<Map<string, string>> {
+    return new Map([...this.avatars].map(([k, v]) => [k, v.updated_at]));
+  }
+  async getAvatar(owner: string): Promise<Avatar | undefined> {
+    return this.avatars.get(owner);
+  }
+  async setAvatar(owner: string, mime: string, data: Buffer): Promise<string> {
+    const updated_at = new Date().toISOString();
+    this.avatars.set(owner, { mime, data, updated_at });
+    return updated_at;
+  }
+  async deleteAvatar(owner: string): Promise<void> {
+    this.avatars.delete(owner);
+  }
+
+  async getSetting<T>(key: string): Promise<T | undefined> {
+    return clone(this.settings.get(key) as T | undefined);
+  }
+  async setSetting(key: string, value: unknown): Promise<void> {
+    this.settings.set(key, clone(value));
+  }
+
+  async listMessages(limit: number): Promise<Message[]> {
+    return this.messages.filter((m) => !m.deleted).slice(-limit).map(({ deleted: _d, ...m }) => clone(m));
+  }
+  async createMessage(authorId: string | null, body: string): Promise<Message> {
+    // Fecha estrictamente creciente: dos mensajes en el mismo milisegundo no se pisan al marcar leídos.
+    const last = this.messages[this.messages.length - 1]?.created_at;
+    let at = new Date().toISOString();
+    if (last && at <= last) at = new Date(Date.parse(last) + 1).toISOString();
+    const m = { id: randomUUID(), author_id: authorId, body, created_at: at, deleted: false };
+    this.messages.push(m);
+    const { deleted: _d, ...out } = m;
+    return clone(out);
+  }
+  async getMessage(id: string): Promise<Message | undefined> {
+    const m = this.messages.find((x) => x.id === id && !x.deleted);
+    if (!m) return undefined;
+    const { deleted: _d, ...out } = m;
+    return clone(out);
+  }
+  async deleteMessage(id: string): Promise<boolean> {
+    const m = this.messages.find((x) => x.id === id && !x.deleted);
+    if (!m) return false;
+    m.deleted = true;
+    return true;
+  }
+  async getLastRead(reader: string): Promise<string | null> {
+    return this.reads.get(reader) ?? null;
+  }
+  async setLastRead(reader: string, at: string): Promise<void> {
+    const prev = this.reads.get(reader);
+    if (!prev || at > prev) this.reads.set(reader, at);
+  }
+
+  async listQuality(studentId: string): Promise<QualityEntry[]> {
+    return [...this.quality.values()].filter((q) => q.student_id === studentId)
+      .sort((a, b) => a.day.localeCompare(b.day) || a.created_at.localeCompare(b.created_at)).map((q) => clone(q));
+  }
+  async createQuality(q: NewQuality): Promise<QualityEntry> {
+    const full = { ...clone(q), id: randomUUID(), created_at: new Date().toISOString() };
+    this.quality.set(full.id, full);
+    return clone(full);
+  }
+  async deleteQuality(id: string): Promise<boolean> {
+    return this.quality.delete(id);
+  }
 }
 
 // ── PostgreSQL ──────────────────────────────────────────────────────────────
@@ -380,6 +503,19 @@ const toStudent = (r: any): Student => ({
   schedule: r.schedule ?? null,
   process: r.process ?? null,
   billing: r.billing ?? null,
+  about: r.about ?? null,
+  created_at: ts(r.created_at)!,
+});
+
+const toQuality = (r: any): QualityEntry => ({
+  id: r.id,
+  student_id: r.student_id,
+  exercise_key: r.exercise_key,
+  exercise_name: r.exercise_name,
+  day: r.day,
+  score: r.score,
+  aspects: r.aspects ?? [],
+  note: r.note ?? null,
   created_at: ts(r.created_at)!,
 });
 
@@ -432,7 +568,9 @@ const toCompletion = (r: any): Completion => ({
   updated_at: ts(r.updated_at)!,
 });
 
-const STUDENT_COLS = 'id, name, username, age, sex, goal, notes, schedule, process, billing, created_at';
+const STUDENT_COLS = 'id, name, username, age, sex, goal, notes, schedule, process, billing, about, created_at';
+const QUALITY_COLS = `id::text AS id, student_id::text AS student_id, exercise_key, exercise_name,
+  to_char(day, 'YYYY-MM-DD') AS day, score, aspects, note, created_at`;
 const PAYMENT_COLS = `id::text AS id, student_id::text AS student_id, to_char(paid_on, 'YYYY-MM-DD') AS paid_on,
   amount, classes, period, note, created_at`;
 const REPORT_COLS = `id::text AS id, student_id::text AS student_id, to_char(period_start, 'YYYY-MM-DD') AS period_start,
@@ -495,7 +633,7 @@ export class PgTrainingRepository implements TrainingRepository {
     }
   }
   async updateStudent(id: string, patch: StudentPatch): Promise<Student | undefined> {
-    const cols = (['name', 'username', 'age', 'sex', 'goal', 'notes', 'schedule', 'process', 'billing'] as const).filter((k) => k in patch);
+    const cols = (['name', 'username', 'age', 'sex', 'goal', 'notes', 'schedule', 'process', 'billing', 'about'] as const).filter((k) => k in patch);
     if (!cols.length) return this.getStudent(id);
     const value = (c: (typeof cols)[number]) =>
       (c === 'schedule' || c === 'process' || c === 'billing' ? json(patch[c]) : patch[c] ?? null);
@@ -613,16 +751,16 @@ export class PgTrainingRepository implements TrainingRepository {
   }
 
   async listExerciseMeta(): Promise<ExerciseMeta[]> {
-    const r = await this.pool.query('SELECT key, name, capacity, description, custom, updated_at FROM training_exercises');
+    const r = await this.pool.query('SELECT key, name, capacity, description, video_url, custom, updated_at FROM training_exercises');
     return r.rows.map((x) => ({ ...x, updated_at: ts(x.updated_at)! }));
   }
   async upsertExerciseMeta(m: Omit<ExerciseMeta, 'updated_at'>): Promise<ExerciseMeta> {
     const r = await this.pool.query(
-      `INSERT INTO training_exercises (key, name, capacity, description, custom, updated_at)
-       VALUES ($1,$2,$3,$4,$5, now())
-       ON CONFLICT (key) DO UPDATE SET name = $2, capacity = $3, description = $4, custom = $5, updated_at = now()
-       RETURNING key, name, capacity, description, custom, updated_at`,
-      [m.key, m.name, m.capacity, m.description, m.custom],
+      `INSERT INTO training_exercises (key, name, capacity, description, video_url, custom, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6, now())
+       ON CONFLICT (key) DO UPDATE SET name = $2, capacity = $3, description = $4, video_url = $5, custom = $6, updated_at = now()
+       RETURNING key, name, capacity, description, video_url, custom, updated_at`,
+      [m.key, m.name, m.capacity, m.description, m.video_url, m.custom],
     );
     return { ...r.rows[0], updated_at: ts(r.rows[0].updated_at)! };
   }
@@ -745,5 +883,84 @@ export class PgTrainingRepository implements TrainingRepository {
     await this.pool.query(
       'UPDATE training_reports SET seen_at = now() WHERE id = $1 AND student_id = $2 AND seen_at IS NULL', [id, studentId]);
   }
+  async listAvatarVersions(): Promise<Map<string, string>> {
+    const r = await this.pool.query('SELECT owner, updated_at FROM training_avatars');
+    return new Map(r.rows.map((x: any) => [x.owner, ts(x.updated_at)!]));
+  }
+  async getAvatar(owner: string): Promise<Avatar | undefined> {
+    const r = await this.pool.query('SELECT mime, data, updated_at FROM training_avatars WHERE owner = $1', [owner]);
+    return r.rows[0] ? { mime: r.rows[0].mime, data: r.rows[0].data, updated_at: ts(r.rows[0].updated_at)! } : undefined;
+  }
+  async setAvatar(owner: string, mime: string, data: Buffer): Promise<string> {
+    const r = await this.pool.query(
+      `INSERT INTO training_avatars (owner, mime, data, updated_at) VALUES ($1,$2,$3, now())
+       ON CONFLICT (owner) DO UPDATE SET mime = $2, data = $3, updated_at = now() RETURNING updated_at`,
+      [owner, mime, data],
+    );
+    return ts(r.rows[0].updated_at)!;
+  }
+  async deleteAvatar(owner: string): Promise<void> {
+    await this.pool.query('DELETE FROM training_avatars WHERE owner = $1', [owner]);
+  }
+
+  async getSetting<T>(key: string): Promise<T | undefined> {
+    const r = await this.pool.query('SELECT value FROM training_settings WHERE key = $1', [key]);
+    return r.rows[0]?.value as T | undefined;
+  }
+  async setSetting(key: string, value: unknown): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO training_settings (key, value, updated_at) VALUES ($1,$2, now())
+       ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = now()`, [key, json(value)]);
+  }
+
+  async listMessages(limit: number): Promise<Message[]> {
+    const r = await this.pool.query(
+      `SELECT * FROM (SELECT id::text AS id, author_id::text AS author_id, body, created_at FROM training_messages
+         WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT $1) m ORDER BY created_at`, [limit]);
+    return r.rows.map((x: any) => ({ ...x, created_at: ts(x.created_at)! }));
+  }
+  async createMessage(authorId: string | null, body: string): Promise<Message> {
+    const r = await this.pool.query(
+      `INSERT INTO training_messages (id, author_id, body) VALUES ($1,$2,$3)
+       RETURNING id::text AS id, author_id::text AS author_id, body, created_at`, [randomUUID(), authorId, body]);
+    return { ...r.rows[0], created_at: ts(r.rows[0].created_at)! };
+  }
+  async getMessage(id: string): Promise<Message | undefined> {
+    const r = await this.pool.query(
+      `SELECT id::text AS id, author_id::text AS author_id, body, created_at FROM training_messages
+        WHERE id = $1 AND deleted_at IS NULL`, [id]);
+    return r.rows[0] ? { ...r.rows[0], created_at: ts(r.rows[0].created_at)! } : undefined;
+  }
+  async deleteMessage(id: string): Promise<boolean> {
+    const r = await this.pool.query('UPDATE training_messages SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL RETURNING id', [id]);
+    return r.rows.length > 0;
+  }
+  async getLastRead(reader: string): Promise<string | null> {
+    const r = await this.pool.query('SELECT last_read_at FROM training_message_reads WHERE reader = $1', [reader]);
+    return r.rows[0] ? ts(r.rows[0].last_read_at) : null;
+  }
+  async setLastRead(reader: string, at: string): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO training_message_reads (reader, last_read_at) VALUES ($1,$2)
+       ON CONFLICT (reader) DO UPDATE SET last_read_at = GREATEST(training_message_reads.last_read_at, EXCLUDED.last_read_at)`,
+      [reader, at]);
+  }
+
+  async listQuality(studentId: string): Promise<QualityEntry[]> {
+    const r = await this.pool.query(`SELECT ${QUALITY_COLS} FROM training_quality WHERE student_id = $1 ORDER BY day, created_at`, [studentId]);
+    return r.rows.map(toQuality);
+  }
+  async createQuality(q: NewQuality): Promise<QualityEntry> {
+    const r = await this.pool.query(
+      `INSERT INTO training_quality (id, student_id, exercise_key, exercise_name, day, score, aspects, note)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING ${QUALITY_COLS}`,
+      [randomUUID(), q.student_id, q.exercise_key, q.exercise_name, q.day, q.score, json(q.aspects), q.note]);
+    return toQuality(r.rows[0]);
+  }
+  async deleteQuality(id: string): Promise<boolean> {
+    const r = await this.pool.query('DELETE FROM training_quality WHERE id = $1 RETURNING id', [id]);
+    return r.rows.length > 0;
+  }
+
 
 }

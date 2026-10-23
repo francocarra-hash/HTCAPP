@@ -17,6 +17,7 @@ import { createRouterV3, loadCompiledV3 } from './api/router-v3';
 import { InMemoryV3Repository, PgV3Repository } from './v3/repository';
 import { authEnabled } from './api/auth';
 import { createAuthRouter, createStudentRouter, createTrainingRouter } from './api/router-training';
+import { createSocialRouter } from './api/router-social';
 import { InMemoryTrainingRepository, PgTrainingRepository } from './training/repository';
 
 const CANONICAL_DIR = process.env.HTC_CANONICAL_DIR ?? path.join(__dirname, '..', 'canonical');
@@ -45,7 +46,8 @@ async function main(): Promise<void> {
 
   const { repo, pool } = await buildRepository();
   const app = express();
-  app.use(express.json());
+  // 1 MB: fotos de perfil (ya achicadas) y notas largas pegadas de Evernote.
+  app.use(express.json({ limit: '1mb' }));
 
   // ── HTC v3 (OS v3.0 — C-1..C-5 resueltos). Se monta antes que /api para
   // que /api/v3/* no quede capturado por el router v2.
@@ -71,6 +73,7 @@ async function main(): Promise<void> {
   app.use('/api', createAuthRouter(trainingRepo));
   app.use('/api/training', createTrainingRouter(trainingRepo));
   app.use('/api/me', createStudentRouter(trainingRepo));
+  app.use('/api/social', createSocialRouter(trainingRepo));
 
   // Single mount point: everything under /api (auth middleware guards it).
   app.use('/api', createRouter(compiled, repo));

@@ -58,8 +58,21 @@ export interface CapacitySummary {
   recent_share: number;
 }
 
+/**
+ * Ejercicio que el alumno sostiene en el tiempo. Ahí el progreso suele estar en la
+ * calidad (cómo organiza el cuerpo, transfiere el peso, siente el movimiento),
+ * aunque los números no cambien.
+ */
+export interface Practice {
+  key: string; name: string; capacity: CapacityId | null;
+  sessions: number; weeks: number; first_date: string; last_date: string;
+  /** Sesiones en las últimas 8 semanas. */
+  recent: number;
+}
+
 export interface Progress {
   stats: ProgressStats;
+  practice: Practice[];
   months: Array<{ month: string; count: number }>;
   exercises: ExerciseSeries[];
   highlights: Highlight[];
@@ -72,7 +85,7 @@ export interface SessionForProgress {
 }
 
 /** Metadatos de la biblioteca: nombre elegido por el coach y capacidad. */
-export type ExerciseInfo = (key: string, name: string) => { name?: string; capacity: CapacityId | null };
+export type ExerciseInfo = (key: string, name: string) => { name?: string; capacity: CapacityId | null; video?: string | null };
 
 const ALIASES: Record<string, string> = {
   yiwto: 'iywto',
@@ -183,6 +196,7 @@ export function buildProgress(
   const capSessions = new Map<CapacityId, Set<string>>();
   const recentFrom = last ? isoDate(new Date(new Date(`${last}T12:00:00`).getTime() - 27 * 86400000)) : '';
   const recent = new Map<CapacityId, number>();
+  const practiced = new Map<string, { dates: Set<string>; names: Map<string, number> }>();
 
   sorted.forEach((s, si) => {
     const seen = new Map<string, Raw>();
@@ -196,6 +210,10 @@ export function buildProgress(
         capOf.set(key, meta.capacity);
         nameOf.set(key, meta.name);
       }
+      const pr = practiced.get(key) ?? { dates: new Set<string>(), names: new Map<string, number>() };
+      pr.dates.add(s.date);
+      pr.names.set(it.name, (pr.names.get(it.name) ?? 0) + 1);
+      practiced.set(key, pr);
       const cap = capOf.get(key) ?? null;
       if (cap) {
         capSessions.set(cap, (capSessions.get(cap) ?? new Set()).add(`${si}`));
@@ -268,7 +286,25 @@ export function buildProgress(
     };
   });
 
+  // Práctica sostenida: 6+ sesiones a lo largo de 8+ semanas y vigente en las últimas 8.
+  const day = 86400000;
+  const recentPractice = last ? isoDate(new Date(new Date(`${last}T12:00:00`).getTime() - 55 * day)) : '';
+  const practice: Practice[] = [...practiced.entries()].flatMap(([key, p]) => {
+    const dates = [...p.dates].sort();
+    const firstD = dates[0]!;
+    const lastD = dates[dates.length - 1]!;
+    const weeks = Math.round((Date.parse(`${lastD}T12:00:00Z`) - Date.parse(`${firstD}T12:00:00Z`)) / (7 * day)) + 1;
+    const recentN = dates.filter((d) => d >= recentPractice).length;
+    if (dates.length < 6 || weeks < 8 || recentN < 2) return [];
+    const top = [...p.names.entries()].sort((a, b) => b[1] - a[1])[0]![0];
+    return [{
+      key, name: nameOf.get(key) ?? top.charAt(0).toUpperCase() + top.slice(1), capacity: capOf.get(key) ?? null,
+      sessions: dates.length, weeks, first_date: firstD, last_date: lastD, recent: recentN,
+    }];
+  }).sort((a, b) => b.recent - a.recent || b.weeks - a.weeks).slice(0, 8);
+
   return {
+    practice,
     stats: {
       sessions: sorted.length,
       first_date: first,
