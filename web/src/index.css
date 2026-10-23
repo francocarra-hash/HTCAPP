@@ -2,6 +2,7 @@
 @import "./app/bitacora.css";
 @import "./app/bitacora-extra.css";
 @import "./app/finance.css";
+@import "./app/social.css";
 
 @theme {
   --font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;

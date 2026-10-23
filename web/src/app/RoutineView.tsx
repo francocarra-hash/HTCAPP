@@ -5,6 +5,7 @@ import {
 } from './data';
 import { Celebration } from './Celebration';
 import { Icon } from './ui';
+import { VideoBtn } from './social';
 
 /** viewer = nombre de pila del alumno que mira (undefined = vista del coach). */
 type Viewer = string | undefined;
@@ -36,6 +37,7 @@ function ReadItem({ item, viewer, replaced, notes }: {
         <span className={`who${mine || !viewer ? '' : ' other'}`}>{mine ? 'Para vos' : item.who}</span>
         <b>{item.name}</b>
         {item.dose && <span className="rx">{item.dose}</span>}
+        <VideoBtn url={item.video} name={item.name} />
       </div>
     );
   }
@@ -44,6 +46,7 @@ function ReadItem({ item, viewer, replaced, notes }: {
       <div className={`itm${replaced ? ' dim' : ''}`}>
         <b>{item.name}</b>
         {item.dose && <span className="rx">{item.dose}</span>}
+        <VideoBtn url={item.video} name={item.name} />
       </div>
       {notes?.filter((n) => n.note).map((n, i) => (
         <div key={i} className="note-show"><b>{n.who}:</b> {n.note}</div>
@@ -54,7 +57,7 @@ function ReadItem({ item, viewer, replaced, notes }: {
 
 function blockBody(b: RoutineBlock, labels: Map<string, string>, render: (items: RoutineItem[]) => ReactNode): ReactNode {
   if (b.kind === 'list') {
-    return <ol className="mob">{b.groups.flatMap((g) => g.items).map((it) => <li key={it.id}>{itemText(it)}</li>)}</ol>;
+    return <ol className="mob">{b.groups.flatMap((g) => g.items).map((it) => <li key={it.id}>{itemText(it)} <VideoBtn url={it.video} name={it.name} /></li>)}</ol>;
   }
   if (b.kind === 'notes') {
     return <div className="chips-row">{b.groups.flatMap((g) => g.items).map((it) => <span className="mini" key={it.id}>{itemText(it)}</span>)}</div>;
@@ -196,7 +199,7 @@ export function RoutinePlayer({ session, studentId, studentName, onProgress, onD
     if (it.who && !isMine(it.who, viewer)) return null;
     if (replaced) {
       return (
-        <div className="itm dim" key={it.id}><b>{it.name}</b>{it.dose && <span className="rx">{it.dose}</span>}</div>
+        <div className="itm dim" key={it.id}><b>{it.name}</b>{it.dose && <span className="rx">{it.dose}</span>}<VideoBtn url={it.video} name={it.name} /></div>
       );
     }
     const on = checks.has(it.id);
@@ -207,6 +210,7 @@ export function RoutinePlayer({ session, studentId, studentName, onProgress, onD
           {it.who && <span className="for">Para vos</span>}
           <b>{it.name}</b>
           {it.dose && <span className="rx">{it.dose}</span>}
+          <VideoBtn url={it.video} name={it.name} />
         </div>
         <button className={`nb${note ? ' has' : ''}`} aria-label={note ? 'Editar nota' : 'Agregar nota'}
           onClick={() => setNoteOpen(noteOpen === it.id ? null : it.id)}>{Icon.note}</button>

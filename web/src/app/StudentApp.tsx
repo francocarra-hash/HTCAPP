@@ -8,15 +8,9 @@ import { ProgressView, WinCard } from './ProgressView';
 import { StudentReports } from './Report';
 import { HistoryList, RoutineBlocks, RoutinePlayer } from './RoutineView';
 import { CapTag, Enter, Icon, Skeleton, TabBar, TabDef, TopHeader, useToast } from './ui';
+import { Avatar, Community, PeopleProvider, PhotoPicker, usePeople, useUnread } from './social';
 
-type Tab = 'hoy' | 'progreso' | 'historial' | 'perfil';
-
-const TABS: TabDef<Tab>[] = [
-  { id: 'hoy', label: 'Hoy', icon: Icon.routine },
-  { id: 'progreso', label: 'Progreso', icon: Icon.progress },
-  { id: 'historial', label: 'Historial', icon: Icon.history },
-  { id: 'perfil', label: 'Perfil', icon: Icon.user },
-];
+type Tab = 'hoy' | 'progreso' | 'historial' | 'comunidad' | 'perfil';
 
 /** Rutina asignada que el alumno todavía no terminó (la más próxima o atrasada). */
 export function pendingSession(p: Profile): Session | undefined {
@@ -50,6 +44,19 @@ export function NextCard({ next, you }: { next: Occurrence | undefined; you: boo
 }
 
 export default function StudentApp({ onLogout }: { onLogout: () => void }) {
+  return <PeopleProvider><StudentHome onLogout={onLogout} /></PeopleProvider>;
+}
+
+function StudentHome({ onLogout }: { onLogout: () => void }) {
+  const [unread, reloadUnread] = useUnread();
+  const { reload: reloadPeople } = usePeople();
+  const TABS: TabDef<Tab>[] = [
+    { id: 'hoy', label: 'Hoy', icon: Icon.routine },
+    { id: 'progreso', label: 'Progreso', icon: Icon.progress },
+    { id: 'historial', label: 'Historial', icon: Icon.history },
+    { id: 'comunidad', label: 'Comunidad', icon: Icon.chat, badge: unread },
+    { id: 'perfil', label: 'Perfil', icon: Icon.user },
+  ];
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('hoy');
@@ -73,7 +80,7 @@ export default function StudentApp({ onLogout }: { onLogout: () => void }) {
   const s = profile?.student;
   const pending = profile ? pendingSession(profile) : undefined;
   const last = profile ? lastRealized(profile) : undefined;
-  const titles: Record<Tab, string> = { hoy: pending ? 'Tu rutina' : 'Hoy', progreso: 'Progreso', historial: 'Historial', perfil: 'Perfil' };
+  const titles: Record<Tab, string> = { hoy: pending ? 'Tu rutina' : 'Hoy', progreso: 'Progreso', historial: 'Historial', comunidad: 'Comunidad', perfil: 'Perfil' };
   const sub = !profile ? null
     : tab === 'hoy'
       ? pending
@@ -81,6 +88,7 @@ export default function StudentApp({ onLogout }: { onLogout: () => void }) {
         : <span>Hola, {firstName(profile.student.name)} 👋</span>
       : tab === 'progreso' ? <span>Tus avances, por capacidad</span>
       : tab === 'historial' ? <span>{profile.sessions.length} sesiones</span>
+      : tab === 'comunidad' ? <span>Tu profe y el grupo</span>
       : <span>Tu proceso de entrenamiento</span>;
   const below = tab === 'hoy' && pending && prog
     ? <div className={`pbar${prog.done === prog.total && prog.total ? ' full' : ''}`} role="progressbar" aria-valuemin={0} aria-valuemax={prog.total} aria-valuenow={prog.done} aria-label="Ejercicios hechos"><i style={{ width: `${prog.total ? (prog.done / prog.total) * 100 : 0}%` }} /></div>
@@ -91,7 +99,7 @@ export default function StudentApp({ onLogout }: { onLogout: () => void }) {
       <div className="bt-page">
         <div className="wrap">
           <TopHeader title={titles[tab]} sub={sub} below={below}
-            right={s && <button className={`avatar${tab === 'perfil' ? ' on' : ''}`} onClick={() => go('perfil')} aria-label="Perfil">{initials(s.name)}</button>} />
+            right={s && <button className={`avatar${tab === 'perfil' ? ' on' : ''}`} onClick={() => go('perfil')} aria-label="Perfil"><Avatar id={s.id} name={s.name} size={40} /></button>} />
           <main aria-live="polite">
             {error ? <p className="empty">No se pudo cargar tu información: {error}</p>
               : !profile ? <Skeleton />
@@ -109,11 +117,15 @@ export default function StudentApp({ onLogout }: { onLogout: () => void }) {
                   {tab === 'progreso' && (
                     <>
                       <StudentReports reports={profile.reports ?? []} onSeen={markSeen} />
-                      <ProgressView progress={profile.progress} you />
+                      <ProgressView progress={profile.progress} you quality={profile.quality} />
                     </>
                   )}
                   {tab === 'historial' && <HistoryList sessions={profile.sessions} viewer={firstName(profile.student.name)} studentId={profile.student.id} />}
-                  {tab === 'perfil' && <ProfileTab profile={profile} onLogout={onLogout} onSaved={() => showToast('Contraseña actualizada')} />}
+                  {tab === 'comunidad' && <Community isCoach={false} toast={showToast} onRead={reloadUnread} />}
+                  {tab === 'perfil' && (
+                    <ProfileTab profile={profile} onLogout={onLogout} onSaved={() => showToast('Contraseña actualizada')} toast={showToast}
+                      onData={() => { load(); reloadPeople(); showToast('Datos guardados'); }} />
+                  )}
                 </Enter>
               )}
           </main>
@@ -183,7 +195,9 @@ export function ProcessTimeline({ phases }: { phases: ProcessPhase[] }) {
   );
 }
 
-function ProfileTab({ profile, onLogout, onSaved }: { profile: Profile; onLogout: () => void; onSaved: () => void }) {
+function ProfileTab({ profile, onLogout, onSaved, onData, toast }: {
+  profile: Profile; onLogout: () => void; onSaved: () => void; onData: () => void; toast: (m: string) => void;
+}) {
   const s = profile.student;
   const { stats, highlights, capacities } = profile.progress;
   const [cur, setCur] = useState('');
@@ -216,7 +230,7 @@ function ProfileTab({ profile, onLogout, onSaved }: { profile: Profile; onLogout
     <>
       <section className="card">
         <div className="hero">
-          <div className="avatar-lg" aria-hidden="true">{initials(s.name)}</div>
+          <Avatar id={s.id} name={s.name} size={64} />
           <div style={{ minWidth: 0 }}>
             <h2>{s.name}</h2>
             <p>{[s.age ? `${s.age} años` : null, partner ? `entrena con ${partner}` : null].filter(Boolean).join(' · ') || 'Tu espacio de entrenamiento'}</p>
@@ -271,6 +285,8 @@ function ProfileTab({ profile, onLogout, onSaved }: { profile: Profile; onLogout
         </section>
       )}
 
+      <MyData profile={profile} onSaved={onData} toast={toast} />
+
       <section className="card">
         <h2>Cuenta</h2>
         <div className="hint">Entrás con el usuario <b style={{ fontFamily: 'var(--f-data)' }}>{s.username}</b>.</div>
@@ -297,5 +313,40 @@ function ProfileTab({ profile, onLogout, onSaved }: { profile: Profile; onLogout
         <button className="btn wide" onClick={onLogout}>{Icon.logout} Cerrar sesión</button>
       </div>
     </>
+  );
+}
+
+/** El alumno edita su foto y sus datos. */
+function MyData({ profile, onSaved, toast }: { profile: Profile; onSaved: () => void; toast: (m: string) => void }) {
+  const s = profile.student;
+  const [name, setName] = useState(s.name);
+  const [age, setAge] = useState(s.age ? String(s.age) : '');
+  const [phone, setPhone] = useState(profile.phone ?? '');
+  const [about, setAbout] = useState(s.about ?? '');
+  const [busy, setBusy] = useState(false);
+  const dirty = name.trim() !== s.name || age !== (s.age ? String(s.age) : '') || phone !== (profile.phone ?? '') || about !== (s.about ?? '');
+  const save = async () => {
+    setBusy(true);
+    try {
+      await studentApi.updateMe({ name: name.trim(), age: age ? Number(age) : null, phone: phone.trim() || null, about: about.trim() || null });
+      onSaved();
+    } catch (e) { toast((e as ApiError).message); } finally { setBusy(false); }
+  };
+  return (
+    <section className="card">
+      <h2>Tus datos</h2>
+      <div style={{ marginTop: 12 }}><PhotoPicker owner={s.id} name={s.name} toast={toast} /></div>
+      <div className="fields">
+        <div className="field full"><label htmlFor="me-name">Nombre</label><input id="me-name" value={name} onChange={(e) => setName(e.target.value)} /></div>
+        <div className="field"><label htmlFor="me-age">Edad</label><input id="me-age" type="number" inputMode="numeric" min={5} max={110} value={age} onChange={(e) => setAge(e.target.value)} /></div>
+        <div className="field"><label htmlFor="me-tel">WhatsApp</label><input id="me-tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="5491112345678" /></div>
+        <div className="field full">
+          <label htmlFor="me-about">Algo que tu profe tenga que saber</label>
+          <textarea id="me-about" rows={3} value={about} onChange={(e) => setAbout(e.target.value)} placeholder="Molestias, horarios, objetivos, lo que quieras contarle" />
+          <small>Lo ve sólo tu profe.</small>
+        </div>
+      </div>
+      {dirty && <div className="actions"><button className="btn primary wide" disabled={busy || !name.trim()} onClick={save}>{busy ? 'Guardando…' : 'Guardar datos'}</button></div>}
+    </section>
   );
 }

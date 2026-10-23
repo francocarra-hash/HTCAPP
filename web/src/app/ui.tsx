@@ -48,6 +48,10 @@ export const Icon = {
   play: svg(<path d="M8 5.5v13l10.5-6.5z" />),
   money: svg(<><rect x="3" y="6" width="18" height="12" rx="2" /><circle cx="12" cy="12" r="2.6" /><path d="M6.5 9.5v.01M17.5 14.5v.01" /></>),
   menu: svg(<><circle cx="6" cy="12" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="18" cy="12" r="1.3" /></>),
+  camera: svg(<><path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2.2l1.4-2h5.8l1.4 2h2.2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z" /><circle cx="12" cy="12.8" r="3.4" /></>),
+  send: svg(<><path d="M4 12l16-7-6.5 15-2.3-6.2z" /><path d="M11.2 13.8L20 5" /></>),
+  chat: svg(<><path d="M5 5h14a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 19 17h-7l-4.5 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5v-9A1.5 1.5 0 0 1 5 5z" /><path d="M8 10h8M8 13h5" /></>),
+  info: svg(<><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5M12 8h.01" /></>),
   star: svg(<path d="M12 3.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8L12 16.9 6.7 19.6l1-5.8-4.2-4.1 5.9-.9z" />),
 };
 
@@ -89,7 +93,7 @@ export function TopHeader({ title, sub, onBack, right, below }: {
   );
 }
 
-export interface TabDef<T extends string> { id: T; label: string; icon: ReactNode }
+export interface TabDef<T extends string> { id: T; label: string; icon: ReactNode; badge?: number }
 
 export function TabBar<T extends string>({ tabs, current, onChange }: { tabs: TabDef<T>[]; current: T; onChange: (t: T) => void }) {
   const idx = Math.max(0, tabs.findIndex((t) => t.id === current));
@@ -98,8 +102,9 @@ export function TabBar<T extends string>({ tabs, current, onChange }: { tabs: Ta
       <div className="in" style={{ ['--n' as string]: tabs.length, ['--ti' as string]: idx }}>
         <span className="ind" aria-hidden="true" />
         {tabs.map((t) => (
-          <button key={t.id} aria-current={t.id === current ? 'page' : 'false'} onClick={() => onChange(t.id)}>
-            {t.icon}
+          <button key={t.id} aria-current={t.id === current ? 'page' : 'false'} onClick={() => onChange(t.id)}
+            aria-label={t.badge ? `${t.label}: ${t.badge} sin leer` : undefined}>
+            <span className="ticon">{t.icon}{t.badge ? <span className="tbadge">{t.badge > 99 ? '99+' : t.badge}</span> : null}</span>
             {t.label}
           </button>
         ))}

@@ -5,13 +5,14 @@ import V3App from '../v3/V3App';
 import { api as v3api, DOMAIN_ES } from '../v3/shared';
 import { AssessmentSummary } from '../v3/types';
 import {
-  ActivityItem, coachApi, daysSince, FinanceData, Mark, firstName, initials, localDateOf, longDate, ProcessPhase, Profile, relDays, Session,
+  ActivityItem, coachApi, daysSince, FinanceData, Mark, socialApi, firstName, initials, localDateOf, longDate, ProcessPhase, Profile, relDays, Session,
   SEX_LABEL, Sex, shortDate, Student, StudentListItem, timeAgo, todayIso, uid, whenLabel, cap,
 } from './data';
 import { AgendaEditor } from './Agenda';
 import { FinanzasView, HoyView, StudentPayments, usePayPill } from './Finance';
 import { makeFin } from './billing';
 import { ReportsPanel } from './Report';
+import { Avatar, Community, PeopleProvider, PhotoPicker, usePeople, useUnread } from './social';
 import { ExerciseLibrary, useLibrary } from './ExerciseLibrary';
 import { PlanSession } from './Plan';
 import { ProgressView } from './ProgressView';
@@ -19,7 +20,7 @@ import { HistoryList, RoutineBlocks } from './RoutineView';
 import { lastRealized, NextCard, ProcessTimeline } from './StudentApp';
 import { Enter, Icon, Seg, Sheet, Skeleton, TabBar, TabDef, TopHeader, useToast } from './ui';
 
-type Tab = 'hoy' | 'alumnos' | 'planificar' | 'finanzas' | 'mas' | 'ejercicios' | 'evaluaciones';
+type Tab = 'hoy' | 'alumnos' | 'planificar' | 'finanzas' | 'mas' | 'ejercicios' | 'evaluaciones' | 'comunidad';
 type BarTab = 'hoy' | 'alumnos' | 'planificar' | 'finanzas' | 'mas';
 type DetailTab = 'rutina' | 'progreso' | 'historial' | 'informes' | 'agenda' | 'pagos' | 'datos';
 
@@ -30,14 +31,20 @@ const TABS: TabDef<BarTab>[] = [
   { id: 'finanzas', label: 'Finanzas', icon: Icon.money },
   { id: 'mas', label: 'Más', icon: Icon.menu },
 ];
-const barTab = (t: Tab): BarTab => (t === 'ejercicios' || t === 'evaluaciones' ? 'mas' : t);
+const barTab = (t: Tab): BarTab => (t === 'ejercicios' || t === 'evaluaciones' || t === 'comunidad' ? 'mas' : t);
 
 interface EvalCtx { key: number; studentId?: string; prefill?: { key: number; name: string; age: number | null; sex: Sex | null }; openId?: { key: number; id: string } }
 interface PlanCtx { key: number; ids: string[]; editing: Session | null; back?: string }
 
 const FEEL_LABEL = ['', 'muy duro', 'duro', 'bien', 'muy bien', 'genial'];
 
-export default function CoachApp({ onLogout, authEnabled }: { onLogout: () => void; authEnabled: boolean }) {
+export default function CoachApp(props: { onLogout: () => void; authEnabled: boolean }) {
+  return <PeopleProvider><CoachHome {...props} /></PeopleProvider>;
+}
+
+function CoachHome({ onLogout, authEnabled }: { onLogout: () => void; authEnabled: boolean }) {
+  const [unread, reloadUnread] = useUnread();
+  const { byId, reload: reloadPeople } = usePeople();
   const [tab, setTab] = useState<Tab>('hoy');
   const [detailTab, setDetailTab] = useState<{ key: number; tab: DetailTab }>({ key: 0, tab: 'rutina' });
   const [finData, setFinData] = useState<FinanceData | null>(null);
@@ -58,7 +65,8 @@ export default function CoachApp({ onLogout, authEnabled }: { onLogout: () => vo
   const refresh = useCallback(() => {
     coachApi.students().then((r) => { setStudents(r.students); setListError(null); }).catch((e: Error) => setListError(e.message));
     loadFin();
-  }, [loadFin]);
+    reloadPeople();
+  }, [loadFin, reloadPeople]);
   useEffect(refresh, [refresh]);
 
   // Asistencia: se marca al instante y se guarda de fondo.
@@ -83,7 +91,7 @@ export default function CoachApp({ onLogout, authEnabled }: { onLogout: () => vo
   }, [loadActivity]);
 
   const go = (t: Tab) => {
-    if (t === 'mas' && (tab === 'ejercicios' || tab === 'evaluaciones')) { setTab('mas'); return; }
+    if (t === 'mas' && (tab === 'ejercicios' || tab === 'evaluaciones' || tab === 'comunidad')) { setTab('mas'); return; }
     if (t === tab) {
       if (t === 'alumnos') setSelected(null);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -108,7 +116,13 @@ export default function CoachApp({ onLogout, authEnabled }: { onLogout: () => vo
         {Icon.bell}
         {activity && activity.unseen > 0 && <span className="count">{activity.unseen}</span>}
       </button>
-      <button className={`avatar${menu ? ' on' : ''}`} onClick={() => setMenu(true)} aria-label="Cuenta del profe">PR</button>
+      <button className="avatar bell" onClick={() => { setTab('comunidad'); window.scrollTo(0, 0); }} aria-label={`Comunidad${unread ? `: ${unread} sin leer` : ''}`}>
+        {Icon.chat}
+        {unread > 0 && <span className="count">{unread}</span>}
+      </button>
+      <button className={`avatar${menu ? ' on' : ''}`} onClick={() => setMenu(true)} aria-label="Cuenta del profe">
+        <Avatar id="coach" name={byId.get('coach')?.name ?? 'Profe'} size={40} />
+      </button>
     </>
   );
 
@@ -133,10 +147,22 @@ export default function CoachApp({ onLogout, authEnabled }: { onLogout: () => vo
                 <HoyView fin={fin} right={right} onOpen={openStudent} onAttendance={onAttendance} reload={loadFin} toast={showToast} />
               )}
               {tab === 'finanzas' && <FinanzasView fin={fin} right={right} onOpen={openStudent} reload={loadFin} toast={showToast} />}
+              {tab === 'comunidad' && (
+                <>
+                  <TopHeader title="Comunidad" right={right} />
+                  <Community isCoach toast={showToast} onRead={reloadUnread} />
+                </>
+              )}
               {tab === 'mas' && (
                 <>
                   <TopHeader title="Más" right={right} />
                   <Enter>
+                    <button className="menuopt" onClick={() => setTab('comunidad')}>
+                      <span className="ic">{Icon.chat}</span><span><b>Comunidad{unread ? ` · ${unread} sin leer` : ''}</b><small>Mensajes para todos tus alumnos; ellos también pueden escribirse</small></span>
+                    </button>
+                    <button className="menuopt" onClick={() => setMenu(true)}>
+                      <span className="ic">{Icon.user}</span><span><b>Mi perfil</b><small>Tu nombre y tu foto, como te ven los alumnos</small></span>
+                    </button>
                     <button className="menuopt" onClick={() => go('ejercicios')}>
                       <span className="ic">{Icon.book}</span><span><b>Ejercicios</b><small>Biblioteca con la capacidad de cada ejercicio</small></span>
                     </button>
@@ -236,7 +262,8 @@ export default function CoachApp({ onLogout, authEnabled }: { onLogout: () => vo
         </>
       )}
       {menu && (
-        <Sheet title="Cuenta" onClose={() => setMenu(false)}>
+        <Sheet title="Mi perfil" onClose={() => setMenu(false)}>
+          <CoachProfile toast={showToast} />
           <p className="hint" style={{ margin: 0 }}>
             {authEnabled ? 'Estás adentro como profe: ves y editás todos los perfiles.' : 'Modo local sin contraseña (sólo desarrollo).'}
           </p>
@@ -337,7 +364,7 @@ function StudentList({ students, fin, error, right, onOpen, onCreated, toast }: 
       .filter(Boolean).join(' · ');
     return (
       <button key={s.id} className="stu" onClick={() => onOpen(s.id)}>
-        <span className="avatar" aria-hidden="true">{initials(s.name)}</span>
+        <Avatar id={s.id} name={s.name} size={46} />
         <span style={{ minWidth: 0, display: 'grid', gap: 4 }}>
           <span className="stu-name">{s.name}</span>
           <span className="stu-line">{line || `@${s.username}`}</span>
@@ -613,7 +640,9 @@ function StudentDetail({ id, initialTab, fin, reloadFin, all, right, toast, onBa
                 ) : !planned.length && <p className="empty">Todavía no tiene sesiones. Planificale la primera.</p>}
               </>
             )}
-            {tab === 'progreso' && <ProgressView progress={profile.progress} you={false} />}
+            {tab === 'progreso' && (
+              <ProgressView progress={profile.progress} you={false} quality={profile.quality} studentId={s.id} onQualityChanged={load} toast={toast} />
+            )}
             {tab === 'historial' && (
               <>
                 {profile.sessions.some((x) => x.date_note) && (
@@ -751,12 +780,25 @@ function DataTab({ profile, toast, onEvaluate, onOpenAssessment, onSaved, onDele
     <>
       <section className="card">
         <div className="hero">
-          <div className="avatar-lg" aria-hidden="true">{initials(s.name)}</div>
+          <Avatar id={s.id} name={s.name} size={64} />
           <div style={{ minWidth: 0 }}>
             <h2>{s.name}</h2>
             <p>{[s.age ? `${s.age} años` : null, s.sex ? SEX_LABEL[s.sex] : null, profile.partners[0] ? `entrena con ${firstName(profile.partners[0].name)}` : null].filter(Boolean).join(' · ') || 'Sin datos cargados'}</p>
           </div>
         </div>
+      </section>
+
+      {s.about && (
+        <section className="card">
+          <div className="label">Lo que te contó {firstName(s.name)}</div>
+          <p style={{ margin: '6px 0 0', whiteSpace: 'pre-wrap' }}>{s.about}</p>
+        </section>
+      )}
+
+      <section className="card">
+        <h2>Foto</h2>
+        <div className="hint">El alumno también la puede cambiar desde su perfil.</div>
+        <div style={{ marginTop: 10 }}><PhotoPicker owner={s.id} name={s.name} toast={toast} /></div>
       </section>
 
       <ProcessEditor student={s} toast={toast} onSaved={onSaved} />
@@ -824,6 +866,30 @@ function DataTab({ profile, toast, onEvaluate, onOpenAssessment, onSaved, onDele
       </div>
 
       {creds && <CredentialsSheet student={s} password={creds} toast={toast} onClose={() => setCreds(null)} />}
+    </>
+  );
+}
+
+// ── perfil del profe ────────────────────────────────────────────────────────
+
+function CoachProfile({ toast }: { toast: (m: string) => void }) {
+  const { byId, reload } = usePeople();
+  const current = byId.get('coach')?.name ?? '';
+  const [name, setName] = useState(current);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setName(current); }, [current]);
+  const save = async () => {
+    setBusy(true);
+    try { await socialApi.setCoachName(name.trim()); reload(); toast('Perfil guardado'); } catch (e) { toast((e as ApiError).message); } finally { setBusy(false); }
+  };
+  return (
+    <>
+      <PhotoPicker owner="coach" name={current || 'Profe'} toast={toast} />
+      <div className="field" style={{ marginTop: 0 }}>
+        <label htmlFor="coach-name">Tu nombre (lo ven los alumnos en la comunidad)</label>
+        <input id="coach-name" value={name} onChange={(e) => setName(e.target.value)} />
+      </div>
+      {name.trim() && name.trim() !== current && <button className="btn primary wide" disabled={busy} onClick={save}>{busy ? 'Guardando…' : 'Guardar nombre'}</button>}
     </>
   );
 }

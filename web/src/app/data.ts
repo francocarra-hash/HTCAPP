@@ -14,10 +14,55 @@ export const CAPACITIES: Array<{ id: CapacityId; label: string; short: string }>
 export const CAP_LABEL = Object.fromEntries(CAPACITIES.map((c) => [c.id, c.label])) as Record<CapacityId, string>;
 export const capColor = (c: CapacityId) => `var(--cap-${c})`;
 
+/** Qué es cada capacidad: una definición corta y su fuente. */
+export const CAP_INFO: Record<CapacityId, { def: string; ref: string }> = {
+  fuerza: {
+    def: 'Capacidad de los músculos de generar tensión para vencer, sostener o frenar una resistencia: el propio peso, una carga o el suelo.',
+    ref: 'Suchomel, Nimphius y Stone, 2016 (Sports Medicine)',
+  },
+  reactividad: {
+    def: 'Capacidad de producir fuerza rápido después de un estiramiento breve, aprovechando el ciclo estiramiento-acortamiento: rebotar, saltar, cambiar de dirección.',
+    ref: 'Komi, 2000 (Journal of Biomechanics); Flanagan y Comyns, 2008',
+  },
+  movilidad: {
+    def: 'Capacidad de mover activamente una articulación por su rango disponible, con control. A diferencia de la flexibilidad (el rango), implica poder usarlo.',
+    ref: 'ACSM, Guidelines for Exercise Testing and Prescription, 2021; Behm et al., 2016',
+  },
+  estabilidad: {
+    def: 'Capacidad de controlar la posición y el movimiento del tronco y la pelvis para producir, transferir y controlar la fuerza entre el centro del cuerpo y los brazos y piernas.',
+    ref: 'Kibler, Press y Sciascia, 2006 (Sports Medicine)',
+  },
+  control_motor: {
+    def: 'Cómo el sistema nervioso organiza los músculos y la información de los sentidos (propiocepción, vista, equilibrio) para moverse con precisión y adaptarse a cada situación.',
+    ref: 'Shumway-Cook y Woollacott, Motor Control, 2016',
+  },
+  resistencia: {
+    def: 'Capacidad de sostener un esfuerzo en el tiempo y recuperarse, retrasando la fatiga del corazón, los pulmones y los músculos.',
+    ref: 'ACSM, Guidelines for Exercise Testing and Prescription, 2021',
+  },
+};
+
+// ── calidad del movimiento ──────────────────────────────────────────────────
+
+export type QualityAspect = 'organizacion' | 'transferencia' | 'sensibilidad' | 'control' | 'respiracion';
+export const QUALITY_ASPECTS: Array<[QualityAspect, string]> = [
+  ['organizacion', 'Organización del cuerpo en el espacio'],
+  ['transferencia', 'Transferencia de peso'],
+  ['sensibilidad', 'Sensibilidad y percepción'],
+  ['control', 'Control y fluidez'],
+  ['respiracion', 'Respiración'],
+];
+export const ASPECT_LABEL = Object.fromEntries(QUALITY_ASPECTS) as Record<QualityAspect, string>;
+export const QUALITY_SCORE = ['', 'Le cuesta', 'En construcción', 'Lo resuelve', 'Con calidad', 'Dominado'];
+export interface QualityEntry {
+  id: string; student_id: string; exercise_key: string; exercise_name: string;
+  day: string; score: number; aspects: QualityAspect[]; note: string | null; created_at: string;
+}
+
 // ── rutina en bloques (espejo de src/training/routine.ts) ───────────────────
 
 export type BlockKind = 'list' | 'circuit' | 'superset' | 'notes';
-export interface RoutineItem { id: string; name: string; dose: string; who?: string; capacity?: CapacityId | null }
+export interface RoutineItem { id: string; name: string; dose: string; who?: string; capacity?: CapacityId | null; video?: string | null }
 export interface RoutineGroup { id: string; items: RoutineItem[] }
 export interface RoutineBlock { id: string; kind: BlockKind; title: string; rounds: number | null; groups: RoutineGroup[] }
 export interface Routine { blocks: RoutineBlock[]; note?: string | null }
@@ -48,6 +93,7 @@ export interface Student {
   schedule: Schedule | null;
   process: ProcessPhase[] | null;
   billing: Billing | null;
+  about: string | null;
   created_at: string;
 }
 
@@ -110,6 +156,10 @@ export interface Progress {
     first: number; last: number; best: number;
   }>;
   highlights: Highlight[];
+  practice: Array<{
+    key: string; name: string; capacity: CapacityId | null;
+    sessions: number; weeks: number; first_date: string; last_date: string; recent: number;
+  }>;
   capacities: Array<{
     id: CapacityId; label: string; sessions: number; tracked: number; improved: number;
     top: Highlight | null; recent_share: number;
@@ -125,6 +175,9 @@ export interface Profile {
   assessment_ids?: string[];
   /** Sólo en la vista del alumno: sus informes publicados. */
   reports?: StoredReport[];
+  quality?: QualityEntry[];
+  /** Sólo en la vista del alumno: su WhatsApp (lo puede editar). */
+  phone?: string | null;
 }
 
 // ── finanzas ────────────────────────────────────────────────────────────────
@@ -178,6 +231,8 @@ export interface ReportData {
   new_exercises: Array<{ name: string; capacity: CapacityId | null }>;
   feeling: { average: number; count: number } | null;
   comments: Array<{ date: string; text: string }>;
+  quality?: Array<{ name: string; from: number | null; to: number; aspects: QualityAspect[]; note: string | null }>;
+  practice?: Array<{ name: string; capacity: CapacityId | null; sessions: number; weeks: number }>;
 }
 export interface StoredReport {
   id: string; student_id: string; period_start: string; period_end: string; data: ReportData;
@@ -187,7 +242,7 @@ export interface Cycle { n: number; start: string; end: string }
 
 export interface ExerciseEntry {
   key: string; name: string; capacity: CapacityId | null; capacity_source: 'coach' | 'auto' | null;
-  description: string | null; custom: boolean; uses: number; students: string[];
+  description: string | null; video_url: string | null; custom: boolean; uses: number; students: string[];
   last_date: string | null; last_text: string | null;
 }
 
@@ -226,9 +281,9 @@ export const coachApi = {
     req<{ session: Session }>(`/training/sessions/${id}`, json('PATCH', body)),
   deleteSession: (id: string) => req<{ ok: true }>(`/training/sessions/${id}`, json('DELETE')),
   exercises: () => req<{ exercises: ExerciseEntry[] }>('/training/exercises'),
-  createExercise: (body: { name: string; capacity: CapacityId | null; description?: string | null }) =>
+  createExercise: (body: { name: string; capacity: CapacityId | null; description?: string | null; video_url?: string | null }) =>
     req<{ exercise: unknown }>('/training/exercises', json('POST', body)),
-  saveExercise: (key: string, body: { name: string; capacity: CapacityId | null; description?: string | null }) =>
+  saveExercise: (key: string, body: { name: string; capacity: CapacityId | null; description?: string | null; video_url?: string | null }) =>
     req<{ exercise: unknown }>(`/training/exercises/${encodeURIComponent(key)}`, json('PUT', body)),
   activity: () => req<{ items: ActivityItem[]; unseen: number }>('/training/activity'),
   activitySeen: () => req<{ ok: true }>('/training/activity/seen', json('POST', {})),
@@ -248,6 +303,25 @@ export const coachApi = {
   publishReport: (id: string, body: { start: string; message: string | null; next_goal: string | null }) =>
     req<{ report: StoredReport }>(`/training/students/${id}/reports`, json('POST', body)),
   deleteReport: (id: string) => req<{ ok: true }>(`/training/reports/${id}`, json('DELETE')),
+  addQuality: (id: string, body: { exercise_name: string; day: string; score: number; aspects: QualityAspect[]; note: string | null }) =>
+    req<{ entry: QualityEntry }>(`/training/students/${id}/quality`, json('POST', body)),
+  deleteQuality: (id: string) => req<{ ok: true }>(`/training/quality/${id}`, json('DELETE')),
+};
+
+// ── comunidad, fotos y perfiles ─────────────────────────────────────────────
+
+export interface Person { id: string; name: string; coach: boolean; avatar: string | null }
+export interface CommunityMessage { id: string; author: string; body: string; created_at: string; mine: boolean }
+export const socialApi = {
+  people: () => req<{ me: string; people: Person[] }>('/social/people'),
+  setCoachName: (name: string) => req<{ name: string }>('/social/coach', json('PUT', { name })),
+  setAvatar: (owner: string, data: string) => req<{ avatar: string }>(`/social/avatars/${owner}`, json('PUT', { data })),
+  deleteAvatar: (owner: string) => req<{ ok: true }>(`/social/avatars/${owner}`, json('DELETE')),
+  community: () => req<{ me: string; last_read: string | null; unread: number; messages: CommunityMessage[] }>('/social/community'),
+  unread: () => req<{ unread: number }>('/social/community/unread'),
+  post: (body: string) => req<{ message: CommunityMessage }>('/social/community', json('POST', { body })),
+  read: (at: string) => req<{ ok: true }>('/social/community/read', json('POST', { at })),
+  deleteMessage: (id: string) => req<{ ok: true }>(`/social/community/${id}`, json('DELETE')),
 };
 
 export const studentApi = {
@@ -258,6 +332,8 @@ export const studentApi = {
     req<{ completion: Completion }>(`/me/sessions/${sessionId}/complete`, json('POST', body)),
   changePassword: (current: string, next: string) => req<{ ok: true }>('/me/password', json('POST', { current, next })),
   reportSeen: (id: string) => req<{ ok: true }>(`/me/reports/${id}/seen`, json('POST', {})),
+  updateMe: (body: { name?: string; age?: number | null; phone?: string | null; about?: string | null }) =>
+    req<{ student: Student; phone: string | null }>('/me', json('PATCH', body)),
 };
 
 // ── rutina: utilidades ──────────────────────────────────────────────────────

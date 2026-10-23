@@ -1,6 +1,7 @@
 import { ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../api';
-import { CAP_LABEL, CAPACITIES, CapacityId, coachApi, ExerciseEntry, fold, shortDate } from './data';
+import { CAP_INFO, CAP_LABEL, CAPACITIES, CapacityId, coachApi, ExerciseEntry, fold, shortDate } from './data';
+import { embedOf, VideoBtn } from './social';
 import { CapTag, Enter, Icon, Sheet, Skeleton, TopHeader } from './ui';
 
 export function useLibrary(): [ExerciseEntry[], () => void] {
@@ -18,17 +19,21 @@ export function ExerciseLibrary({ avatar, toast }: { avatar: ReactNode; toast: (
   const [list, setList] = useState<ExerciseEntry[] | null>(null);
   const [q, setQ] = useState('');
   const [capSel, setCapSel] = useState<CapacityId | 'none' | null>(null);
+  const [vid, setVid] = useState<'all' | 'with' | 'without'>('all');
+  const [defs, setDefs] = useState(false);
   const [editing, setEditing] = useState<ExerciseEntry | 'new' | null>(null);
   // Son miles: se muestran de a tandas para que la lista no trabe el celular.
   const [limit, setLimit] = useState(PAGE);
-  useEffect(() => setLimit(PAGE), [q, capSel]);
+  useEffect(() => setLimit(PAGE), [q, capSel, vid]);
 
   const load = useCallback(() => { coachApi.exercises().then((r) => setList(r.exercises)).catch(() => setList([])); }, []);
   useEffect(load, [load]);
 
   const shown = useMemo(() => (list ?? []).filter((e) =>
     (!q || fold(e.name).includes(fold(q))) &&
-    (!capSel || (capSel === 'none' ? !e.capacity : e.capacity === capSel))), [list, q, capSel]);
+    (!capSel || (capSel === 'none' ? !e.capacity : e.capacity === capSel)) &&
+    (vid === 'all' || (vid === 'with' ? Boolean(e.video_url) : !e.video_url))), [list, q, capSel, vid]);
+  const withVideo = (list ?? []).filter((e) => e.video_url).length;
   const counts = useMemo(() => {
     const m = new Map<string, number>();
     for (const e of list ?? []) m.set(e.capacity ?? 'none', (m.get(e.capacity ?? 'none') ?? 0) + 1);
@@ -38,7 +43,7 @@ export function ExerciseLibrary({ avatar, toast }: { avatar: ReactNode; toast: (
   return (
     <>
       <TopHeader title="Ejercicios" right={avatar}
-        sub={list && <><span><b>{list.length}</b> en la biblioteca</span><span>se suman solos al cargar sesiones</span></>} />
+        sub={list && <><span><b>{list.length}</b> en la biblioteca</span><span><b>{withVideo}</b> con video</span></>} />
       {!list ? <Skeleton /> : (
         <Enter>
           <div className="actions" style={{ marginTop: 4 }}>
@@ -58,11 +63,17 @@ export function ExerciseLibrary({ avatar, toast }: { avatar: ReactNode; toast: (
               </button>
             )}
           </div>
+          <div className="filters" role="group" aria-label="Filtrar por video" style={{ marginTop: 0 }}>
+            <button className="tog" aria-pressed={vid === 'with'} onClick={() => setVid(vid === 'with' ? 'all' : 'with')}>{Icon.play} Con video <span style={{ opacity: .7 }}>{withVideo}</span></button>
+            <button className="tog" aria-pressed={vid === 'without'} onClick={() => setVid(vid === 'without' ? 'all' : 'without')}>Sin video</button>
+            <button className="tog" aria-pressed={defs} onClick={() => setDefs(!defs)}>{Icon.info} Qué es cada capacidad</button>
+          </div>
+          {defs && <CapacityDefs only={capSel && capSel !== 'none' ? capSel : null} />}
           <section className="card" style={{ paddingTop: 4, paddingBottom: 4, marginTop: 6 }}>
             {!shown.length && <p className="empty">No hay ejercicios con ese filtro.</p>}
             {shown.slice(0, limit).map((e) => (
               <button key={e.key} className="lib-row" onClick={() => setEditing(e)}>
-                <b>{e.name}</b>
+                <b>{e.name}{e.video_url && <span className="vdot" aria-label="con video">{Icon.play}</span>}</b>
                 {e.capacity
                   ? <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                       <CapTag id={e.capacity} label={CAP_LABEL[e.capacity]} />
@@ -94,12 +105,14 @@ function ExerciseSheet({ entry, onClose, onSaved }: { entry: ExerciseEntry | nul
   const [name, setName] = useState(entry?.name ?? '');
   const [capacity, setCapacity] = useState<CapacityId | null>(entry?.capacity ?? null);
   const [description, setDescription] = useState(entry?.description ?? '');
+  const [video, setVideo] = useState(entry?.video_url ?? '');
+  const videoOk = !video.trim() || /^https?:\/\/\S+$/.test(video.trim());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const save = async () => {
     setBusy(true); setErr('');
     try {
-      const body = { name: name.trim(), capacity, description: description.trim() || null };
+      const body = { name: name.trim(), capacity, description: description.trim() || null, video_url: video.trim() || null };
       if (entry) await coachApi.saveExercise(entry.key, body);
       else await coachApi.createExercise(body);
       onSaved(entry ? 'Ejercicio actualizado' : 'Ejercicio agregado a la biblioteca');
@@ -123,7 +136,13 @@ function ExerciseSheet({ entry, onClose, onSaved }: { entry: ExerciseEntry | nul
               </button>
             ))}
           </div>
-          <small>{entry?.capacity_source === 'auto' ? 'Hoy está clasificado automáticamente por el nombre; al guardar queda fijado por vos.' : 'Define en qué capacidad suma su progreso.'}</small>
+          <small>{capacity ? CAP_INFO[capacity].def : entry?.capacity_source === 'auto' ? 'Hoy está clasificado automáticamente por el nombre; al guardar queda fijado por vos.' : 'Define en qué capacidad suma su progreso.'}</small>
+        </div>
+        <div className="field full">
+          <label htmlFor="ex-video">Video demostrativo (link)</label>
+          <input id="ex-video" type="url" inputMode="url" value={video} onChange={(e) => setVideo(e.target.value)} placeholder="https://youtu.be/… · Instagram · Drive" />
+          <small>{!videoOk ? 'Pegá el link completo, que empiece con https://' : video.trim() ? (embedOf(video.trim()) ? 'Se ve adentro de la app.' : 'Se abre en otra pestaña.') : 'Tus alumnos lo ven con el botón ▶ al lado del ejercicio en su rutina.'}</small>
+          {videoOk && video.trim() && <div style={{ marginTop: 6 }}><VideoBtn url={video.trim()} name={name || 'Ejercicio'} /> <span className="hint">Probar</span></div>}
         </div>
         <div className="field full">
           <label htmlFor="ex-desc">Descripción / cues (opcional)</label>
@@ -136,7 +155,22 @@ function ExerciseSheet({ entry, onClose, onSaved }: { entry: ExerciseEntry | nul
         </p>
       )}
       {err && <p className="err">{err}</p>}
-      <button className="btn primary wide" disabled={busy || !name.trim()} onClick={save}>{busy ? 'Guardando…' : 'Guardar'}</button>
+      <button className="btn primary wide" disabled={busy || !name.trim() || !videoOk} onClick={save}>{busy ? 'Guardando…' : 'Guardar'}</button>
     </Sheet>
+  );
+}
+
+/** Definición de cada capacidad física, con su fuente. */
+export function CapacityDefs({ only }: { only?: CapacityId | null }) {
+  return (
+    <section className="card capdefs">
+      {CAPACITIES.filter((c) => !only || c.id === only).map((c) => (
+        <div key={c.id} className="capdef" style={{ ['--c' as string]: `var(--cap-${c.id})` }}>
+          <CapTag id={c.id} label={c.label} />
+          <p>{CAP_INFO[c.id].def}</p>
+          <small>{CAP_INFO[c.id].ref}</small>
+        </div>
+      ))}
+    </section>
   );
 }

@@ -1,0 +1,89 @@
+/* Fotos, video, comunidad, definiciones de capacidades y calidad del movimiento. */
+@layer components {
+  /* foto de perfil */
+  .bt .pic { flex: none; border-radius: 50%; overflow: hidden; background: var(--chip); color: var(--ink-2); display: inline-grid; place-items: center; font-family: var(--f-display); font-weight: 700; line-height: 1; }
+  .bt .pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .bt .avatar .pic { width: 100% !important; height: 100% !important; }
+  .bt .photo-pick { display: flex; align-items: center; gap: 14px; }
+  .bt .photo-pick .ph { position: relative; border: none; background: none; padding: 0; border-radius: 50%; }
+  .bt .photo-pick .cam { position: absolute; right: -2px; bottom: -2px; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; box-shadow: 0 0 0 3px var(--surface); }
+  .bt .photo-pick .cam svg { width: 16px; height: 16px; }
+  .bt .stu .pic { width: 46px; height: 46px; }
+
+  /* barra de pestañas con contador */
+  .bt nav.tabs .ticon { position: relative; display: grid; place-items: center; }
+  .bt .tbadge { position: absolute; top: -6px; left: calc(50% + 6px); min-width: 17px; height: 17px; border-radius: 9px; padding: 0 4px; background: var(--danger); color: #fff; font-size: 10px; font-weight: 700; display: grid; place-items: center; line-height: 1; }
+
+  /* video */
+  .bt .vbtn { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); background: var(--raised); color: var(--accent); vertical-align: middle; margin-left: 6px; flex: none; }
+  .bt .vbtn svg { width: 13px; height: 13px; margin-left: 2px; }
+  .bt .vbtn:active { transform: scale(.92); }
+  .bt .vdot { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); margin-left: 6px; vertical-align: 1px; }
+  .bt .vdot svg { width: 9px; height: 9px; margin-left: 1px; }
+  .bt .vframe { position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 14px; overflow: hidden; background: #000; }
+  .bt .vframe.v { aspect-ratio: 9 / 16; max-height: 70vh; width: auto; margin: 0 auto; }
+  .bt .vframe iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+  /* definiciones de capacidades */
+  .bt .capdefs { display: grid; gap: 14px; }
+  .bt .capdef { display: grid; gap: 4px; padding-left: 12px; border-left: 3px solid var(--c); }
+  .bt .capdef p { margin: 0; font-size: 14px; line-height: 1.45; }
+  .bt .capdef small { font-family: var(--f-data); font-size: 10.5px; color: var(--muted); }
+
+  /* calidad del movimiento */
+  .bt .qrows { display: grid; margin-top: 8px; }
+  .bt .qrow { padding: 10px 0; border-top: 1px solid var(--line); }
+  .bt .qrow:first-child { border-top: none; }
+  .bt .qhead { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 10px; border: none; background: none; padding: 0; text-align: left; }
+  .bt .qn { display: grid; gap: 2px; min-width: 0; }
+  .bt .qn b { font-weight: 600; font-size: 15px; }
+  .bt .qn small { color: var(--muted); font-size: 12.5px; }
+  .bt .qv { display: grid; justify-items: end; gap: 3px; flex: none; }
+  .bt .qv small { font-size: 11.5px; color: var(--muted); }
+  .bt .qdots { display: inline-flex; gap: 3px; }
+  .bt .qdots i { width: 10px; height: 10px; border-radius: 50%; background: var(--chip); border: 1px solid var(--line); }
+  .bt .qdots i.on { background: var(--good-fill); border-color: var(--good-fill); }
+  .bt .qnote { margin: 6px 0 0; font-size: 13.5px; color: var(--ink-2); font-style: italic; }
+  .bt .qhist { display: grid; gap: 6px; margin-top: 10px; padding: 10px; background: var(--bg); border-radius: 12px; }
+  .bt .qh { display: grid; grid-template-columns: 56px auto minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 13px; }
+  .bt .qh > span:first-child { font-family: var(--f-data); font-size: 12px; color: var(--muted); }
+  .bt .qscore { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
+  .bt .qscore button { border: 1px solid var(--line); background: var(--raised); border-radius: 12px; padding: 8px 2px; display: grid; gap: 2px; justify-items: center; font-size: 10.5px; font-weight: 600; color: var(--muted); min-height: 58px; }
+  .bt .qscore button b { font-family: var(--f-display); font-size: 22px; line-height: 1; color: var(--ink-2); }
+  .bt .qscore button[aria-checked="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .bt .qscore button[aria-checked="true"] b { color: var(--accent-ink); }
+
+  /* informe */
+  .bt .rp-q { background: var(--bg); border-radius: 14px; padding: 10px 14px; margin-bottom: 8px; }
+  .bt .rp-q .t { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .bt .rp-q .t > b { font-weight: 600; font-size: 15px; }
+  .bt .rp-q .qv { font-family: var(--f-data); font-size: 13px; display: block; }
+  .bt .rp-chips.sm { margin-top: 6px; }
+  .bt .rp-chips.sm span { font-size: 12px; padding: 3px 9px; background: var(--surface); }
+  .bt .rp-chips small { color: var(--muted); font-family: var(--f-data); font-size: 11px; margin-left: 4px; }
+  .bt .rp-h3 { font-family: var(--f-display); font-weight: 600; font-size: 16px; text-transform: uppercase; letter-spacing: .03em; margin: 14px 0 8px; color: var(--ink-2); }
+
+  /* comunidad */
+  .bt .chat { display: flex; flex-direction: column; min-height: calc(100dvh - 210px); }
+  .bt .chat-intro { margin: 8px 0 0; }
+  .bt .msgs { display: grid; gap: 8px; padding: 12px 0 8px; flex: 1; align-content: start; }
+  .bt .mday { text-align: center; margin: 10px 0 2px; }
+  .bt .mday span { font-family: var(--f-data); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); background: var(--chip); border-radius: 999px; padding: 3px 10px; }
+  .bt .msg { display: flex; gap: 8px; align-items: flex-end; max-width: 88%; }
+  .bt .msg.mine { margin-left: auto; flex-direction: row-reverse; }
+  .bt .bub { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 16px 16px 16px 4px; padding: 8px 12px 18px; min-width: 96px; }
+  .bt .msg.mine .bub { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); border-radius: 16px 16px 4px 16px; }
+  .bt .msg.coach:not(.mine) .bub { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+  .bt .bub .au { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; margin-bottom: 2px; color: var(--ink-2); }
+  .bt .ptag { font-family: var(--f-data); font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; background: var(--accent); color: var(--accent-ink); border-radius: 999px; padding: 1px 6px; }
+  .bt .bub .tx { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.4; }
+  .bt .bub .tm { position: absolute; right: 10px; bottom: 4px; font-family: var(--f-data); font-size: 10px; opacity: .65; }
+  .bt .bub .mmenu { position: absolute; left: 6px; bottom: 2px; width: 22px; height: 16px; border: none; background: none; color: inherit; opacity: .5; padding: 0; display: grid; place-items: center; }
+  .bt .bub .mmenu svg { width: 14px; height: 14px; }
+  .bt .bub .mdel { margin-top: 8px; }
+  .bt .composer { position: sticky; bottom: calc(var(--nav-h) + 8px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 8px; align-items: flex-end; background: var(--bg); padding: 8px 0; z-index: 3; }
+  .bt .composer textarea { flex: 1; min-height: 46px; max-height: 140px; resize: none; border: 1px solid var(--line); background: var(--raised); border-radius: 22px; padding: 12px 16px; font-size: 16px; line-height: 1.3; field-sizing: content; }
+  .bt .composer textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .bt .composer .btn { width: 46px; height: 46px; min-height: 46px; padding: 0; border-radius: 50%; display: grid; place-items: center; flex: none; }
+  .bt .composer .btn svg { width: 20px; height: 20px; }
+}

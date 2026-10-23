@@ -1,6 +1,11 @@
 import { useMemo, useState } from 'react';
-import { CAP_LABEL, CapacityId, fmtValue, Highlight, longDate, pctGain, Progress, shortDate, unitLabel } from './data';
-import { CapTag, CountUp, LineChart, MonthBars } from './ui';
+import { ApiError } from '../api';
+import {
+  ASPECT_LABEL, CAP_INFO, CAP_LABEL, CapacityId, coachApi, fmtValue, Highlight, longDate, pctGain, Progress, QUALITY_ASPECTS,
+  QUALITY_SCORE, QualityAspect, QualityEntry, shortDate, todayIso, unitLabel,
+} from './data';
+import { CapacityDefs } from './ExerciseLibrary';
+import { CapTag, CountUp, Icon, LineChart, MonthBars, Sheet } from './ui';
 
 /** Logro: de dónde arrancó a dónde llegó, con barra proporcional. */
 export function WinCard({ h, i = 0 }: { h: Highlight; i?: number }) {
@@ -24,7 +29,12 @@ export function WinCard({ h, i = 0 }: { h: Highlight; i?: number }) {
   );
 }
 
-export function ProgressView({ progress, you }: { progress: Progress; you: boolean }) {
+export function ProgressView({ progress, you, quality = [], studentId, onQualityChanged, toast }: {
+  progress: Progress; you: boolean; quality?: QualityEntry[];
+  /** Vista del profe: puede registrar la calidad del movimiento. */
+  studentId?: string; onQualityChanged?: () => void; toast?: (m: string) => void;
+}) {
+  const [defs, setDefs] = useState(false);
   const { stats, highlights, exercises, months, capacities } = progress;
   const [capSel, setCapSel] = useState<CapacityId | null>(null);
   const [sel, setSel] = useState<string | null>(null);
@@ -70,10 +80,14 @@ export function ProgressView({ progress, you }: { progress: Progress; you: boole
 
       {capacities.length > 0 && (
         <section className="card">
-          <h2>{capSel ? CAP_LABEL[capSel] : 'Capacidades'}</h2>
-          <div className="hint">
-            {capSel ? 'Ejercicios con seguimiento en esta capacidad.' : 'Tocá una capacidad para ver sólo sus avances.'}
+          <div className="card-h">
+            <h2>{capSel ? CAP_LABEL[capSel] : 'Capacidades'}</h2>
+            <button className="btn sm ghost" onClick={() => setDefs(!defs)} aria-expanded={defs}>{Icon.info} {defs ? 'Ocultar' : 'Qué es cada una'}</button>
           </div>
+          <div className="hint">
+            {capSel ? CAP_INFO[capSel].def : 'Tocá una capacidad para ver sólo sus avances.'}
+          </div>
+          {defs && <CapacityDefs only={capSel} />}
           <div className="capgrid">
             {capacities.filter((c) => !capSel || c.id === capSel).map((c) => (
               <button key={c.id} className={`capcard${capSel === c.id ? ' on' : ''}`} style={{ ['--c' as string]: `var(--cap-${c.id})` }}
@@ -111,6 +125,9 @@ export function ProgressView({ progress, you }: { progress: Progress; you: boole
           <div className="wins">{shownWins.map((h, i) => <WinCard key={h.key} h={h} i={i} />)}</div>
         </section>
       )}
+
+      <QualitySection progress={progress} quality={quality} capSel={capSel} you={you}
+        studentId={studentId} onChanged={onQualityChanged} toast={toast} />
 
       {!capSel && months.length > 1 && (
         <section className="card">
@@ -160,5 +177,155 @@ export function ProgressView({ progress, you }: { progress: Progress; you: boole
         <p className="empty">Con algunas sesiones más vas a ver acá la evolución de cada ejercicio.</p>
       )}
     </>
+  );
+}
+
+// ── calidad del movimiento ──────────────────────────────────────────────────
+
+function Dots({ n }: { n: number }) {
+  return (
+    <span className="qdots" role="img" aria-label={`${n} de 5: ${QUALITY_SCORE[n]}`}>
+      {[1, 2, 3, 4, 5].map((i) => <i key={i} className={i <= n ? 'on' : ''} />)}
+    </span>
+  );
+}
+
+/**
+ * Ejercicios que se sostienen en el tiempo: el progreso está en la calidad
+ * (cómo organiza el cuerpo, transfiere el peso, siente el movimiento) aunque los
+ * números no cambien. El profe registra cómo lo ejecuta, del 1 al 5.
+ */
+function QualitySection({ progress, quality, capSel, you, studentId, onChanged, toast }: {
+  progress: Progress; quality: QualityEntry[]; capSel: CapacityId | null; you: boolean;
+  studentId?: string; onChanged?: () => void; toast?: (m: string) => void;
+}) {
+  const [adding, setAdding] = useState<string | null | 'new'>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const coach = Boolean(studentId);
+  const practice = (progress.practice ?? []).filter((p) => !capSel || p.capacity === capSel);
+  const byKey = new Map<string, QualityEntry[]>();
+  for (const q of quality) byKey.set(q.exercise_key, [...(byKey.get(q.exercise_key) ?? []), q]);
+  const keys = [...new Set([...byKey.keys(), ...practice.map((p) => p.key)])]
+    .filter((k) => !capSel || practice.some((p) => p.key === k) || byKey.has(k));
+  if (!keys.length && !coach) return null;
+  const rows = keys.map((k) => {
+    const list = (byKey.get(k) ?? []).sort((a, b) => a.day.localeCompare(b.day) || a.created_at.localeCompare(b.created_at));
+    const p = practice.find((x) => x.key === k);
+    return { key: k, name: p?.name ?? list[list.length - 1]?.exercise_name ?? k, practice: p, list };
+  }).sort((a, b) => (b.list.length ? 1 : 0) - (a.list.length ? 1 : 0) || (b.practice?.recent ?? 0) - (a.practice?.recent ?? 0));
+
+  const del = async (id: string) => {
+    if (!window.confirm('¿Borrar este registro de calidad?')) return;
+    try { await coachApi.deleteQuality(id); onChanged?.(); } catch (e) { toast?.((e as ApiError).message); }
+  };
+
+  return (
+    <section className="card">
+      <div className="card-h">
+        <h2>Calidad del movimiento</h2>
+        {coach && <button className="btn sm" onClick={() => setAdding('new')}>{Icon.plus} Registrar</button>}
+      </div>
+      <div className="hint">
+        {you
+          ? 'Hay ejercicios que sostenés en el tiempo para hacerlos cada vez mejor: cómo organizás el cuerpo, cómo transferís el peso, cuánto sentís el movimiento. Ahí el avance no siempre está en los números.'
+          : 'Ejercicios que sostiene en el tiempo: el avance está en la ejecución, aunque los números no cambien. Registrá cómo lo hace del 1 al 5 y en qué mejoró.'}
+      </div>
+      {!rows.length && <p className="hint">Todavía no hay registros.</p>}
+      <div className="qrows">
+        {rows.map((r) => {
+          const last = r.list[r.list.length - 1];
+          const first = r.list[0];
+          return (
+            <div key={r.key} className="qrow">
+              <button className="qhead" onClick={() => setOpen(open === r.key ? null : r.key)} aria-expanded={open === r.key}>
+                <span className="qn">
+                  <b>{r.name}</b>
+                  <small>
+                    {r.practice ? `${r.practice.weeks} semanas · ${r.practice.sessions} sesiones` : ''}
+                    {r.practice && last ? ' · ' : ''}
+                    {last ? `última evaluación ${shortDate(last.day)}` : ''}
+                  </small>
+                </span>
+                {last
+                  ? <span className="qv"><Dots n={last.score} /><small>{QUALITY_SCORE[last.score]}{first && first !== last && last.score > first.score ? ` · antes ${first.score}` : ''}</small></span>
+                  : <span className="pill">Práctica sostenida</span>}
+              </button>
+              {last && last.aspects.length > 0 && (
+                <div className="chips-row" style={{ marginTop: 6 }}>{last.aspects.map((a) => <span key={a} className="mini">{ASPECT_LABEL[a]}</span>)}</div>
+              )}
+              {last?.note && <p className="qnote">“{last.note}”</p>}
+              {open === r.key && (
+                <div className="qhist">
+                  {[...r.list].reverse().map((q) => (
+                    <div key={q.id} className="qh">
+                      <span>{shortDate(q.day)}</span><Dots n={q.score} />
+                      <span className="hint" style={{ margin: 0 }}>{q.aspects.map((a) => ASPECT_LABEL[a]).join(' · ')}{q.note ? ` · ${q.note}` : ''}</span>
+                      {coach && <button className="btn sm ghost" aria-label="Borrar" onClick={() => del(q.id)}>{Icon.trash}</button>}
+                    </div>
+                  ))}
+                  {coach && <button className="btn sm" onClick={() => setAdding(r.name)}>{Icon.plus} Registrar {r.name}</button>}
+                  {!r.list.length && !coach && <p className="hint">Tu profe todavía no registró cómo lo ejecutás.</p>}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {adding && studentId && (
+        <QualitySheet studentId={studentId} exercise={adding === 'new' ? '' : adding}
+          suggestions={rows.map((r) => r.name)} onClose={() => setAdding(null)}
+          onSaved={() => { setAdding(null); onChanged?.(); toast?.('Calidad registrada'); }} toast={toast} />
+      )}
+    </section>
+  );
+}
+
+function QualitySheet({ studentId, exercise, suggestions, onClose, onSaved, toast }: {
+  studentId: string; exercise: string; suggestions: string[]; onClose: () => void; onSaved: () => void; toast?: (m: string) => void;
+}) {
+  const [name, setName] = useState(exercise);
+  const [day, setDay] = useState(todayIso());
+  const [score, setScore] = useState(3);
+  const [aspects, setAspects] = useState<QualityAspect[]>([]);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const toggle = (a: QualityAspect) => setAspects((x) => (x.includes(a) ? x.filter((y) => y !== a) : [...x, a]));
+  const save = async () => {
+    setBusy(true);
+    try {
+      await coachApi.addQuality(studentId, { exercise_name: name.trim(), day, score, aspects, note: note.trim() || null });
+      onSaved();
+    } catch (e) { toast?.((e as ApiError).message); } finally { setBusy(false); }
+  };
+  return (
+    <Sheet title="Calidad del movimiento" onClose={onClose}>
+      <div className="fields" style={{ marginTop: 0 }}>
+        <div className="field full">
+          <label htmlFor="q-ex">Ejercicio</label>
+          <input id="q-ex" list="q-ex-list" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej. Turkish get up" />
+          <datalist id="q-ex-list">{suggestions.map((x) => <option key={x} value={x} />)}</datalist>
+        </div>
+        <div className="field"><label htmlFor="q-day">Fecha</label><input id="q-day" type="date" value={day} onChange={(e) => setDay(e.target.value)} /></div>
+        <div className="field full">
+          <span className="lab">Cómo lo ejecuta</span>
+          <div className="qscore" role="radiogroup" aria-label="Cómo lo ejecuta">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button key={n} role="radio" aria-checked={score === n} onClick={() => setScore(n)}><b>{n}</b>{QUALITY_SCORE[n]}</button>
+            ))}
+          </div>
+        </div>
+        <div className="field full">
+          <span className="lab">En qué mejoró o hay que poner el foco</span>
+          <div className="chipset">
+            {QUALITY_ASPECTS.map(([k, l]) => <button key={k} type="button" className="tog" aria-pressed={aspects.includes(k)} onClick={() => toggle(k)}>{l}</button>)}
+          </div>
+        </div>
+        <div className="field full">
+          <label htmlFor="q-note">Nota (la ve el alumno)</label>
+          <textarea id="q-note" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ej.: apoya todo el pie y el peso pasa sin saltos" />
+        </div>
+      </div>
+      <button className="btn primary wide" disabled={busy || !name.trim()} onClick={save}>{busy ? 'Guardando…' : 'Guardar'}</button>
+    </Sheet>
   );
 }

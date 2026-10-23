@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ApiError } from '../api';
 import {
-  CAP_LABEL, coachApi, Cycle, firstName, fmtValue, longDate, pctGain, ReportData, shortDate, StoredReport, studentApi, timeAgo,
+  ASPECT_LABEL, CAP_LABEL, coachApi, QUALITY_SCORE, Cycle, firstName, fmtValue, longDate, pctGain, ReportData, shortDate, StoredReport, studentApi, timeAgo,
 } from './data';
 import { CapTag, Icon, Skeleton } from './ui';
 
@@ -85,6 +85,33 @@ export function ReportView({ data, message, nextGoal, publishedAt }: {
           </div>
         ) : <p className="rp-note">En este ciclo no hubo ejercicios con cantidades comparables para medir. Se consolidó lo trabajado.</p>}
       </section>
+
+      {((r.quality?.length ?? 0) > 0 || (r.practice?.length ?? 0) > 0) && (
+        <section className="rp-sec">
+          <h2>Calidad del movimiento</h2>
+          <p className="rp-note" style={{ marginTop: 0, marginBottom: 10 }}>
+            Hay ejercicios que sostenés en el tiempo para hacerlos cada vez mejor. Ahí el avance está en cómo te movés, no siempre en los números.
+          </p>
+          {(r.quality ?? []).map((q) => (
+            <div key={q.name} className="rp-q">
+              <div className="t">
+                <b>{q.name}</b>
+                <span className="qv">{q.from != null && q.from !== q.to ? <>{q.from} → </> : null}<b>{q.to}</b>/5 · {QUALITY_SCORE[q.to]}</span>
+              </div>
+              {q.aspects.length > 0 && <div className="rp-chips sm">{q.aspects.map((a) => <span key={a}>{ASPECT_LABEL[a]}</span>)}</div>}
+              {q.note && <p className="rp-note" style={{ marginTop: 4 }}>“{q.note}”</p>}
+            </div>
+          ))}
+          {(r.practice ?? []).length > 0 && (
+            <>
+              <h3 className="rp-h3">Lo que seguiste puliendo</h3>
+              <div className="rp-chips">
+                {r.practice!.map((p) => <span key={p.name}>{p.name} <small>{p.weeks} sem.</small></span>)}
+              </div>
+            </>
+          )}
+        </section>
+      )}
 
       {r.new_exercises.length > 0 && (
         <section className="rp-sec">
