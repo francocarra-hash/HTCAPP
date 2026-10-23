@@ -5,10 +5,13 @@ import V3App from '../v3/V3App';
 import { api as v3api, DOMAIN_ES } from '../v3/shared';
 import { AssessmentSummary } from '../v3/types';
 import {
-  ActivityItem, coachApi, daysSince, firstName, initials, localDateOf, longDate, ProcessPhase, Profile, relDays, Session,
+  ActivityItem, coachApi, daysSince, FinanceData, Mark, firstName, initials, localDateOf, longDate, ProcessPhase, Profile, relDays, Session,
   SEX_LABEL, Sex, shortDate, Student, StudentListItem, timeAgo, todayIso, uid, whenLabel, cap,
 } from './data';
 import { AgendaEditor } from './Agenda';
+import { FinanzasView, HoyView, StudentPayments, usePayPill } from './Finance';
+import { makeFin } from './billing';
+import { ReportsPanel } from './Report';
 import { ExerciseLibrary, useLibrary } from './ExerciseLibrary';
 import { PlanSession } from './Plan';
 import { ProgressView } from './ProgressView';
@@ -16,15 +19,18 @@ import { HistoryList, RoutineBlocks } from './RoutineView';
 import { lastRealized, NextCard, ProcessTimeline } from './StudentApp';
 import { Enter, Icon, Seg, Sheet, Skeleton, TabBar, TabDef, TopHeader, useToast } from './ui';
 
-type Tab = 'alumnos' | 'planificar' | 'ejercicios' | 'evaluaciones';
-type DetailTab = 'rutina' | 'progreso' | 'historial' | 'agenda' | 'datos';
+type Tab = 'hoy' | 'alumnos' | 'planificar' | 'finanzas' | 'mas' | 'ejercicios' | 'evaluaciones';
+type BarTab = 'hoy' | 'alumnos' | 'planificar' | 'finanzas' | 'mas';
+type DetailTab = 'rutina' | 'progreso' | 'historial' | 'informes' | 'agenda' | 'pagos' | 'datos';
 
-const TABS: TabDef<Tab>[] = [
+const TABS: TabDef<BarTab>[] = [
+  { id: 'hoy', label: 'Hoy', icon: Icon.calendar },
   { id: 'alumnos', label: 'Alumnos', icon: Icon.users },
   { id: 'planificar', label: 'Planificar', icon: Icon.add },
-  { id: 'ejercicios', label: 'Ejercicios', icon: Icon.book },
-  { id: 'evaluaciones', label: 'Evaluaciones', icon: Icon.eval },
+  { id: 'finanzas', label: 'Finanzas', icon: Icon.money },
+  { id: 'mas', label: 'Más', icon: Icon.menu },
 ];
+const barTab = (t: Tab): BarTab => (t === 'ejercicios' || t === 'evaluaciones' ? 'mas' : t);
 
 interface EvalCtx { key: number; studentId?: string; prefill?: { key: number; name: string; age: number | null; sex: Sex | null }; openId?: { key: number; id: string } }
 interface PlanCtx { key: number; ids: string[]; editing: Session | null; back?: string }
@@ -32,7 +38,10 @@ interface PlanCtx { key: number; ids: string[]; editing: Session | null; back?: 
 const FEEL_LABEL = ['', 'muy duro', 'duro', 'bien', 'muy bien', 'genial'];
 
 export default function CoachApp({ onLogout, authEnabled }: { onLogout: () => void; authEnabled: boolean }) {
-  const [tab, setTab] = useState<Tab>('alumnos');
+  const [tab, setTab] = useState<Tab>('hoy');
+  const [detailTab, setDetailTab] = useState<{ key: number; tab: DetailTab }>({ key: 0, tab: 'rutina' });
+  const [finData, setFinData] = useState<FinanceData | null>(null);
+  const fin = useMemo(() => (finData ? makeFin(finData) : null), [finData]);
   const [students, setStudents] = useState<StudentListItem[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -45,10 +54,24 @@ export default function CoachApp({ onLogout, authEnabled }: { onLogout: () => vo
   const [library, reloadLibrary] = useLibrary();
   const [toast, showToast] = useToast();
 
+  const loadFin = useCallback(() => { coachApi.finance().then(setFinData).catch(() => undefined); }, []);
   const refresh = useCallback(() => {
     coachApi.students().then((r) => { setStudents(r.students); setListError(null); }).catch((e: Error) => setListError(e.message));
-  }, []);
+    loadFin();
+  }, [loadFin]);
   useEffect(refresh, [refresh]);
+
+  // Asistencia: se marca al instante y se guarda de fondo.
+  const onAttendance = useCallback((ids: string[], day: string, mark: Mark | null) => {
+    setFinData((d) => d && {
+      ...d,
+      attendance: [
+        ...d.attendance.filter((a) => !(a.day === day && ids.includes(a.student_id))),
+        ...(mark ? ids.map((student_id) => ({ student_id, day, mark })) : []),
+      ],
+    });
+    coachApi.setAttendance(ids, day, mark).catch(() => { showToast('No se pudo guardar la asistencia'); loadFin(); });
+  }, [loadFin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Actividad de los alumnos (sesiones terminadas): se consulta cada minuto y al volver a la app.
   const loadActivity = useCallback(() => { coachApi.activity().then(setActivity).catch(() => undefined); }, []);
@@ -60,6 +83,7 @@ export default function CoachApp({ onLogout, authEnabled }: { onLogout: () => vo
   }, [loadActivity]);
 
   const go = (t: Tab) => {
+    if (t === 'mas' && (tab === 'ejercicios' || tab === 'evaluaciones')) { setTab('mas'); return; }
     if (t === tab) {
       if (t === 'alumnos') setSelected(null);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -69,7 +93,9 @@ export default function CoachApp({ onLogout, authEnabled }: { onLogout: () => vo
     setTab(t);
     window.scrollTo(0, 0);
   };
-  const openStudent = (id: string) => { setSelected(id); setTab('alumnos'); window.scrollTo(0, 0); };
+  const openStudent = (id: string, dt: DetailTab = 'rutina') => {
+    setSelected(id); setDetailTab({ key: Date.now(), tab: dt }); setTab('alumnos'); window.scrollTo(0, 0);
+  };
   const startPlan = (ids: string[], editing: Session | null = null) => {
     setPlan({ key: Date.now(), ids, editing, back: selected ?? undefined });
     setTab('planificar');
@@ -103,11 +129,36 @@ export default function CoachApp({ onLogout, authEnabled }: { onLogout: () => vo
         <div className="bt">
           <div className="bt-page">
             <div className={`wrap${tab === 'planificar' ? ' wide' : ''}`}>
+              {tab === 'hoy' && (
+                <HoyView fin={fin} right={right} onOpen={openStudent} onAttendance={onAttendance} reload={loadFin} toast={showToast} />
+              )}
+              {tab === 'finanzas' && <FinanzasView fin={fin} right={right} onOpen={openStudent} reload={loadFin} toast={showToast} />}
+              {tab === 'mas' && (
+                <>
+                  <TopHeader title="Más" right={right} />
+                  <Enter>
+                    <button className="menuopt" onClick={() => go('ejercicios')}>
+                      <span className="ic">{Icon.book}</span><span><b>Ejercicios</b><small>Biblioteca con la capacidad de cada ejercicio</small></span>
+                    </button>
+                    <button className="menuopt" onClick={() => { setEvalCtx(null); setTab('evaluaciones'); }}>
+                      <span className="ic">{Icon.eval}</span><span><b>Evaluaciones</b><small>HTC OS v3.0: health gates, clasificación y roadmap</small></span>
+                    </button>
+                    {authEnabled && (
+                      <button className="menuopt" onClick={onLogout}>
+                        <span className="ic">{Icon.logout}</span><span><b>Cerrar sesión</b><small>Salir de la cuenta del profe</small></span>
+                      </button>
+                    )}
+                  </Enter>
+                </>
+              )}
               {tab === 'alumnos' && (selected
                 ? (
                   <StudentDetail
-                    key={selected}
+                    key={`${selected}-${detailTab.key}`}
                     id={selected}
+                    initialTab={detailTab.tab}
+                    fin={fin}
+                    reloadFin={loadFin}
                     all={students ?? []}
                     right={right}
                     toast={showToast}
@@ -127,7 +178,7 @@ export default function CoachApp({ onLogout, authEnabled }: { onLogout: () => vo
                     }}
                   />
                 )
-                : <StudentList students={students} error={listError} right={right} onOpen={openStudent}
+                : <StudentList students={students} fin={fin} error={listError} right={right} onOpen={openStudent}
                     onCreated={(id) => { refresh(); openStudent(id); }} toast={showToast} />
               )}
               {tab === 'planificar' && (
@@ -152,7 +203,7 @@ export default function CoachApp({ onLogout, authEnabled }: { onLogout: () => vo
               {tab === 'ejercicios' && <ExerciseLibrary avatar={right} toast={(m) => { showToast(m); reloadLibrary(); }} />}
             </div>
           </div>
-          <TabBar tabs={TABS} current={tab} onChange={go} />
+          <TabBar tabs={TABS} current={barTab(tab)} onChange={go} />
           {toast}
         </div>
       ) : (
@@ -179,7 +230,7 @@ export default function CoachApp({ onLogout, authEnabled }: { onLogout: () => vo
             )}
           </div>
           <div className="bt">
-            <TabBar tabs={TABS} current={tab} onChange={go} />
+            <TabBar tabs={TABS} current={barTab(tab)} onChange={go} />
             {toast}
           </div>
         </>
@@ -237,18 +288,45 @@ function ActivitySheet({ data, onClose, onSeen, onOpen }: {
 
 // ── lista de alumnos ────────────────────────────────────────────────────────
 
-function StudentList({ students, error, right, onOpen, onCreated, toast }: {
-  students: StudentListItem[] | null; error: string | null; right: ReactNode;
+type ListFilter = 'todos' | 'rehab' | 'asinc' | 'pausa' | 'baja';
+
+function StudentList({ students, fin, error, right, onOpen, onCreated, toast }: {
+  students: StudentListItem[] | null; fin: ReturnType<typeof makeFin> | null; error: string | null; right: ReactNode;
   onOpen: (id: string) => void; onCreated: (id: string) => void; toast: (m: string) => void;
 }) {
   const [q, setQ] = useState('');
+  const [filter, setFilter] = useState<ListFilter>('todos');
+  const payPill = usePayPill(fin);
+  const fs = (id: string) => fin?.students.find((x) => x.id === id);
+  const matches = (s: StudentListItem) => {
+    if (filter === 'todos' || !fin) return true;
+    const x = fs(s.id);
+    if (!x) return false;
+    const est = fin.estado(x).estado;
+    if (filter === 'rehab') return fin.billing(x).rehab && est !== 'baja';
+    if (filter === 'asinc') return fin.isAsinc(x) && est !== 'baja';
+    return est === filter;
+  };
+  const counts = (k: ListFilter) => (students ?? []).filter((s) => {
+    if (!fin) return false;
+    const x = fs(s.id);
+    if (!x) return false;
+    const est = fin.estado(x).estado;
+    return k === 'rehab' ? fin.billing(x).rehab && est !== 'baja' : k === 'asinc' ? fin.isAsinc(x) && est !== 'baja' : est === k;
+  }).length;
   const [creating, setCreating] = useState(false);
   const [creds, setCreds] = useState<{ student: Student; password: string } | null>(null);
-  const shown = (students ?? []).filter((s) => !q || s.name.toLowerCase().includes(q.toLowerCase()));
+  const shown = (students ?? []).filter((s) => (!q || s.name.toLowerCase().includes(q.toLowerCase())) && matches(s));
   const today = todayIso();
   const todays = (students ?? []).filter((s) => s.next_session?.date === today);
   // Sin agenda, sin rutina asignada y sin entrenar hace más de 2 meses: van aparte (salvo al buscar).
-  const isOld = (s: StudentListItem) => !q && !s.next_session && !s.pending_count && (daysSince(s.last_date) ?? 0) > 60;
+  const isOld = (s: StudentListItem) => {
+    if (q || filter !== 'todos') return false;
+    const x = fs(s.id);
+    // Baja o en pausa (cargado o automático: sin entrenar hace más de 2 meses) van aparte.
+    if (fin && x) return fin.estado(x).estado !== 'activo';
+    return !s.next_session && !s.pending_count && (daysSince(s.last_date) ?? 0) > 60;
+  };
   const current = shown.filter((s) => !isOld(s))
     .sort((a, b) => (a.next_session?.date ?? '9999').localeCompare(b.next_session?.date ?? '9999') || a.name.localeCompare(b.name));
   const older = shown.filter(isOld).sort((a, b) => (b.last_date ?? '').localeCompare(a.last_date ?? ''));
@@ -269,6 +347,8 @@ function StudentList({ students, error, right, onOpen, onCreated, toast }: {
             </span>
             {trainedToday && <span className="pill done">✓ Entrenó hoy</span>}
             {!trainedToday && s.pending_count > 0 && <span className="pill">Rutina asignada</span>}
+            {(() => { const c = payPill(s.id); return c && <span className={`pill ${c.cls}`}>{c.t}</span>; })()}
+            {fin && fs(s.id) && fin.billing(fs(s.id)!).rehab && <span className="pill low">Rehab</span>}
           </span>
         </span>
         <span className="stu-r">
@@ -294,6 +374,15 @@ function StudentList({ students, error, right, onOpen, onCreated, toast }: {
           {students.length > 5 && (
             <input className="search" type="search" placeholder="Buscar alumno…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar alumno" style={{ marginTop: 12 }} />
           )}
+          {fin && (['rehab', 'asinc', 'pausa', 'baja'] as ListFilter[]).some((k) => counts(k)) && (
+            <div className="filters" role="group" aria-label="Filtrar alumnos">
+              <button className="tog" aria-pressed={filter === 'todos'} onClick={() => setFilter('todos')}>Todos</button>
+              {([['rehab', 'Rehab'], ['asinc', 'Asincrónicos'], ['pausa', 'En pausa'], ['baja', 'Baja']] as Array<[ListFilter, string]>)
+                .filter(([k]) => counts(k)).map(([k, l]) => (
+                  <button key={k} className="tog" aria-pressed={filter === k} onClick={() => setFilter(filter === k ? 'todos' : k)}>{l} <span style={{ opacity: .7 }}>{counts(k)}</span></button>
+                ))}
+            </div>
+          )}
           {!students.length ? (
             <p className="empty">Todavía no hay alumnos. Creá el primero y después planificale su rutina.</p>
           ) : (
@@ -303,7 +392,7 @@ function StudentList({ students, error, right, onOpen, onCreated, toast }: {
               {older.length > 0 && (
                 <details className="older">
                   <summary>
-                    <span>Sin entrenar hace más de 2 meses <b>{older.length}</b></span>
+                    <span>En pausa o de baja <b>{older.length}</b></span>
                     {Icon.chev}
                   </summary>
                   {older.map(row)}
@@ -426,15 +515,16 @@ function CredentialsSheet({ student, password, toast, onClose }: { student: Stud
 
 // ── perfil del alumno (vista del coach) ─────────────────────────────────────
 
-function StudentDetail({ id, all, right, toast, onBack, onDeleted, onChanged, onPlan, onEvaluate, onOpenAssessment }: {
-  id: string; all: StudentListItem[]; right: ReactNode; toast: (m: string) => void;
+function StudentDetail({ id, initialTab, fin, reloadFin, all, right, toast, onBack, onDeleted, onChanged, onPlan, onEvaluate, onOpenAssessment }: {
+  id: string; initialTab: DetailTab; fin: ReturnType<typeof makeFin> | null; reloadFin: () => void;
+  all: StudentListItem[]; right: ReactNode; toast: (m: string) => void;
   onBack: () => void; onDeleted: () => void; onChanged: () => void;
   onPlan: (ids: string[], editing?: Session | null) => void;
   onEvaluate: (s: Student) => void; onOpenAssessment: (studentId: string, assessmentId: string) => void;
 }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<DetailTab>('rutina');
+  const [tab, setTab] = useState<DetailTab>(initialTab);
 
   const load = useCallback(() => {
     coachApi.student(id).then(setProfile).catch((e: Error) => setError(e.message));
@@ -470,8 +560,13 @@ function StudentDetail({ id, all, right, toast, onBack, onDeleted, onChanged, on
       />
       {error ? <p className="empty">No se pudo cargar: {error}</p> : !profile || !s ? <Skeleton /> : (
         <>
-          <Seg small value={tab} onChange={(t) => setTab(t)}
-            options={[['rutina', 'Rutina'], ['progreso', 'Progreso'], ['historial', 'Historial'], ['agenda', 'Agenda'], ['datos', 'Datos']]} />
+          <div className="dtabs" role="tablist" aria-label="Secciones del alumno">
+            {([['rutina', 'Rutina'], ['progreso', 'Progreso'], ['historial', 'Historial'], ['informes', 'Informes'], ['agenda', 'Agenda'], ['pagos', 'Pagos'], ['datos', 'Datos']] as Array<[DetailTab, string]>).map(([k, l]) => (
+              <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>
+                {l}{k === 'informes' && fin && fin.students.find((x) => x.id === id) && fin.informePendiente(fin.students.find((x) => x.id === id)!) ? <i className="dot" aria-label="pendiente" /> : null}
+              </button>
+            ))}
+          </div>
           <Enter k={tab}>
             {tab === 'rutina' && (
               <>
@@ -530,6 +625,13 @@ function StudentDetail({ id, all, right, toast, onBack, onDeleted, onChanged, on
                 <HistoryList sessions={profile.sessions} viewer={undefined} studentId={s.id} names={names}
                   onEdit={(x) => onPlan(x.participant_ids, x)} onDelete={remove} />
               </>
+            )}
+            {tab === 'informes' && (
+              <ReportsPanel studentId={s.id} name={s.name} phone={s.billing?.telefono ?? null} toast={toast} onPublished={reloadFin} />
+            )}
+            {tab === 'pagos' && (
+              <StudentPayments fin={fin} studentId={s.id} toast={toast} onAgenda={() => setTab('agenda')}
+                reload={() => { reloadFin(); load(); }} />
             )}
             {tab === 'agenda' && (
               <AgendaEditor student={s} sessions={profile.sessions} toast={toast}

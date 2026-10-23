@@ -459,6 +459,79 @@ describe('API — alumnos, sesiones y permisos', () => {
     expect(detail.body.sessions).toHaveLength(3);
   });
 
+  test('finanzas: honorarios en la ficha, pagos, asistencia; el alumno no ve sus honorarios', async () => {
+    const a = app();
+    const auth = await coach(a);
+    const ana = await request(a).post('/api/training/students').set('Authorization', auth).send({ name: 'Ana' });
+    const id = ana.body.student.id;
+    const billing = { modalidad: 'presencial', clases_sem: 2, ciclo_sem: 4, pago_modo: 'clases', cuota: 120, telefono: '5491100000000' };
+    const p = await request(a).patch(`/api/training/students/${id}`).set('Authorization', auth).send({ billing });
+    expect(p.status).toBe(200);
+    expect(p.body.student.billing).toMatchObject({ cuota: 120, estado: null, rehab: false });
+    expect((await request(a).patch(`/api/training/students/${id}`).set('Authorization', auth).send({ billing: { cuota: -1 } })).status).toBe(400);
+
+    const pay = await request(a).post('/api/training/payments').set('Authorization', auth)
+      .send({ student_id: id, paid_on: '2026-10-01', amount: 120, classes: 8 });
+    expect(pay.status).toBe(201);
+    await request(a).put('/api/training/attendance').set('Authorization', auth).send({ student_ids: [id], day: '2026-10-02', mark: 'p' });
+    await request(a).put('/api/training/attendance').set('Authorization', auth).send({ student_ids: [id], day: '2026-10-05', mark: 'e' });
+    await request(a).put('/api/training/attendance').set('Authorization', auth).send({ student_ids: [id], day: '2026-10-05', mark: null });
+    const fin = await request(a).get('/api/training/finance').set('Authorization', auth);
+    expect(fin.body.payments).toHaveLength(1);
+    expect(fin.body.payments[0]).toMatchObject({ amount: 120, classes: 8, paid_on: '2026-10-01' });
+    expect(fin.body.attendance).toEqual([{ student_id: id, day: '2026-10-02', mark: 'p' }]);
+    expect(fin.body.students[0]).toMatchObject({ name: 'Ana', billing: { cuota: 120 } });
+
+    const tok = (await request(a).post('/api/login').send({ username: 'ana', password: ana.body.password })).body.token;
+    const me = await request(a).get('/api/me').set('Authorization', `Bearer ${tok}`);
+    expect(me.body.student.billing).toBeNull();
+    expect((await request(a).get('/api/training/finance').set('Authorization', `Bearer ${tok}`)).status).toBe(401);
+    expect((await request(a).delete(`/api/training/payments/${pay.body.payment.id}`).set('Authorization', auth)).status).toBe(200);
+  });
+
+  test('informe de 4 semanas: ciclo, mejoras, publicación y vista del alumno', async () => {
+    const a = app();
+    const auth = await coach(a);
+    const ana = await request(a).post('/api/training/students').set('Authorization', auth).send({ name: 'Ana' });
+    const id = ana.body.student.id;
+    // Ciclo 1: 1/9 al 28/9 · ciclo 2: 29/9 al 26/10.
+    const text = [
+      '1/9/2026', 'A1 - Wall sit 30s + Pistol 5', '8/9/2026', 'A1 - Wall sit 40s + Pistol 6',
+      '22/9/2026', 'A1 - Wall sit 45s + Pistol 6', '30/9/2026', 'A1 - Wall sit 1min + Pistol 8 + Cossack 6',
+      '7/10/2026', 'A1 - Wall sit 1:15min + Pistol 8',
+    ].join('\n');
+    await request(a).post('/api/training/sessions').set('Authorization', auth).send({ text, student_ids: [id] });
+    await request(a).put('/api/training/attendance').set('Authorization', auth).send({ student_ids: [id], day: '2026-10-14', mark: 'a' });
+
+    const list = await request(a).get(`/api/training/students/${id}/reports`).set('Authorization', auth);
+    expect(list.body.first_date).toBe('2026-09-01');
+
+    const prev = await request(a).get(`/api/training/students/${id}/reports/preview?start=2026-10-01`).set('Authorization', auth);
+    expect(prev.status).toBe(200);
+    const r = prev.body.report;
+    expect([r.cycle, r.start, r.end, r.week_from, r.week_to]).toEqual([2, '2026-09-29', '2026-10-26', 5, 8]);
+    expect(r.sessions).toMatchObject({ count: 2, previous: 3, total_to_date: 5, per_week: [1, 1, 0, 0] });
+    expect(r.attendance).toEqual({ p: 0, a: 1, e: 0 });
+    expect(r.improvements.map((x: { name: string; from: number; to: number }) => [x.name, x.from, x.to])).toEqual([
+      ['Wall sit', 45, 75], ['Pistol', 6, 8],
+    ]);
+    expect(r.new_exercises.map((x: { name: string }) => x.name)).toEqual(['Cossack']);
+
+    const pub = await request(a).post(`/api/training/students/${id}/reports`).set('Authorization', auth)
+      .send({ start: '2026-10-01', message: 'Gran mes', next_goal: 'Pistol completo' });
+    expect(pub.status).toBe(201);
+    expect(pub.body.report).toMatchObject({ period_start: '2026-09-29', message: 'Gran mes' });
+    // Volver a publicar el mismo ciclo lo reemplaza.
+    await request(a).post(`/api/training/students/${id}/reports`).set('Authorization', auth).send({ start: '2026-10-20', message: 'Gran mes!' });
+    const tok = (await request(a).post('/api/login').send({ username: 'ana', password: ana.body.password })).body.token;
+    const me = await request(a).get('/api/me').set('Authorization', `Bearer ${tok}`);
+    expect(me.body.reports).toHaveLength(1);
+    expect(me.body.reports[0]).toMatchObject({ message: 'Gran mes!', seen_at: null });
+    await request(a).post(`/api/me/reports/${me.body.reports[0].id}/seen`).set('Authorization', `Bearer ${tok}`);
+    const again = await request(a).get('/api/me').set('Authorization', `Bearer ${tok}`);
+    expect(again.body.reports[0].seen_at).toBeTruthy();
+  });
+
   test('agenda del alumno: la próxima sesión aparece en la lista', async () => {
     const a = app();
     const auth = await coach(a);

@@ -30,7 +30,8 @@ export type Sex = 'MALE' | 'FEMALE';
 
 export interface Schedule {
   weekly: Array<{ weekday: number; time: string | null }>;
-  once: Array<{ date: string; time: string | null; note?: string | null }>;
+  /** `from`: la clase se pasó de ese día a este. */
+  once: Array<{ date: string; time: string | null; note?: string | null; from?: string | null }>;
   skip: string[];
 }
 export interface Occurrence { date: string; time: string | null; note?: string | null }
@@ -46,6 +47,7 @@ export interface Student {
   notes: string | null;
   schedule: Schedule | null;
   process: ProcessPhase[] | null;
+  billing: Billing | null;
   created_at: string;
 }
 
@@ -121,7 +123,67 @@ export interface Profile {
   partners: Array<{ id: string; name: string; shared: number }>;
   next_sessions: Occurrence[];
   assessment_ids?: string[];
+  /** Sólo en la vista del alumno: sus informes publicados. */
+  reports?: StoredReport[];
 }
+
+// ── finanzas ────────────────────────────────────────────────────────────────
+
+export type Estado = 'activo' | 'pausa' | 'baja';
+export type Modalidad = 'presencial' | 'virtual_sinc' | 'virtual_asinc';
+export interface Billing {
+  estado: Estado | null;
+  modalidad: Modalidad;
+  clases_sem: number | null;
+  ciclo_sem: number;
+  pago_modo: 'clases' | 'mensual';
+  cuota: number | null;
+  historial_cuota: Array<{ desde: string; monto: number }>;
+  cuenta_desde: string | null;
+  saldo_inicial: number;
+  vence: string | null;
+  telefono: string | null;
+  enfoque: string | null;
+  rehab: boolean;
+  prog_enviada: string | null;
+  prog_pendiente: boolean;
+}
+export const emptyBilling = (): Billing => ({
+  estado: null, modalidad: 'presencial', clases_sem: null, ciclo_sem: 4, pago_modo: 'clases', cuota: null,
+  historial_cuota: [], cuenta_desde: null, saldo_inicial: 0, vence: null, telefono: null, enfoque: null,
+  rehab: false, prog_enviada: null, prog_pendiente: false,
+});
+export interface Payment {
+  id: string; student_id: string; paid_on: string; amount: number;
+  classes: number | null; period: string | null; note: string | null; created_at: string;
+}
+export type Mark = 'p' | 'a' | 'e';
+export interface AttendanceRow { student_id: string; day: string; mark: Mark }
+export interface FinanceStudent {
+  id: string; name: string; username: string; billing: Billing | null; schedule: Schedule | null; created_at: string;
+  first_date: string | null; last_date: string | null;
+  session_days: string[]; planned_days: string[]; last_report_start: string | null;
+}
+export interface FinanceData { today: string; students: FinanceStudent[]; payments: Payment[]; attendance: AttendanceRow[] }
+
+// ── informe de 4 semanas ────────────────────────────────────────────────────
+
+export interface ReportData {
+  student_name: string; cycle: number; start: string; end: string; week_from: number; week_to: number;
+  sessions: { count: number; dates: string[]; per_week: number[]; previous: number; total_to_date: number };
+  planned: number | null;
+  attendance: { p: number; a: number; e: number };
+  capacities: Array<{ id: CapacityId; label: string; share: number; previous_share: number }>;
+  improvements: Array<{ name: string; capacity: CapacityId | null; unit: Unit; from: number; to: number; from_date: string; to_date: string }>;
+  new_exercises: Array<{ name: string; capacity: CapacityId | null }>;
+  feeling: { average: number; count: number } | null;
+  comments: Array<{ date: string; text: string }>;
+}
+export interface StoredReport {
+  id: string; student_id: string; period_start: string; period_end: string; data: ReportData;
+  message: string | null; next_goal: string | null; published_at: string; seen_at: string | null;
+}
+export interface Cycle { n: number; start: string; end: string }
 
 export interface ExerciseEntry {
   key: string; name: string; capacity: CapacityId | null; capacity_source: 'coach' | 'auto' | null;
@@ -174,6 +236,18 @@ export const coachApi = {
     req<{ assessment_ids: string[] }>(`/training/students/${id}/assessments`, json('POST', { assessment_id })),
   unlinkAssessment: (id: string, assessment_id: string) =>
     req<{ assessment_ids: string[] }>(`/training/students/${id}/assessments/${assessment_id}`, json('DELETE')),
+  finance: () => req<FinanceData>('/training/finance'),
+  addPayment: (body: { student_id: string; paid_on: string; amount: number; classes?: number | null; period?: string | null; note?: string | null }) =>
+    req<{ payment: Payment }>('/training/payments', json('POST', body)),
+  deletePayment: (id: string) => req<{ ok: true }>(`/training/payments/${id}`, json('DELETE')),
+  setAttendance: (student_ids: string[], day: string, mark: Mark | null) =>
+    req<{ ok: true }>('/training/attendance', json('PUT', { student_ids, day, mark })),
+  reports: (id: string) =>
+    req<{ first_date: string | null; current: Cycle | null; last_complete: Cycle | null; reports: StoredReport[] }>(`/training/students/${id}/reports`),
+  reportPreview: (id: string, start: string) => req<{ report: ReportData }>(`/training/students/${id}/reports/preview?start=${start}`),
+  publishReport: (id: string, body: { start: string; message: string | null; next_goal: string | null }) =>
+    req<{ report: StoredReport }>(`/training/students/${id}/reports`, json('POST', body)),
+  deleteReport: (id: string) => req<{ ok: true }>(`/training/reports/${id}`, json('DELETE')),
 };
 
 export const studentApi = {
@@ -183,6 +257,7 @@ export const studentApi = {
   complete: (sessionId: string, body: { checks?: string[]; notes?: Record<string, string>; feeling?: number | null; comment?: string | null }) =>
     req<{ completion: Completion }>(`/me/sessions/${sessionId}/complete`, json('POST', body)),
   changePassword: (current: string, next: string) => req<{ ok: true }>('/me/password', json('POST', { current, next })),
+  reportSeen: (id: string) => req<{ ok: true }>(`/me/reports/${id}/seen`, json('POST', {})),
 };
 
 // ── rutina: utilidades ──────────────────────────────────────────────────────

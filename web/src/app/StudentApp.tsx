@@ -5,6 +5,7 @@ import {
   whenLabel, cap,
 } from './data';
 import { ProgressView, WinCard } from './ProgressView';
+import { StudentReports } from './Report';
 import { HistoryList, RoutineBlocks, RoutinePlayer } from './RoutineView';
 import { CapTag, Enter, Icon, Skeleton, TabBar, TabDef, TopHeader, useToast } from './ui';
 
@@ -59,6 +60,9 @@ export default function StudentApp({ onLogout }: { onLogout: () => void }) {
     studentApi.me().then(setProfile).catch((e: Error) => setError(e.message));
   }, []);
   useEffect(load, [load]);
+  const markSeen = useCallback((rid: string) => setProfile((p) => p && {
+    ...p, reports: (p.reports ?? []).map((r) => (r.id === rid ? { ...r, seen_at: new Date().toISOString() } : r)),
+  }), []);
   const onProgress = useCallback((done: number, total: number) => setProg({ done, total }), []);
 
   const go = (t: Tab) => {
@@ -93,13 +97,21 @@ export default function StudentApp({ onLogout }: { onLogout: () => void }) {
               : !profile ? <Skeleton />
               : (
                 <Enter k={tab}>
+                  {tab === 'hoy' && (profile.reports ?? []).some((r) => !r.seen_at) && (
+                    <StudentReports reports={(profile.reports ?? []).filter((r) => !r.seen_at).slice(0, 1)} onSeen={markSeen} />
+                  )}
                   {tab === 'hoy' && (pending
                     ? (
                       <RoutinePlayer key={pending.id} session={pending} studentId={profile.student.id} studentName={profile.student.name}
                         onProgress={onProgress} onDone={() => { setProg(null); load(); }} />
                     )
                     : <TodayIdle profile={profile} last={last} />)}
-                  {tab === 'progreso' && <ProgressView progress={profile.progress} you />}
+                  {tab === 'progreso' && (
+                    <>
+                      <StudentReports reports={profile.reports ?? []} onSeen={markSeen} />
+                      <ProgressView progress={profile.progress} you />
+                    </>
+                  )}
                   {tab === 'historial' && <HistoryList sessions={profile.sessions} viewer={firstName(profile.student.name)} studentId={profile.student.id} />}
                   {tab === 'perfil' && <ProfileTab profile={profile} onLogout={onLogout} onSaved={() => showToast('Contraseña actualizada')} />}
                 </Enter>

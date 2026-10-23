@@ -46,6 +46,8 @@ export const Icon = {
   x: svg(<path d="M6 6l12 12M18 6L6 18" />),
   plus: svg(<path d="M12 5v14M5 12h14" />),
   play: svg(<path d="M8 5.5v13l10.5-6.5z" />),
+  money: svg(<><rect x="3" y="6" width="18" height="12" rx="2" /><circle cx="12" cy="12" r="2.6" /><path d="M6.5 9.5v.01M17.5 14.5v.01" /></>),
+  menu: svg(<><circle cx="6" cy="12" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="18" cy="12" r="1.3" /></>),
   star: svg(<path d="M12 3.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8L12 16.9 6.7 19.6l1-5.8-4.2-4.1 5.9-.9z" />),
 };
 

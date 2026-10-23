@@ -9,7 +9,10 @@ const DATE = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 export const ScheduleSchema = z.object({
   weekly: z.array(z.object({ weekday: z.number().int().min(0).max(6), time: TIME.nullable() })).max(14).default([]),
-  once: z.array(z.object({ date: DATE, time: TIME.nullable(), note: z.string().trim().max(120).nullable().optional() })).max(200).default([]),
+  // `from`: la clase se pasó de ese día a este (el día original queda en `skip`).
+  once: z.array(z.object({
+    date: DATE, time: TIME.nullable(), note: z.string().trim().max(120).nullable().optional(), from: DATE.nullable().optional(),
+  })).max(200).default([]),
   skip: z.array(DATE).max(200).default([]),
 });
 export type Schedule = z.infer<typeof ScheduleSchema>;

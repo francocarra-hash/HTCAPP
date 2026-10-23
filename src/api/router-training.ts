@@ -20,6 +20,8 @@ import { buildProgress, ExerciseInfo, exerciseKey, itemKey } from '../training/p
 import { exerciseGroups, itemText, Routine, routineFromParsed, RoutineItem, RoutineSchema } from '../training/routine';
 import { localNow, nextSessions, ScheduleSchema } from '../training/schedule';
 import { Completion, NewSession, StoredSession, Student, TrainingRepository } from '../training/repository';
+import { AttendanceInput, BillingSchema, PaymentInput } from '../training/billing';
+import { buildReport, cycleOf, CYCLE_DAYS, ReportInput } from '../training/report';
 
 export interface RoutineItemView extends RoutineItem { capacity: CapacityId | null }
 export interface SessionView extends Omit<StoredSession, 'routine'> {
@@ -53,6 +55,12 @@ const StudentInput = z.object({
 const StudentPatchInput = StudentInput.omit({ password: true }).partial().extend({
   schedule: ScheduleSchema.nullable().optional(),
   process: ProcessSchema.nullable().optional(),
+  billing: BillingSchema.nullable().optional(),
+});
+const ReportPublishInput = z.object({
+  start: DATE,
+  message: z.string().trim().max(2000).nullable().optional(),
+  next_goal: z.string().trim().max(1000).nullable().optional(),
 });
 const ImportInput = z.object({
   text: z.string().min(1).max(200_000),
@@ -175,6 +183,36 @@ async function studentProfile(repo: TrainingRepository, student: Student, onlyOw
     .sort((a, b) => b[1] - a[1])
     .map(([id, shared]) => ({ id, name: all.get(id)?.name ?? '—', shared }));
   return { student, sessions, progress, partners, next_sessions: nextSessions(student.schedule, 3) };
+}
+
+// ── informes de 4 semanas ───────────────────────────────────────────────────
+
+const isRealized = (s: SessionView, studentId: string): boolean =>
+  s.status === 'done' || s.completions.some((c) => c.student_id === studentId && c.completed_at);
+
+async function reportInput(repo: TrainingRepository, student: Student): Promise<ReportInput & { firstDate: string | null }> {
+  const sessions = await sessionViews(repo, await repo.listSessions(student.id), student.id);
+  const done = sessions.filter((s) => isRealized(s, student.id));
+  return {
+    studentName: student.name,
+    sessions: done,
+    completions: sessions.flatMap((s) => s.completions.filter((c) => c.student_id === student.id).map((c) => ({ ...c, date: s.date }))),
+    attendance: await repo.listAttendance(student.id),
+    schedule: student.schedule,
+    info: await exerciseInfo(repo),
+    firstDate: done[0]?.date ?? null,
+  };
+}
+
+/** Ciclo en curso y el último terminado (el que toca entregar). */
+function cyclesFor(firstDate: string | null) {
+  if (!firstDate) return { current: null, last_complete: null };
+  const today = localNow().date;
+  const current = cycleOf(firstDate, today);
+  const prevEnd = new Date(`${current.start}T12:00:00Z`);
+  prevEnd.setUTCDate(prevEnd.getUTCDate() - 1);
+  const last = current.n > 1 ? cycleOf(firstDate, prevEnd.toISOString().slice(0, 10)) : null;
+  return { current, last_complete: last };
 }
 
 // ── login ───────────────────────────────────────────────────────────────────
@@ -564,6 +602,115 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
     });
   }));
 
+  // ── finanzas y asistencia ──
+  /** Todo lo que necesita el panel de pagos y asistencia, en una sola llamada. */
+  router.get('/finance', handle(async (_req, res) => {
+    const [students, sessions, completions, payments, attendance, reports] = await Promise.all([
+      repo.listStudents(), repo.listSessions(), repo.listCompletions({}), repo.listPayments(), repo.listAttendance(), repo.listReports(),
+    ]);
+    const completedBy = new Map<string, Set<string>>();
+    for (const c of completions) if (c.completed_at) completedBy.set(c.session_id, (completedBy.get(c.session_id) ?? new Set()).add(c.student_id));
+    res.json({
+      today: localNow().date,
+      students: students.map((st) => {
+        const mine = sessions.filter((x) => x.participant_ids.includes(st.id));
+        const realized = mine.filter((x) => x.status === 'done' || completedBy.get(x.id)?.has(st.id));
+        return {
+          id: st.id, name: st.name, username: st.username, billing: st.billing, schedule: st.schedule, created_at: st.created_at,
+          first_date: realized[0]?.date ?? null,
+          last_date: realized[realized.length - 1]?.date ?? null,
+          /** Días con sesión realizada: cuentan como presente si no hay otra marca. */
+          session_days: [...new Set(realized.map((x) => x.date))],
+          planned_days: [...new Set(mine.filter((x) => x.status === 'planned' && !completedBy.get(x.id)?.has(st.id)).map((x) => x.date))],
+          last_report_start: reports.find((r) => r.student_id === st.id)?.period_start ?? null,
+        };
+      }),
+      payments,
+      attendance,
+    });
+  }));
+
+  router.post('/payments', handle(async (req, res) => {
+    const p = PaymentInput.parse(req.body);
+    if (!(await repo.getStudent(p.student_id))) {
+      fail(res, 404, 'NOT_FOUND', 'Alumno inexistente.');
+      return;
+    }
+    const payment = await repo.createPayment({
+      student_id: p.student_id, paid_on: p.paid_on, amount: p.amount,
+      classes: p.classes ?? null, period: p.period ?? null, note: p.note || null,
+    });
+    res.status(201).json({ payment });
+  }));
+
+  router.delete('/payments/:id', handle(async (req, res) => {
+    if (!(await repo.deletePayment(req.params.id!))) {
+      fail(res, 404, 'NOT_FOUND', 'Pago inexistente.');
+      return;
+    }
+    res.json({ ok: true });
+  }));
+
+  router.put('/attendance', handle(async (req, res) => {
+    const a = AttendanceInput.parse(req.body);
+    await repo.setAttendance(a.student_ids, a.day, a.mark);
+    res.json({ ok: true });
+  }));
+
+  // ── informes de 4 semanas ──
+  router.get('/students/:id/reports', handle(async (req, res) => {
+    const student = await repo.getStudent(req.params.id!);
+    if (!student) {
+      fail(res, 404, 'NOT_FOUND', 'Alumno inexistente.');
+      return;
+    }
+    const input = await reportInput(repo, student);
+    res.json({ first_date: input.firstDate, cycle_days: CYCLE_DAYS, ...cyclesFor(input.firstDate), reports: await repo.listReports(student.id) });
+  }));
+
+  router.get('/students/:id/reports/preview', handle(async (req, res) => {
+    const start = DATE.parse(req.query.start);
+    const student = await repo.getStudent(req.params.id!);
+    if (!student) {
+      fail(res, 404, 'NOT_FOUND', 'Alumno inexistente.');
+      return;
+    }
+    const input = await reportInput(repo, student);
+    if (!input.firstDate) {
+      fail(res, 400, 'NO_SESSIONS', 'Todavía no tiene sesiones para armar un informe.');
+      return;
+    }
+    res.json({ report: buildReport(input, cycleOf(input.firstDate, start), input.firstDate) });
+  }));
+
+  router.post('/students/:id/reports', handle(async (req, res) => {
+    const body = ReportPublishInput.parse(req.body);
+    const student = await repo.getStudent(req.params.id!);
+    if (!student) {
+      fail(res, 404, 'NOT_FOUND', 'Alumno inexistente.');
+      return;
+    }
+    const input = await reportInput(repo, student);
+    if (!input.firstDate) {
+      fail(res, 400, 'NO_SESSIONS', 'Todavía no tiene sesiones para armar un informe.');
+      return;
+    }
+    const cycle = cycleOf(input.firstDate, body.start);
+    const report = await repo.saveReport({
+      student_id: student.id, period_start: cycle.start, period_end: cycle.end,
+      data: buildReport(input, cycle, input.firstDate), message: body.message || null, next_goal: body.next_goal || null,
+    });
+    res.status(201).json({ report });
+  }));
+
+  router.delete('/reports/:id', handle(async (req, res) => {
+    if (!(await repo.deleteReport(req.params.id!))) {
+      fail(res, 404, 'NOT_FOUND', 'Informe inexistente.');
+      return;
+    }
+    res.json({ ok: true });
+  }));
+
   router.post('/activity/seen', handle(async (_req, res) => {
     await repo.markActivitySeen();
     res.json({ ok: true });
@@ -602,8 +749,14 @@ export function createStudentRouter(repo: TrainingRepository): Router {
   router.get('/', handle(async (_req, res) => {
     const student = await me(res);
     if (!student) return;
-    // Las notas son privadas del coach: el alumno ve su objetivo, no las notas.
-    res.json(await studentProfile(repo, { ...student, notes: null }, true));
+    // Las notas y los honorarios son del coach: el alumno ve su objetivo y sus informes.
+    const profile = await studentProfile(repo, { ...student, notes: null, billing: null }, true);
+    res.json({ ...profile, reports: await repo.listReports(student.id) });
+  }));
+
+  router.post('/reports/:id/seen', handle(async (req, res) => {
+    await repo.markReportSeen(req.params.id!, res.locals.studentId as string);
+    res.json({ ok: true });
   }));
 
   /** Sesión del alumno (sólo si participa). */

@@ -9,6 +9,7 @@ import { CapacityId } from './capacities';
 import { ProcessPhase } from './process';
 import { Routine } from './routine';
 import { Schedule } from './schedule';
+import { Billing } from './billing';
 
 export type Sex = 'MALE' | 'FEMALE';
 export type SessionStatus = 'planned' | 'done';
@@ -23,11 +24,12 @@ export interface Student {
   notes: string | null;
   schedule: Schedule | null;
   process: ProcessPhase[] | null;
+  billing: Billing | null;
   created_at: string;
 }
 
-export type StudentPatch = Partial<Pick<Student, 'name' | 'username' | 'age' | 'sex' | 'goal' | 'notes' | 'schedule' | 'process'>>;
-type NewStudent = Omit<Student, 'id' | 'created_at' | 'schedule' | 'process'> & { password_hash: string };
+export type StudentPatch = Partial<Pick<Student, 'name' | 'username' | 'age' | 'sex' | 'goal' | 'notes' | 'schedule' | 'process' | 'billing'>>;
+type NewStudent = Omit<Student, 'id' | 'created_at' | 'schedule' | 'process' | 'billing'> & { password_hash: string };
 
 export interface NewSession {
   date: string;
@@ -67,6 +69,35 @@ export interface Completion {
   coach_seen_at: string | null;
   updated_at: string;
 }
+
+export interface Payment {
+  id: string;
+  student_id: string;
+  paid_on: string;
+  amount: number;
+  classes: number | null;
+  /** Mes que paga (pago mensual), "YYYY-MM". */
+  period: string | null;
+  note: string | null;
+  created_at: string;
+}
+export type NewPayment = Omit<Payment, 'id' | 'created_at'>;
+
+export type AttendanceMark = 'p' | 'a' | 'e';
+export interface Attendance { student_id: string; day: string; mark: AttendanceMark }
+
+export interface StoredReport {
+  id: string;
+  student_id: string;
+  period_start: string;
+  period_end: string;
+  data: unknown;
+  message: string | null;
+  next_goal: string | null;
+  published_at: string;
+  seen_at: string | null;
+}
+export type NewReport = Omit<StoredReport, 'id' | 'published_at' | 'seen_at'>;
 
 export interface CompletionUpdate {
   session_id: string;
@@ -109,6 +140,20 @@ export interface TrainingRepository {
   /** Sesiones terminadas por alumnos, más recientes primero. */
   listActivity(limit: number): Promise<Completion[]>;
   markActivitySeen(): Promise<void>;
+
+  listPayments(studentId?: string): Promise<Payment[]>;
+  createPayment(p: NewPayment): Promise<Payment>;
+  deletePayment(id: string): Promise<boolean>;
+
+  listAttendance(studentId?: string): Promise<Attendance[]>;
+  /** mark null = borra la marca de ese día. */
+  setAttendance(studentIds: string[], day: string, mark: AttendanceMark | null): Promise<void>;
+
+  listReports(studentId?: string): Promise<StoredReport[]>;
+  /** Publica (o vuelve a publicar) el informe de ese período. */
+  saveReport(r: NewReport): Promise<StoredReport>;
+  deleteReport(id: string): Promise<boolean>;
+  markReportSeen(id: string, studentId: string): Promise<void>;
 }
 
 const bySessionOrder = (a: StoredSession, b: StoredSession): number =>
@@ -124,6 +169,9 @@ export class InMemoryTrainingRepository implements TrainingRepository {
   private links = new Map<string, Set<string>>();
   private exercises = new Map<string, ExerciseMeta>();
   private completions = new Map<string, Completion>();
+  private payments = new Map<string, Payment>();
+  private attendance = new Map<string, Attendance>();
+  private reports = new Map<string, StoredReport>();
 
   private pub(s: Student & { password_hash: string }): Student {
     const { password_hash: _h, ...rest } = s;
@@ -146,7 +194,7 @@ export class InMemoryTrainingRepository implements TrainingRepository {
   }
   async createStudent(s: NewStudent): Promise<Student> {
     if ([...this.students.values()].some((x) => x.username === s.username)) throw new Error('USERNAME_TAKEN');
-    const full = { ...s, schedule: null, process: null, id: randomUUID(), created_at: new Date().toISOString() };
+    const full = { ...s, schedule: null, process: null, billing: null, id: randomUUID(), created_at: new Date().toISOString() };
     this.students.set(full.id, full);
     return this.pub(full);
   }
@@ -169,6 +217,9 @@ export class InMemoryTrainingRepository implements TrainingRepository {
     if (!this.students.delete(id)) return false;
     this.links.delete(id);
     for (const [k, c] of this.completions) if (c.student_id === id) this.completions.delete(k);
+    for (const [k, p] of this.payments) if (p.student_id === id) this.payments.delete(k);
+    for (const [k, a] of this.attendance) if (a.student_id === id) this.attendance.delete(k);
+    for (const [k, r] of this.reports) if (r.student_id === id) this.reports.delete(k);
     for (const [sid, sess] of this.sessions) {
       sess.participant_ids = sess.participant_ids.filter((p) => p !== id);
       if (!sess.participant_ids.length) this.sessions.delete(sid);
@@ -263,6 +314,54 @@ export class InMemoryTrainingRepository implements TrainingRepository {
     const now = new Date().toISOString();
     for (const c of this.completions.values()) if (c.completed_at && !c.coach_seen_at) c.coach_seen_at = now;
   }
+
+  async listPayments(studentId?: string): Promise<Payment[]> {
+    return [...this.payments.values()]
+      .filter((p) => !studentId || p.student_id === studentId)
+      .sort((a, b) => a.paid_on.localeCompare(b.paid_on) || a.created_at.localeCompare(b.created_at))
+      .map((p) => clone(p));
+  }
+  async createPayment(p: NewPayment): Promise<Payment> {
+    const full = { ...clone(p), id: randomUUID(), created_at: new Date().toISOString() };
+    this.payments.set(full.id, full);
+    return clone(full);
+  }
+  async deletePayment(id: string): Promise<boolean> {
+    return this.payments.delete(id);
+  }
+
+  async listAttendance(studentId?: string): Promise<Attendance[]> {
+    return [...this.attendance.values()]
+      .filter((a) => !studentId || a.student_id === studentId)
+      .sort((a, b) => a.day.localeCompare(b.day))
+      .map((a) => clone(a));
+  }
+  async setAttendance(studentIds: string[], day: string, mark: AttendanceMark | null): Promise<void> {
+    for (const id of studentIds) {
+      if (mark) this.attendance.set(`${id}:${day}`, { student_id: id, day, mark });
+      else this.attendance.delete(`${id}:${day}`);
+    }
+  }
+
+  async listReports(studentId?: string): Promise<StoredReport[]> {
+    return [...this.reports.values()]
+      .filter((r) => !studentId || r.student_id === studentId)
+      .sort((a, b) => b.period_start.localeCompare(a.period_start))
+      .map((r) => clone(r));
+  }
+  async saveReport(r: NewReport): Promise<StoredReport> {
+    const prev = [...this.reports.values()].find((x) => x.student_id === r.student_id && x.period_start === r.period_start);
+    const full: StoredReport = { ...clone(r), id: prev?.id ?? randomUUID(), published_at: new Date().toISOString(), seen_at: null };
+    this.reports.set(full.id, full);
+    return clone(full);
+  }
+  async deleteReport(id: string): Promise<boolean> {
+    return this.reports.delete(id);
+  }
+  async markReportSeen(id: string, studentId: string): Promise<void> {
+    const r = this.reports.get(id);
+    if (r && r.student_id === studentId && !r.seen_at) r.seen_at = new Date().toISOString();
+  }
 }
 
 // ── PostgreSQL ──────────────────────────────────────────────────────────────
@@ -280,7 +379,31 @@ const toStudent = (r: any): Student => ({
   notes: r.notes ?? null,
   schedule: r.schedule ?? null,
   process: r.process ?? null,
+  billing: r.billing ?? null,
   created_at: ts(r.created_at)!,
+});
+
+const toPayment = (r: any): Payment => ({
+  id: r.id,
+  student_id: r.student_id,
+  paid_on: r.paid_on,
+  amount: Number(r.amount),
+  classes: r.classes ?? null,
+  period: r.period ?? null,
+  note: r.note ?? null,
+  created_at: ts(r.created_at)!,
+});
+
+const toReport = (r: any): StoredReport => ({
+  id: r.id,
+  student_id: r.student_id,
+  period_start: r.period_start,
+  period_end: r.period_end,
+  data: r.data,
+  message: r.message ?? null,
+  next_goal: r.next_goal ?? null,
+  published_at: ts(r.published_at)!,
+  seen_at: ts(r.seen_at),
 });
 
 const toSession = (r: any): StoredSession => ({
@@ -309,7 +432,11 @@ const toCompletion = (r: any): Completion => ({
   updated_at: ts(r.updated_at)!,
 });
 
-const STUDENT_COLS = 'id, name, username, age, sex, goal, notes, schedule, process, created_at';
+const STUDENT_COLS = 'id, name, username, age, sex, goal, notes, schedule, process, billing, created_at';
+const PAYMENT_COLS = `id::text AS id, student_id::text AS student_id, to_char(paid_on, 'YYYY-MM-DD') AS paid_on,
+  amount, classes, period, note, created_at`;
+const REPORT_COLS = `id::text AS id, student_id::text AS student_id, to_char(period_start, 'YYYY-MM-DD') AS period_start,
+  to_char(period_end, 'YYYY-MM-DD') AS period_end, data, message, next_goal, published_at, seen_at`;
 const SESSION_SELECT = `
   SELECT s.id, to_char(s.session_date, 'YYYY-MM-DD') AS date, s.date_raw, s.date_note, s.title, s.body, s.seq,
          s.status, s.routine, s.created_at,
@@ -368,9 +495,10 @@ export class PgTrainingRepository implements TrainingRepository {
     }
   }
   async updateStudent(id: string, patch: StudentPatch): Promise<Student | undefined> {
-    const cols = (['name', 'username', 'age', 'sex', 'goal', 'notes', 'schedule', 'process'] as const).filter((k) => k in patch);
+    const cols = (['name', 'username', 'age', 'sex', 'goal', 'notes', 'schedule', 'process', 'billing'] as const).filter((k) => k in patch);
     if (!cols.length) return this.getStudent(id);
-    const value = (c: (typeof cols)[number]) => (c === 'schedule' || c === 'process' ? json(patch[c]) : patch[c] ?? null);
+    const value = (c: (typeof cols)[number]) =>
+      (c === 'schedule' || c === 'process' || c === 'billing' ? json(patch[c]) : patch[c] ?? null);
     try {
       const r = await this.pool.query(
         `UPDATE training_students SET ${cols.map((c, i) => `${c} = $${i + 2}`).join(', ')}
@@ -550,4 +678,72 @@ export class PgTrainingRepository implements TrainingRepository {
       'UPDATE training_completions SET coach_seen_at = now() WHERE completed_at IS NOT NULL AND coach_seen_at IS NULL',
     );
   }
+  async listPayments(studentId?: string): Promise<Payment[]> {
+    const r = await this.pool.query(
+      `SELECT ${PAYMENT_COLS} FROM training_payments ${studentId ? 'WHERE student_id = $1' : ''} ORDER BY paid_on, created_at`,
+      studentId ? [studentId] : [],
+    );
+    return r.rows.map(toPayment);
+  }
+  async createPayment(p: NewPayment): Promise<Payment> {
+    const r = await this.pool.query(
+      `INSERT INTO training_payments (id, student_id, paid_on, amount, classes, period, note)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING ${PAYMENT_COLS}`,
+      [randomUUID(), p.student_id, p.paid_on, p.amount, p.classes, p.period, p.note],
+    );
+    return toPayment(r.rows[0]);
+  }
+  async deletePayment(id: string): Promise<boolean> {
+    const r = await this.pool.query('DELETE FROM training_payments WHERE id = $1 RETURNING id', [id]);
+    return r.rows.length > 0;
+  }
+
+  async listAttendance(studentId?: string): Promise<Attendance[]> {
+    const r = await this.pool.query(
+      `SELECT student_id::text AS student_id, to_char(day, 'YYYY-MM-DD') AS day, mark FROM training_attendance
+        ${studentId ? 'WHERE student_id = $1' : ''} ORDER BY day`,
+      studentId ? [studentId] : [],
+    );
+    return r.rows as Attendance[];
+  }
+  async setAttendance(studentIds: string[], day: string, mark: AttendanceMark | null): Promise<void> {
+    if (!mark) {
+      await this.pool.query('DELETE FROM training_attendance WHERE day = $1 AND student_id = ANY($2::uuid[])', [day, studentIds]);
+      return;
+    }
+    await this.pool.query(
+      `INSERT INTO training_attendance (student_id, day, mark)
+       SELECT unnest($1::uuid[]), $2::date, $3
+       ON CONFLICT (student_id, day) DO UPDATE SET mark = EXCLUDED.mark, updated_at = now()`,
+      [studentIds, day, mark],
+    );
+  }
+
+  async listReports(studentId?: string): Promise<StoredReport[]> {
+    const r = await this.pool.query(
+      `SELECT ${REPORT_COLS} FROM training_reports ${studentId ? 'WHERE student_id = $1' : ''} ORDER BY period_start DESC`,
+      studentId ? [studentId] : [],
+    );
+    return r.rows.map(toReport);
+  }
+  async saveReport(n: NewReport): Promise<StoredReport> {
+    const r = await this.pool.query(
+      `INSERT INTO training_reports (id, student_id, period_start, period_end, data, message, next_goal)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (student_id, period_start) DO UPDATE SET period_end = EXCLUDED.period_end, data = EXCLUDED.data,
+         message = EXCLUDED.message, next_goal = EXCLUDED.next_goal, published_at = now(), seen_at = NULL
+       RETURNING ${REPORT_COLS}`,
+      [randomUUID(), n.student_id, n.period_start, n.period_end, json(n.data), n.message, n.next_goal],
+    );
+    return toReport(r.rows[0]);
+  }
+  async deleteReport(id: string): Promise<boolean> {
+    const r = await this.pool.query('DELETE FROM training_reports WHERE id = $1 RETURNING id', [id]);
+    return r.rows.length > 0;
+  }
+  async markReportSeen(id: string, studentId: string): Promise<void> {
+    await this.pool.query(
+      'UPDATE training_reports SET seen_at = now() WHERE id = $1 AND student_id = $2 AND seen_at IS NULL', [id, studentId]);
+  }
+
 }
