@@ -87,3 +87,15 @@
   .bt .composer .btn { width: 46px; height: 46px; min-height: 46px; padding: 0; border-radius: 50%; display: grid; place-items: center; flex: none; }
   .bt .composer .btn svg { width: 20px; height: 20px; }
 }
+
+/* inicio del profe: la clase de ahora */
+@layer components {
+  .bt .now-card.live { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .bt .now-h { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .bt .now-h b { font-family: var(--f-display); font-weight: 700; font-size: 28px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .bt .now-h small { color: var(--muted); font-size: 13px; }
+  .bt .now-tag { font-family: var(--f-data); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); align-self: center; }
+  .bt .now-card.live .now-tag { color: var(--accent-ink); background: var(--accent); border-radius: 999px; padding: 3px 9px; }
+  .bt .now-row { justify-content: flex-start; }
+  .bt .now-row .chev { color: var(--muted); font-size: 22px; line-height: 1; flex: none; }
+}

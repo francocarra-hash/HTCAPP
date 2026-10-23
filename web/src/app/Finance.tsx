@@ -9,24 +9,26 @@ import {
   fmtLong, PayState,
 } from './billing';
 import { Enter, Icon, Seg, Sheet, Skeleton, TopHeader } from './ui';
+import { Avatar } from './social';
 
-export type OpenStudent = (id: string, tab?: 'pagos' | 'informes' | 'agenda') => void;
+export type OpenStudent = (id: string, tab?: 'rutina' | 'pagos' | 'informes' | 'agenda') => void;
 type Toast = (m: string) => void;
 
 const Pill = ({ c }: { c: { t: string; cls: string } }) => <span className={`pill ${c.cls}`}>{c.t}</span>;
 
-// ── Hoy: inicio + asistencia ────────────────────────────────────────────────
+// ── Hoy: agenda del día (sin plata: la app puede estar abierta en clase) ───
+
+const mins = (t: string): number => { const [h, m] = t.split(':').map(Number); return (h ?? 0) * 60 + (m ?? 0); };
+const enCuanto = (n: number): string => (n < 60 ? `${n} min` : n % 60 ? `${Math.floor(n / 60)} h ${n % 60} min` : `${n / 60} h`);
 
 export function HoyView({ fin, right, onOpen, onAttendance, reload, toast }: {
   fin: Fin | null; right: ReactNode; onOpen: OpenStudent; reload: () => void; toast: Toast;
   onAttendance: (ids: string[], day: string, mark: Mark | null) => void;
 }) {
   const [day, setDay] = useState<string | null>(null);
-  const [paying, setPaying] = useState<string | null>(null);
   const [moving, setMoving] = useState<{ id: string; de?: string } | null>(null);
   const today = fin?.today ?? '';
   const f = day ?? today;
-  const d = parse(today || '2000-01-01');
 
   if (!fin) {
     return (
@@ -36,16 +38,8 @@ export function HoyView({ fin, right, onOpen, onAttendance, reload, toast }: {
       </>
     );
   }
-  const m = ym(today);
-  const st = fin.activos().map((s) => ({ s, c: fin.estadoPago(s) }));
-  const urg = st.filter((x) => urgente(x.c));
-  const pronto = st.filter((x) => x.c.k === 'pronto');
-  const sinf = st.filter((x) => x.c.k === 'sinfecha' && fin.billing(x.s).cuota == null);
-  const p30 = fin.proximos30();
-  const total30 = p30.reduce((a, x) => a + x.c.monto, 0);
   const hoy = fin.programados(today);
-  const marcados = hoy.filter((x) => fin.marca(x.s.id, today)).length;
-  const npagos = fin.payments.filter((p) => p.paid_on.startsWith(m)).length;
+  const presentes = hoy.filter((x) => fin.marca(x.s.id, today) === 'p').length;
   const informes = fin.activos().map((s) => ({ s, r: fin.informePendiente(s) })).filter((x) => x.r);
   const cerca = fin.activos().filter((s) => !fin.isAsinc(s)).map((s) => ({ s, n: fin.racha(s) })).filter((x) => x.n >= 2).sort((a, b) => b.n - a.n);
   const asinc = fin.activos().filter(fin.isAsinc).map((s) => ({ s, p: fin.estadoProg(s) }));
@@ -58,29 +52,17 @@ export function HoyView({ fin, right, onOpen, onAttendance, reload, toast }: {
     } catch (e) { toast((e as ApiError).message); }
   };
 
+  const sub = hoy.length
+    ? <><span>{cap(longDate(today))}</span><span>{hoy.length === 1 ? '1 alumno' : `${hoy.length} alumnos`} hoy{presentes ? ` · ${presentes} presentes` : ''}</span></>
+    : <span>{cap(longDate(today))}</span>;
+
   return (
     <>
-      <TopHeader title="Hoy en HTC" sub={<span>{cap(longDate(today))}</span>} right={right} />
+      <TopHeader title="Hoy en HTC" sub={sub} right={right} />
       <Enter>
-        <div className="kpis">
-          <div className="kpi"><span className="l">Cobrado en {monthName(m)}</span><b className="v">{money(fin.cobradoEn(m))}</b><span className="s">{npagos === 1 ? '1 pago' : `${npagos} pagos`}</span></div>
-          <div className={`kpi${urg.length ? ' bad' : ''}`}><span className="l">Tienen que pagar</span><b className="v">{urg.length}</b><span className="s">{pronto.length} pagan pronto</span></div>
-          <div className="kpi"><span className="l">Próximos 30 días</span><b className="v">{money(total30)}</b><span className="s">{p30.length === 1 ? '1 pago' : `${p30.length} pagos`} a cobrar</span></div>
-          <div className="kpi"><span className="l">Clases de hoy</span><b className="v">{hoy.length}</b><span className="s">{marcados} con asistencia</span></div>
-        </div>
+        <Ahora fin={fin} onOpen={onOpen} onAttendance={onAttendance} />
 
         <Attendance fin={fin} day={f} setDay={setDay} onOpen={onOpen} onAttendance={onAttendance} onMove={(id, de) => setMoving({ id, de })} reload={reload} toast={toast} />
-
-        <section className="card">
-          <div className="card-h"><h2>Pagos para cobrar</h2></div>
-          {[...urg, ...pronto].length ? (
-            <div className="rows">
-              {[...urg, ...pronto].map(({ s, c }) => (
-                <PayRow key={s.id} fin={fin} s={s} c={c} onClick={() => setPaying(s.id)} />
-              ))}
-            </div>
-          ) : <p className="hint">Nadie tiene que pagar esta semana.</p>}
-        </section>
 
         {informes.length > 0 && (
           <section className="card">
@@ -101,7 +83,7 @@ export function HoyView({ fin, right, onOpen, onAttendance, reload, toast }: {
             <div className="card-h"><h2>Para seguir de cerca</h2></div>
             <div className="rows">
               {cerca.map(({ s, n }) => (
-                <button key={s.id} className="frow" onClick={() => onOpen(s.id, 'pagos')}>
+                <button key={s.id} className="frow" onClick={() => onOpen(s.id, 'agenda')}>
                   <span className="fw"><b>{s.name}</b><small>{fin.billing(s).enfoque || MOD_LABEL[fin.billing(s).modalidad]}</small></span>
                   <span className="pill bad">Faltó las últimas {n}</span>
                 </button>
@@ -116,9 +98,9 @@ export function HoyView({ fin, right, onOpen, onAttendance, reload, toast }: {
             <div className="rows">
               {asinc.map(({ s, p }) => (
                 <div key={s.id} className="frow">
-                  <button className="fw" onClick={() => onOpen(s.id, 'pagos')}>
+                  <button className="fw" onClick={() => onOpen(s.id, 'rutina')}>
                     <b>{s.name}</b>
-                    <small>{fin.billing(s).prog_pendiente ? 'Ya pagó, falta armarla y mandarla' : fin.billing(s).prog_enviada ? `Última enviada el ${shortDate(fin.billing(s).prog_enviada!)}` : 'Sin envío registrado'}</small>
+                    <small>{fin.billing(s).prog_pendiente ? 'Falta armarla y mandarla' : fin.billing(s).prog_enviada ? `Última enviada el ${shortDate(fin.billing(s).prog_enviada!)}` : 'Sin envío registrado'}</small>
                   </button>
                   <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}><Pill c={p} /><button className="btn sm" onClick={() => progHoy(s)}>Enviada hoy</button></span>
                 </div>
@@ -126,23 +108,62 @@ export function HoyView({ fin, right, onOpen, onAttendance, reload, toast }: {
             </div>
           </section>
         )}
-
-        {sinf.length > 0 && (
-          <div className="phase warn" style={{ marginTop: 12 }}>
-            <span className="ph-tag">Pagos</span>
-            <div>
-              {sinf.length === 1 ? '1 alumno activo no tiene' : `${sinf.length} alumnos activos no tienen`} honorarios cargados.
-              Cargalos en su pestaña Pagos: {sinf.map((x, i) => (
-                <span key={x.s.id}>{i ? ', ' : ''}<button className="linkbtn" onClick={() => onOpen(x.s.id, 'pagos')}>{firstName(x.s.name)}</button></span>
-              ))}.
-            </div>
-          </div>
-        )}
-        <p className="hint" style={{ textAlign: 'center', marginTop: 16 }}>Hoy es {WEEKDAYS[d.getDay()]?.toLowerCase()}. Los horarios salen de la Agenda de cada alumno.</p>
+        <p className="hint" style={{ textAlign: 'center', marginTop: 16 }}>Los horarios salen de la Agenda de cada alumno. Pagos y cobros, en Finanzas.</p>
       </Enter>
-      {paying && <PaymentSheet fin={fin} studentId={paying} onClose={() => setPaying(null)} onSaved={() => { setPaying(null); reload(); toast('Pago registrado'); }} toast={toast} />}
       {moving && <MoveSheet fin={fin} studentId={moving.id} de={moving.de} onClose={() => setMoving(null)} onSaved={(msg) => { setMoving(null); reload(); toast(msg); }} />}
     </>
+  );
+}
+
+/** La clase que está pasando (o la próxima de hoy): acceso directo a la rutina de cada uno. */
+function Ahora({ fin, onOpen, onAttendance }: {
+  fin: Fin; onOpen: OpenStudent; onAttendance: (ids: string[], day: string, mark: Mark | null) => void;
+}) {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+  const today = fin.today;
+  const rows = fin.programados(today).filter((r) => r.time);
+  const times = [...new Set(rows.map((r) => r.time))].sort();
+  const cur = now.getHours() * 60 + now.getMinutes();
+  // En curso: empezó hace menos de una hora (o empieza en 10 minutos).
+  const curT = [...times].reverse().find((t) => mins(t) - 10 <= cur && cur < mins(t) + 60);
+  const nextT = times.find((t) => mins(t) > cur);
+  const t = curT ?? nextT;
+  if (!t) return null;
+  const group = rows.filter((r) => r.time === t).sort((a, b) => a.s.name.localeCompare(b.s.name));
+  const sinMarcar = group.filter((r) => !fin.marca(r.s.id, today)).map((r) => r.s.id);
+  const live = Boolean(curT);
+  return (
+    <section className={`card now-card${live ? ' live' : ''}`}>
+      <div className="now-h">
+        <span className="now-tag">{live ? 'Ahora' : 'Próxima clase'}</span>
+        <b>{t}</b>
+        {!live && <small>en {enCuanto(mins(t) - cur)}</small>}
+      </div>
+      <div className="rows">
+        {group.map((r) => {
+          const mk = fin.marca(r.s.id, today);
+          return (
+            <button key={r.s.id} className="frow now-row" onClick={() => onOpen(r.s.id, 'rutina')}>
+              <Avatar id={r.s.id} name={r.s.name} size={40} />
+              <span className="fw">
+                <b>{r.s.name}{fin.billing(r.s).rehab && <span className="tag rehab">Rehab</span>}</b>
+                <small>{[r.planned ? 'Rutina asignada' : 'Ver rutina', fin.billing(r.s).enfoque, mk ? MARKS[mk].label : null].filter(Boolean).join(' · ')}</small>
+              </span>
+              <span className="chev" aria-hidden="true">›</span>
+            </button>
+          );
+        })}
+      </div>
+      {live && sinMarcar.length > 0 && (
+        <button className="btn wide" style={{ marginTop: 8 }} onClick={() => onAttendance(sinMarcar, today, 'p')}>
+          {sinMarcar.length === group.length ? (group.length === 1 ? 'Marcar presente' : 'Marcar a todos presentes') : `Marcar presentes a los ${sinMarcar.length} que faltan`}
+        </button>
+      )}
+    </section>
   );
 }
 
@@ -188,7 +209,7 @@ function Attendance({ fin, day, setDay, onOpen, onAttendance, onMove, reload, to
   return (
     <section className="card">
       <div className="card-h">
-        <h2>Asistencia</h2>
+        <h2>Agenda</h2>
         <div style={{ display: 'flex', gap: 4 }}>
           <button className="btn sm" aria-label="Semana anterior" onClick={() => setDay(addDays(day, -7))}>‹</button>
           <button className="btn sm" onClick={() => setDay(fin.today)}>Hoy</button>
@@ -213,7 +234,6 @@ function Attendance({ fin, day, setDay, onOpen, onAttendance, onMove, reload, to
           lastTime = r.time || lastTime;
           const mk = fin.marca(r.s.id, day);
           const exp = fin.marcaExplicita(r.s.id, day);
-          const tag = fin.etiquetaPaquete(r.s, day);
           return (
             <div key={r.s.id}>
               {head && (
@@ -227,14 +247,15 @@ function Attendance({ fin, day, setDay, onOpen, onAttendance, onMove, reload, to
               )}
               <div className="att">
                 <span className="hr">{r.time || (r.extra ? 'Extra' : '—')}</span>
-                <button className="fw" onClick={() => onOpen(r.s.id, 'pagos')}>
-                  <b>{r.s.name}{fin.billing(r.s).rehab && <span className="tag rehab">Rehab</span>}{tag && <span className={`pill ${tag.cls} pq`}>{tag.t}</span>}</b>
+                <button className="fw" onClick={() => onOpen(r.s.id, 'rutina')}>
+                  <b>{r.s.name}{fin.billing(r.s).rehab && <span className="tag rehab">Rehab</span>}</b>
                   <small>
-                    {fin.paqueteTxt(r.s, day)}
-                    {r.extra ? ' · fuera de horario' : ''}
-                    {r.from ? ` · pasó su clase del ${shortDate(r.from)}` : ''}
-                    {mk && !exp ? ' · sesión cargada' : ''}
-                    {r.planned ? ' · rutina asignada' : ''}
+                    {[
+                      r.planned ? 'Rutina asignada' : null,
+                      r.extra ? 'Fuera de horario' : null,
+                      r.from ? `Pasó su clase del ${shortDate(r.from)}` : null,
+                      mk && !exp ? 'Sesión cargada' : null,
+                    ].filter(Boolean).join(' · ') || fin.billing(r.s).enfoque || 'Ver rutina'}
                   </small>
                 </button>
                 <div className="marks" role="group" aria-label={`Asistencia de ${r.s.name}`}>
@@ -293,6 +314,8 @@ export function FinanzasView({ fin, right, onOpen, reload, toast }: { fin: Fin |
   const total30 = p30.reduce((a, x) => a + x.c.monto, 0);
   const ps = [...fin.payments].sort((a, b) => b.paid_on.localeCompare(a.paid_on) || b.created_at.localeCompare(a.created_at));
   const name = (id: string) => fin.students.find((s) => s.id === id)?.name ?? 'Alumno eliminado';
+  const cobrar = st.filter((x) => urgente(x.c) || x.c.k === 'pronto');
+  const sinf = st.filter((x) => x.c.k === 'sinfecha' && fin.billing(x.s).cuota == null);
 
   const del = async (id: string) => {
     try { await coachApi.deletePayment(id); setConfirm(null); toast('Pago borrado'); reload(); } catch (e) { toast((e as ApiError).message); }
@@ -309,6 +332,25 @@ export function FinanzasView({ fin, right, onOpen, reload, toast }: { fin: Fin |
             <div className="actions" style={{ marginTop: 12 }}>
               <button className="btn primary wide" onClick={() => setPaying('new')}>{Icon.plus} Registrar pago</button>
             </div>
+            <section className="card">
+              <div className="card-h"><h2>Para cobrar</h2>{cobrar.length > 0 && <span className="mini">{cobrar.length}</span>}</div>
+              {cobrar.length ? (
+                <div className="rows">
+                  {cobrar.map(({ s, c }) => <PayRow key={s.id} fin={fin} s={s} c={c} onClick={() => setPaying(s.id)} />)}
+                </div>
+              ) : <p className="hint">Nadie tiene que pagar esta semana.</p>}
+            </section>
+            {sinf.length > 0 && (
+              <div className="phase warn" style={{ marginTop: 12 }}>
+                <span className="ph-tag">Pagos</span>
+                <div>
+                  {sinf.length === 1 ? '1 alumno activo no tiene' : `${sinf.length} alumnos activos no tienen`} honorarios cargados.
+                  Cargalos en su pestaña Pagos: {sinf.map((x, i) => (
+                    <span key={x.s.id}>{i ? ', ' : ''}<button className="linkbtn" onClick={() => onOpen(x.s.id, 'pagos')}>{firstName(x.s.name)}</button></span>
+                  ))}.
+                </div>
+              </div>
+            )}
             <div className="fin-cols">
               <section className="card">
                 <div className="card-h"><h2>Cobrado por mes</h2></div>
