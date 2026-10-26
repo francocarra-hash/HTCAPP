@@ -53,6 +53,7 @@ function CoachHome({ onLogout, authEnabled }: { onLogout: () => void; authEnable
   const [listError, setListError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [plan, setPlan] = useState<PlanCtx>({ key: 0, ids: [], editing: null });
+  const [writing, setWriting] = useState(false);
   const [evalCtx, setEvalCtx] = useState<EvalCtx | null>(null);
   const [legacy, setLegacy] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -140,7 +141,7 @@ function CoachHome({ onLogout, authEnabled }: { onLogout: () => void; authEnable
   return (
     <>
       {tab !== 'evaluaciones' ? (
-        <div className="bt">
+        <div className={`bt${writing && tab === 'planificar' ? ' writing' : ''}`}>
           <div className="bt-page">
             <div className={`wrap${tab === 'planificar' ? ' wide' : ''}`}>
               {tab === 'hoy' && (
@@ -217,6 +218,8 @@ function CoachHome({ onLogout, authEnabled }: { onLogout: () => void; authEnable
                   library={library}
                   toast={showToast}
                   onCancel={plan.back ? () => openStudent(plan.back!) : undefined}
+                  onExit={() => { setPlan({ key: Date.now(), ids: [], editing: null }); setTab('hoy'); window.scrollTo(0, 0); }}
+                  onWriting={setWriting}
                   onSaved={(ids, msg) => {
                     refresh();
                     reloadLibrary();

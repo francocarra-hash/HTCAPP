@@ -10,7 +10,7 @@ import { Icon, Seg, Sheet, TopHeader } from './ui';
 
 type Start = 'prev' | 'blank' | 'paste';
 
-export function PlanSession({ students, initialIds, editing, avatar, library, onSaved, onCancel, toast }: {
+export function PlanSession({ students, initialIds, editing, avatar, library, onSaved, onCancel, onExit, onWriting, toast }: {
   students: StudentListItem[];
   initialIds: string[];
   editing: Session | null;
@@ -18,6 +18,10 @@ export function PlanSession({ students, initialIds, editing, avatar, library, on
   library: ExerciseEntry[];
   onSaved: (studentIds: string[], msg: string) => void;
   onCancel?: () => void;
+  /** Salir de planificar (sin pestañas abajo mientras se escribe la rutina). */
+  onExit?: () => void;
+  /** Avisa cuando hay una rutina abierta: la app esconde la barra de abajo para dar lugar. */
+  onWriting?: (on: boolean) => void;
   toast: (m: string) => void;
 }) {
   const [ids, setIds] = useState<string[]>(editing?.participant_ids ?? initialIds);
@@ -28,6 +32,13 @@ export function PlanSession({ students, initialIds, editing, avatar, library, on
   const [routine, setRoutine] = useState<Routine | null>(editing ? cloneKeepIds(editing.routine) : null);
   const [start, setStart] = useState<Start | null>(editing ? 'prev' : null);
   const [ref, setRef] = useState<Profile | null>(null);
+  const writing = routine != null;
+  useEffect(() => { onWriting?.(writing); }, [writing, onWriting]);
+  useEffect(() => () => onWriting?.(false), [onWriting]);
+  const leave = onCancel ?? onExit;
+  const back = leave && writing
+    ? () => { if (window.confirm('¿Salir sin guardar esta rutina?')) leave(); }
+    : leave;
   const [refIdx, setRefIdx] = useState(0);
   const [refOpen, setRefOpen] = useState(true);
   const [pasting, setPasting] = useState(false);
@@ -124,7 +135,7 @@ export function PlanSession({ students, initialIds, editing, avatar, library, on
 
   return (
     <>
-      <TopHeader title={editing ? 'Editar sesión' : 'Planificar'} onBack={onCancel} right={avatar}
+      <TopHeader title={editing ? 'Editar sesión' : 'Planificar'} onBack={writing ? back : onCancel} right={avatar}
         sub={<span>{editing ? cap(longDate(editing.date)) : 'Armá la próxima sesión por bloques'}</span>} />
 
       <section className="card" style={{ marginTop: 4 }}>

@@ -256,3 +256,28 @@
   .bt details.older > summary b { color: var(--ink-2); margin-left: 4px; }
   .bt details.older .stu { opacity: .85; }
 }
+
+/* Escribiendo una rutina: sin barra de abajo, header que se va con el scroll y el editor más ancho en el celular. */
+@layer components {
+  .bt.writing nav.tabs { display: none; }
+  .bt.writing .bt-page { padding-bottom: 24px; }
+  .bt.writing header.top { position: static; }
+  .bt.writing .savebar { bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
+  .bt.writing .toast { bottom: calc(110px + env(safe-area-inset-bottom, 0px)); }
+  @media (max-width: 599px) {
+    .bt.writing .bt-page { padding-left: max(8px, env(safe-area-inset-left, 0px)); padding-right: max(8px, env(safe-area-inset-right, 0px)); }
+    .bt.writing .savebar { padding: 8px; gap: 4px; }
+    .bt .bb-head { padding: 6px 4px 4px 4px; }
+    .bt .bb-sub { padding: 0 8px 4px 12px; }
+    .bt .bb-body { padding: 4px 4px 10px; gap: 6px; }
+    .bt .bgroup { padding: 3px 2px 4px; }
+    /* nombre a lo ancho; dosis abajo, al lado de la capacidad */
+    .bt .bitem { grid-template-columns: 26px minmax(0, 1fr) minmax(0, 1fr) 30px; gap: 4px; padding: 3px 2px; }
+    .bt .bitem .grip { width: 26px; }
+    .bt .bitem > input:not(.dose) { grid-column: 2 / 4; grid-row: 1; }
+    .bt .bitem > .xbtn { grid-column: 4; grid-row: 1; width: 30px; }
+    .bt .bitem > input.dose { grid-column: 2; grid-row: 2; min-height: 34px; padding: 5px 8px; }
+    .bt .bitem > .wrow { grid-column: 3 / -1; grid-row: 2; padding: 0; }
+    .bt .bitem:not(:has(> .wrow)) > input.dose { grid-column: 2 / 4; }
+  }
+}

@@ -112,7 +112,7 @@ export function RoutineBuilder({ value, onChange, library, participants }: {
         {handle}
         <input value={it.name} list="ex-lib" placeholder={b.kind === 'notes' ? 'Nota' : 'Ejercicio'} aria-label="Ejercicio"
           onChange={(e) => setItem(b.id, g.id, it.id, { name: e.target.value })} />
-        <input className="dose" value={it.dose} placeholder={b.kind === 'notes' ? '' : '10r · 30s · 3x8'} aria-label="Dosis"
+        <input className="dose" value={it.dose} placeholder={b.kind === 'notes' ? '' : 'Dosis: 3x10'} aria-label="Dosis"
           onChange={(e) => setItem(b.id, g.id, it.id, { dose: e.target.value })} />
         <button type="button" className="xbtn" aria-label="Quitar ejercicio" disabled={!canDelete} onClick={onDelete}>{Icon.x}</button>
         {(entry?.capacity || shared || it.who) && b.kind !== 'notes' && (
