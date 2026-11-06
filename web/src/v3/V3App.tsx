@@ -219,7 +219,7 @@ export default function V3App({ prefill, openId, onAssessed, embedded }: V3AppPr
                   <div>
                     <p className="font-semibold text-slate-900">{a.client_name}</p>
                     <p className="mt-0.5 text-xs text-slate-500">
-                      {a.client_age} años · {a.client_sex === 'MALE' ? 'M' : 'F'} · {new Date(a.timestamp).toLocaleDateString()}
+                      {a.client_age} años · {a.client_sex === 'MALE' ? 'M' : 'F'} · {new Date(a.timestamp).toLocaleDateString('es-AR')}
                     </p>
                   </div>
                   {a.health_status === 'BLOCKED' ? (

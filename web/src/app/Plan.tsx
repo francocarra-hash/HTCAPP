@@ -1,12 +1,12 @@
 import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../api';
 import {
-  cloneRoutine, coachApi, ExerciseEntry, longDate, PreviewSession, Profile, relDays, Routine, Session, shortDate,
+  cloneRoutine, keepIds, routineToText, coachApi, ExerciseEntry, longDate, PreviewSession, Profile, relDays, Routine, Session, shortDate,
   StudentListItem, todayIso, cap, firstName,
 } from './data';
 import { RoutineCompact } from './RoutineView';
 import { cleanRoutine, newBlock, RoutineBuilder, routineCount } from './RoutineBuilder';
-import { Icon, Seg, Sheet, TopHeader } from './ui';
+import { DateInput, Icon, Seg, Sheet, TopHeader } from './ui';
 
 type Start = 'prev' | 'blank' | 'paste';
 
@@ -26,7 +26,7 @@ export function PlanSession({ students, initialIds, editing, avatar, library, on
 }) {
   const [ids, setIds] = useState<string[]>(editing?.participant_ids ?? initialIds);
   const firstStudent = students.find((s) => s.id === ids[0]);
-  const [date, setDate] = useState(editing?.date ?? (firstStudent?.next_session?.date && firstStudent.next_session.date >= todayIso() ? firstStudent.next_session.date : todayIso()));
+  const [date, setDate] = useState(editing?.date ?? todayIso());
   const [status, setStatus] = useState<'planned' | 'done'>(editing?.status ?? 'planned');
   const [title, setTitle] = useState(editing?.title ?? '');
   const [routine, setRoutine] = useState<Routine | null>(editing ? cloneKeepIds(editing.routine) : null);
@@ -44,6 +44,32 @@ export function PlanSession({ students, initialIds, editing, avatar, library, on
   const [pasting, setPasting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  // Editar todo como texto (sin bloques), con el formato de siempre.
+  const [mode, setMode] = useState<'bloques' | 'texto'>('bloques');
+  const [text, setText] = useState('');
+  const [textDirty, setTextDirty] = useState(false);
+  const toText = () => { if (routine) { setText(routineToText(routine)); setTextDirty(false); setMode('texto'); } };
+  /** Lee el texto y devuelve la rutina (o null si no se pudo). */
+  const readText = async (): Promise<Routine | null> => {
+    if (!routine) return null;
+    if (!textDirty) return routine;
+    if (!text.trim()) { setErr('El texto está vacío.'); return null; }
+    try {
+      const r = await coachApi.preview(text, ids, date);
+      const first = r.sessions[0];
+      if (!first || r.sessions.length > 1) { setErr('Escribí una sola sesión (sin fechas en el medio).'); return null; }
+      const next = editing ? keepIds(routine, first.routine) : cloneRoutine(first.routine);
+      setRoutine(next);
+      setTextDirty(false);
+      return next;
+    } catch (e) { setErr((e as ApiError).message); return null; }
+  };
+  const toBlocks = async () => {
+    setBusy(true); setErr('');
+    const r = await readText();
+    setBusy(false);
+    if (r) setMode('bloques');
+  };
 
   // La sesión anterior del primer alumno elegido, como referencia.
   useEffect(() => {
@@ -83,7 +109,9 @@ export function PlanSession({ students, initialIds, editing, avatar, library, on
     if (!routine) return;
     setBusy(true); setErr('');
     try {
-      const clean = cleanRoutine(routine);
+      const base = mode === 'texto' ? await readText() : routine;
+      if (!base) return;
+      const clean = cleanRoutine(base);
       if (editing) {
         await coachApi.updateSession(editing.id, { date, title: title.trim() || null, status, participant_ids: ids, routine: clean });
         onSaved(ids, 'Sesión actualizada');
@@ -149,7 +177,7 @@ export function PlanSession({ students, initialIds, editing, avatar, library, on
         <div className="fields">
           <div className="field">
             <label htmlFor="pl-date">Fecha</label>
-            <input id="pl-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <DateInput id="pl-date" value={date} onChange={(e) => setDate(e.target.value)} />
             {firstStudent?.next_session && !editing && <small>Próxima en su agenda: {shortDate(firstStudent.next_session.date)}{firstStudent.next_session.time ? ` ${firstStudent.next_session.time}` : ''}</small>}
           </div>
           <div className="field">
@@ -184,7 +212,23 @@ export function PlanSession({ students, initialIds, editing, avatar, library, on
           )}
           <div className="plan-side-mobile">{reference}</div>
           {routine && (
+            <div className="modebar">
+              <Seg small value={mode} onChange={(m) => { if (m === 'texto') toText(); else void toBlocks(); }}
+                options={[['bloques', 'Bloques'], ['texto', 'Texto']]} />
+            </div>
+          )}
+          {routine && mode === 'bloques' && (
             <RoutineBuilder value={routine} onChange={setRoutine} library={library} participants={participants} />
+          )}
+          {routine && mode === 'texto' && (
+            <section className="card textmode">
+              <textarea className="mono" value={text} spellCheck={false} aria-label="Rutina en texto"
+                onChange={(e) => { setText(e.target.value); setTextDirty(true); }} />
+              <p className="hint" style={{ fontSize: 12 }}>
+                Como en tus notas: movilidad separada con " - ", circuitos entre [ ] con "x2" al final (estaciones con " - ", alternados con "/"),
+                bloque principal en renglones A1, A2… y "x3" abajo. Al volver a Bloques o al guardar se lee el texto; los nombres de los bloques vuelven a los de siempre.
+              </p>
+            </section>
           )}
         </div>
         <div className="plan-side-desk">{reference}</div>
@@ -194,10 +238,10 @@ export function PlanSession({ students, initialIds, editing, avatar, library, on
       {routine && (
         <div className="savebar">
           <div className="meta">
-            <span>{routine.blocks.length} bloques · {count} ejercicios</span>
+            <span>{mode === 'texto' ? (textDirty ? 'Texto con cambios' : 'Texto') : `${routine.blocks.length} bloques · ${count} ejercicios`}</span>
             <span>{participants.map((p) => firstName(p.name)).join(' y ') || 'Elegí alumnos'} · {shortDate(date)}</span>
           </div>
-          <button className="btn primary wide" disabled={busy || !ids.length || !count} onClick={save}>
+          <button className="btn primary wide" disabled={busy || !ids.length || (mode === 'bloques' && !count)} onClick={save}>
             {busy ? 'Guardando…' : editing ? 'Guardar cambios' : status === 'planned' ? `Asignar rutina para el ${shortDate(date)}` : 'Guardar como hecha'}
           </button>
         </div>

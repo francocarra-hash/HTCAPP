@@ -258,7 +258,7 @@ export default function DecisionView({ decisionId, onBack, onReport }: {
         {showAudit ? (
           <div className="space-y-4 text-sm">
             <p className="text-xs text-slate-400">
-              Canonical v{decision.audit_trail.canonical_version} · {new Date(decision.audit_trail.timestamp).toLocaleString()} · safety: {decision.audit_trail.safety.outcome}
+              Canonical v{decision.audit_trail.canonical_version} · {new Date(decision.audit_trail.timestamp).toLocaleString('es-AR')} · safety: {decision.audit_trail.safety.outcome}
             </p>
 
             {decision.audit_trail.version_snapshot && (

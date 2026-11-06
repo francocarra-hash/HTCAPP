@@ -42,7 +42,9 @@ export interface ReportData {
   planned: number | null;
   attendance: { p: number; a: number; e: number };
   capacities: Array<{ id: CapacityId; label: string; share: number; previous_share: number }>;
-  improvements: Array<{ name: string; capacity: CapacityId | null; unit: Unit; from: number; to: number; from_date: string; to_date: string }>;
+  improvements: Array<{ name: string; capacity: CapacityId | null; unit: Unit; from: number; to: number; from_date: string; to_date: string; kind?: 'volumen' }>;
+  /** Pasó a una variante más compleja en el ciclo (ej. pistol con anillas → pistol). */
+  variants?: Array<{ from: string; to: string; date: string; capacity: CapacityId | null }>;
   new_exercises: Array<{ name: string; capacity: CapacityId | null }>;
   feeling: { average: number; count: number } | null;
   comments: Array<{ date: string; text: string }>;
@@ -103,17 +105,32 @@ export function buildReport(input: ReportInput, cycle: Cycle, firstDate: string)
 
   // Mejoras: último valor del ciclo contra el último anterior al ciclo (o el primero del ciclo).
   const progress = buildProgress(input.studentName, upToEnd, input.info, new Date(`${end}T12:00:00`));
-  const improvements = progress.exercises.flatMap((e) => {
-    const inside = e.points.filter((p) => p.date >= start && p.date <= end);
-    if (!inside.length) return [];
-    const earlier = e.points.filter((p) => p.date < start);
+  const step = (pts: Array<{ date: string; value: number }>) => {
+    const inside = pts.filter((p) => p.date >= start && p.date <= end);
+    if (!inside.length) return null;
+    const earlier = pts.filter((p) => p.date < start);
     const base = earlier.length ? earlier[earlier.length - 1]! : inside.length > 1 ? inside[0]! : null;
     const last = inside[inside.length - 1]!;
-    if (!base || base === last || base.value <= 0 || last.value <= base.value) return [];
-    return [{
-      name: e.name, capacity: e.capacity, unit: e.unit, from: base.value, to: last.value,
-      from_date: base.date, to_date: last.date, gain: (last.value - base.value) / base.value,
-    }];
+    if (!base || base === last || base.value <= 0) return null;
+    return { base, last };
+  };
+  const improvements = progress.exercises.flatMap((e) => {
+    const v = step(e.points);
+    if (v && v.last.value > v.base.value) {
+      return [{
+        name: e.name, capacity: e.capacity, unit: e.unit, from: v.base.value, to: v.last.value,
+        from_date: v.base.date, to_date: v.last.date, gain: (v.last.value - v.base.value) / v.base.value,
+      }];
+    }
+    // Misma dosis por serie, más series o vueltas.
+    const w = e.volume && (!v || v.last.value >= v.base.value) ? step(e.volume.points) : null;
+    if (w && w.last.value > w.base.value) {
+      return [{
+        name: e.name, capacity: e.capacity, unit: e.volume!.unit, from: w.base.value, to: w.last.value,
+        from_date: w.base.date, to_date: w.last.date, gain: (w.last.value - w.base.value) / w.base.value, kind: 'volumen' as const,
+      }];
+    }
+    return [];
   })
     .sort((a, b) => b.gain - a.gain)
     .slice(0, 6)
@@ -195,6 +212,8 @@ export function buildReport(input: ReportInput, cycle: Cycle, firstDate: string)
     },
     capacities,
     improvements,
+    variants: progress.variants.filter((x) => x.date >= start && x.date <= end)
+      .map((x) => ({ from: x.from, to: x.to, date: x.date, capacity: x.capacity })),
     new_exercises,
     feeling: felt.length ? { average: Math.round((felt.reduce((a, b) => a + b, 0) / felt.length) * 10) / 10, count: felt.length } : null,
     comments: done.filter((c) => c.comment).map((c) => ({ date: c.date, text: c.comment! })).slice(0, 6),

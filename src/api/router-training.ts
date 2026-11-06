@@ -57,12 +57,12 @@ const StudentPatchInput = StudentInput.omit({ password: true }).partial().extend
   process: ProcessSchema.nullable().optional(),
   billing: BillingSchema.nullable().optional(),
 });
-export const QUALITY_ASPECTS = ['organizacion', 'transferencia', 'sensibilidad', 'control', 'respiracion'] as const;
+export const QUALITY_ASPECTS = ['organizacion', 'transferencia', 'sensibilidad', 'control', 'respiracion', 'rom'] as const;
 const QualityInput = z.object({
   exercise_name: z.string().trim().min(1).max(140),
   day: DATE,
   score: z.number().int().min(1).max(5),
-  aspects: z.array(z.enum(QUALITY_ASPECTS)).max(5).default([]),
+  aspects: z.array(z.enum(QUALITY_ASPECTS)).max(6).default([]),
   note: z.string().trim().max(500).nullable().optional(),
 });
 const ReportPublishInput = z.object({
@@ -96,6 +96,7 @@ const ExerciseInput = z.object({
   video_url: VideoUrl.nullable().optional().or(z.literal('').transform(() => null)),
   capacity: z.string().nullable().optional().refine((v) => v == null || isCapacity(v), 'Capacidad inválida'),
   description: z.string().trim().max(1000).nullable().optional(),
+  easier_key: z.string().trim().max(200).nullable().optional(),
 });
 const ProgressInput = z.object({
   checks: z.array(z.string().max(60)).max(400).optional(),
@@ -137,7 +138,7 @@ async function exerciseInfo(repo: TrainingRepository): Promise<ExerciseInfo> {
   const meta = new Map((await repo.listExerciseMeta()).map((m) => [m.key, m]));
   return (key, name) => {
     const m = meta.get(key);
-    return { name: m?.name, capacity: m?.capacity ?? suggestCapacity(m?.name ?? name), video: m?.video_url ?? null };
+    return { name: m?.name, capacity: m?.capacity ?? suggestCapacity(m?.name ?? name), video: m?.video_url ?? null, easier: m?.easier_key ?? null };
   };
 }
 
@@ -424,6 +425,7 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
         capacity_source: m?.capacity ? 'coach' : auto ? 'auto' : null,
         description: m?.description ?? null,
         video_url: m?.video_url ?? null,
+        easier_key: m?.easier_key ?? null,
         custom: m?.custom ?? false,
         uses: a?.uses ?? 0,
         students: a ? [...a.students].map((id) => byId.get(id)?.name ?? '—') : [],
@@ -440,6 +442,7 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
     const saved = await repo.upsertExerciseMeta({
       key, name: input.name, capacity: (input.capacity as CapacityId | null | undefined) ?? null,
       description: input.description ?? null, video_url: input.video_url ?? null, custom: true,
+      easier_key: input.easier_key && input.easier_key !== key ? input.easier_key : null,
     });
     res.status(201).json({ exercise: saved });
   }));
@@ -451,6 +454,7 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
       key: req.params.key!, name: input.name, capacity: (input.capacity as CapacityId | null | undefined) ?? null,
       description: input.description ?? prev?.description ?? null,
       video_url: input.video_url !== undefined ? input.video_url : prev?.video_url ?? null,
+      easier_key: input.easier_key !== undefined ? (input.easier_key && input.easier_key !== req.params.key ? input.easier_key : null) : prev?.easier_key ?? null,
       custom: prev?.custom ?? false,
     });
     res.json({ exercise: saved });

@@ -94,14 +94,17 @@ export function ExerciseLibrary({ avatar, toast }: { avatar: ReactNode; toast: (
         </Enter>
       )}
       {editing && (
-        <ExerciseSheet entry={editing === 'new' ? null : editing} onClose={() => setEditing(null)}
+        <ExerciseSheet entry={editing === 'new' ? null : editing} all={list ?? []} onClose={() => setEditing(null)}
           onSaved={(msg) => { setEditing(null); toast(msg); load(); }} />
       )}
     </>
   );
 }
 
-function ExerciseSheet({ entry, onClose, onSaved }: { entry: ExerciseEntry | null; onClose: () => void; onSaved: (msg: string) => void }) {
+function ExerciseSheet({ entry, all, onClose, onSaved }: { entry: ExerciseEntry | null; all: ExerciseEntry[]; onClose: () => void; onSaved: (msg: string) => void }) {
+  const [easier, setEasier] = useState(() => all.find((x) => x.key === entry?.easier_key)?.name ?? '');
+  const easierEntry = all.find((x) => x.name.toLowerCase() === easier.trim().toLowerCase() && x.key !== entry?.key);
+  const easierOk = !easier.trim() || Boolean(easierEntry);
   const [name, setName] = useState(entry?.name ?? '');
   const [capacity, setCapacity] = useState<CapacityId | null>(entry?.capacity ?? null);
   const [description, setDescription] = useState(entry?.description ?? '');
@@ -112,7 +115,7 @@ function ExerciseSheet({ entry, onClose, onSaved }: { entry: ExerciseEntry | nul
   const save = async () => {
     setBusy(true); setErr('');
     try {
-      const body = { name: name.trim(), capacity, description: description.trim() || null, video_url: video.trim() || null };
+      const body = { name: name.trim(), capacity, description: description.trim() || null, video_url: video.trim() || null, easier_key: easierEntry?.key ?? null };
       if (entry) await coachApi.saveExercise(entry.key, body);
       else await coachApi.createExercise(body);
       onSaved(entry ? 'Ejercicio actualizado' : 'Ejercicio agregado a la biblioteca');
@@ -145,6 +148,12 @@ function ExerciseSheet({ entry, onClose, onSaved }: { entry: ExerciseEntry | nul
           {videoOk && video.trim() && <div style={{ marginTop: 6 }}><VideoBtn url={video.trim()} name={name || 'Ejercicio'} /> <span className="hint">Probar</span></div>}
         </div>
         <div className="field full">
+          <label htmlFor="ex-easier">Viene de (versión más fácil)</label>
+          <input id="ex-easier" list="ex-easier-list" value={easier} onChange={(e) => setEasier(e.target.value)} placeholder="Ej. Pistol squat con anillas" />
+          <datalist id="ex-easier-list">{all.filter((x) => x.key !== entry?.key).slice(0, 600).map((x) => <option key={x.key} value={x.name} />)}</datalist>
+          <small>{!easierOk ? 'Elegí un ejercicio de la biblioteca.' : 'Cuando un alumno pasa de ese ejercicio a este, cuenta como progresión. Las obvias (con anillas → sin anillas, a dos piernas → SL) se detectan solas por el nombre.'}</small>
+        </div>
+        <div className="field full">
           <label htmlFor="ex-desc">Descripción / cues (opcional)</label>
           <textarea id="ex-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Cómo se hace, en qué fijarse…" />
         </div>
@@ -155,7 +164,7 @@ function ExerciseSheet({ entry, onClose, onSaved }: { entry: ExerciseEntry | nul
         </p>
       )}
       {err && <p className="err">{err}</p>}
-      <button className="btn primary wide" disabled={busy || !name.trim() || !videoOk} onClick={save}>{busy ? 'Guardando…' : 'Guardar'}</button>
+      <button className="btn primary wide" disabled={busy || !name.trim() || !videoOk || !easierOk} onClick={save}>{busy ? 'Guardando…' : 'Guardar'}</button>
     </Sheet>
   );
 }

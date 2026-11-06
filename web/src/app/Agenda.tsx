@@ -4,7 +4,7 @@ import {
   addDays, coachApi, emptySchedule, MONTH_NAMES, occurrences, parse, Schedule, Session, Student, todayIso, WEEKDAYS,
   WEEKDAYS_LONG, whenLabel, cap,
 } from './data';
-import { Icon } from './ui';
+import { DateInput, Icon } from './ui';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -108,7 +108,7 @@ export function AgendaEditor({ student, sessions, toast, onSaved }: {
           <div style={{ marginTop: 8 }}>
             {sched.once.map((o, i) => (
               <div className="slot" key={i} style={{ flexWrap: 'wrap' }}>
-                <input type="date" value={o.date} aria-label="Fecha"
+                <DateInput value={o.date} aria-label="Fecha"
                   onChange={(e) => edit((s) => ({ ...s, once: s.once.map((x, k) => (k === i ? { ...x, date: e.target.value } : x)) }))} />
                 <input type="time" value={o.time ?? ''} aria-label="Hora"
                   onChange={(e) => edit((s) => ({ ...s, once: s.once.map((x, k) => (k === i ? { ...x, time: e.target.value || null } : x)) }))} />

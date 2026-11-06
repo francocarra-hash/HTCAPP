@@ -281,3 +281,21 @@
     .bt .bitem:not(:has(> .wrow)) > input.dose { grid-column: 2 / 4; }
   }
 }
+
+/* campo de fecha día/mes */
+@layer components {
+  .bt .dinput { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-height: 46px; font-size: 16px; width: 100%; min-width: 0; font-variant-numeric: tabular-nums; }
+  .bt .dinput:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .bt .dinput > svg { width: 18px; height: 18px; color: var(--muted); flex: none; }
+  .bt .dinput .ph { color: var(--muted); }
+  .bt .dinput > input, .bt .field .dinput > input, .bt .slot .dinput > input { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; opacity: 0; cursor: pointer; border: 0; padding: 0; box-shadow: none; }
+  .bt .slot .dinput { width: auto; min-height: 40px; padding: 6px 8px; border-radius: 8px; }
+}
+
+/* rutina como texto */
+@layer components {
+  .bt .modebar { display: flex; justify-content: flex-end; margin-top: 12px; }
+  .bt .modebar .seg { width: auto; min-width: 200px; }
+  .bt .textmode textarea { width: 100%; min-height: 55vh; resize: vertical; border: 1px solid var(--line); background: var(--raised); border-radius: 12px; padding: 12px; font-family: var(--f-data); font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+  .bt .textmode textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+}

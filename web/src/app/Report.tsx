@@ -73,7 +73,7 @@ export function ReportView({ data, message, nextGoal, publishedAt }: {
           <div className="rp-wins">
             {r.improvements.map((w) => (
               <div key={w.name} className="rp-win" style={{ ['--c' as string]: w.capacity ? `var(--cap-${w.capacity})` : 'var(--accent)' }}>
-                <div className="t"><b>{w.name}</b><span className="g">+{pctGain(w.from, w.to)}%</span></div>
+                <div className="t"><b>{w.name}{w.kind === 'volumen' && <small className="vtag">volumen</small>}</b><span className="g">+{pctGain(w.from, w.to)}%</span></div>
                 <div className="ft">
                   <span>{fmtValue(w.from, w.unit)} <small>{shortDate(w.from_date)}</small></span>
                   <span className="ar" aria-hidden="true">→</span>
@@ -83,7 +83,16 @@ export function ReportView({ data, message, nextGoal, publishedAt }: {
               </div>
             ))}
           </div>
-        ) : <p className="rp-note">En este ciclo no hubo ejercicios con cantidades comparables para medir. Se consolidó lo trabajado.</p>}
+        ) : !(r.variants?.length) && <p className="rp-note">En este ciclo no hubo ejercicios con cantidades comparables para medir. Se consolidó lo trabajado.</p>}
+        {(r.variants?.length ?? 0) > 0 && (
+          <>
+            <h3 className="rp-h3">Pasaste a variantes más complejas</h3>
+            <div className="rp-chips">
+              {r.variants!.map((v) => <span key={v.to}>{v.from} → <b>{v.to}</b> <small>{shortDate(v.date)}</small></span>)}
+            </div>
+          </>
+        )}
+        {r.improvements.some((w) => w.kind === 'volumen') && <p className="rp-note">Volumen: el total de la sesión (dosis × series × vueltas).</p>}
       </section>
 
       {((r.quality?.length ?? 0) > 0 || (r.practice?.length ?? 0) > 0) && (

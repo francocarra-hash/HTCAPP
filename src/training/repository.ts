@@ -58,6 +58,8 @@ export interface ExerciseMeta {
   description: string | null;
   /** Link a un video demostrativo. */
   video_url: string | null;
+  /** Variante más fácil de este ejercicio (pasar de esa a esta es una progresión). */
+  easier_key: string | null;
   custom: boolean;
   updated_at: string;
 }
@@ -751,16 +753,16 @@ export class PgTrainingRepository implements TrainingRepository {
   }
 
   async listExerciseMeta(): Promise<ExerciseMeta[]> {
-    const r = await this.pool.query('SELECT key, name, capacity, description, video_url, custom, updated_at FROM training_exercises');
+    const r = await this.pool.query('SELECT key, name, capacity, description, video_url, easier_key, custom, updated_at FROM training_exercises');
     return r.rows.map((x) => ({ ...x, updated_at: ts(x.updated_at)! }));
   }
   async upsertExerciseMeta(m: Omit<ExerciseMeta, 'updated_at'>): Promise<ExerciseMeta> {
     const r = await this.pool.query(
-      `INSERT INTO training_exercises (key, name, capacity, description, video_url, custom, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6, now())
-       ON CONFLICT (key) DO UPDATE SET name = $2, capacity = $3, description = $4, video_url = $5, custom = $6, updated_at = now()
-       RETURNING key, name, capacity, description, video_url, custom, updated_at`,
-      [m.key, m.name, m.capacity, m.description, m.video_url, m.custom],
+      `INSERT INTO training_exercises (key, name, capacity, description, video_url, custom, easier_key, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7, now())
+       ON CONFLICT (key) DO UPDATE SET name = $2, capacity = $3, description = $4, video_url = $5, custom = $6, easier_key = $7, updated_at = now()
+       RETURNING key, name, capacity, description, video_url, easier_key, custom, updated_at`,
+      [m.key, m.name, m.capacity, m.description, m.video_url, m.custom, m.easier_key ?? null],
     );
     return { ...r.rows[0], updated_at: ts(r.rows[0].updated_at)! };
   }

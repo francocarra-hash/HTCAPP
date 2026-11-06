@@ -3,6 +3,11 @@
  * coach escribió: no estima, no extrapola. Un ejercicio entra en el progreso
  * cuando aparece con dosis comparable en al menos 3 sesiones. Todo se agrupa
  * además por capacidad física (fuerza, movilidad, reactividad…).
+ *
+ * Se progresa de varias formas: más cantidad o carga (intensidad), más volumen
+ * (series × vueltas), mejor calidad y rango de movimiento (lo registra el coach)
+ * y pasar a una variante más compleja (pistol con anillas → pistol; long bridge
+ * → long bridge SL).
  */
 import { CAPACITIES, CapacityId } from './capacities';
 import { doseOf, exerciseName, firstName, fold } from './parser';
@@ -26,6 +31,8 @@ export interface ExerciseSeries {
   first: number;
   last: number;
   best: number;
+  /** Volumen por sesión (cantidad × series × vueltas), cuando cambian las series o vueltas. */
+  volume?: { unit: Unit; points: ProgressPoint[] };
 }
 
 export interface ProgressStats {
@@ -43,6 +50,18 @@ export interface ProgressStats {
 export interface Highlight {
   key: string; name: string; capacity: CapacityId | null; unit: Unit;
   from: number; to: number; first_date: string; last_date: string;
+  /** "volumen": subió el total (series × vueltas) aunque la dosis por serie sea la misma. */
+  kind?: 'volumen';
+}
+
+/** Pasó a una variante más compleja del mismo movimiento. */
+export interface VariantStep {
+  from: string; to: string; capacity: CapacityId | null;
+  /** Primera vez que hizo la variante más difícil. */
+  date: string;
+  /** Desde cuándo venía con la más fácil. */
+  from_date: string;
+  sessions: number;
 }
 
 export interface CapacitySummary {
@@ -73,6 +92,7 @@ export interface Practice {
 export interface Progress {
   stats: ProgressStats;
   practice: Practice[];
+  variants: VariantStep[];
   months: Array<{ month: string; count: number }>;
   exercises: ExerciseSeries[];
   highlights: Highlight[];
@@ -85,7 +105,27 @@ export interface SessionForProgress {
 }
 
 /** Metadatos de la biblioteca: nombre elegido por el coach y capacidad. */
-export type ExerciseInfo = (key: string, name: string) => { name?: string; capacity: CapacityId | null; video?: string | null };
+export type ExerciseInfo = (key: string, name: string) => { name?: string; capacity: CapacityId | null; video?: string | null; easier?: string | null };
+
+// Variantes: lo que hace más fácil o más difícil el mismo movimiento.
+const EASIER = /\b(con anillas|anillas|rings?|asistid[oa]s?|assisted|con apoyo|apoyad[oa]s?|con banda|banda|band|trx|de rodillas|rodillas|knees?|inclinad[oa]s?|incline[d]?|regresion|bilateral|2 piernas|dos piernas|double leg|2 legs?)\b/g;
+const HARDER = /\b(single leg|1 pierna|una pierna|unilateral|single arm|1 brazo|un brazo|sl|sa|lastrad[oa]s?|weighted|con peso|deficit|declinad[oa]s?|decline[d]?)\b/g;
+/** Movimiento base y nivel de dificultad de un nombre ("Pistol squat con anillas" → pistol squat, -1). */
+export function variantOf(name: string): { family: string; level: number } {
+  const t = fold(name).replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ');
+  const level = (t.match(HARDER)?.length ?? 0) - (t.match(EASIER)?.length ?? 0);
+  const family = exerciseKey(t.replace(HARDER, ' ').replace(EASIER, ' ').replace(/\b(con|de|a|en)\b/g, ' '));
+  return { family, level };
+}
+
+/** Series de una dosis ("3x10" → 3, "10r x3" → 3). */
+function setsOf(text: string): number {
+  const t = text.replace(/\(.*?\)/g, ' ');
+  const lead = /(?:^|\s)(\d{1,2})\s*[x×]\s*\d/.exec(t);
+  if (lead) return Number(lead[1]);
+  const trail = /\d\s*\w*\s*[x×]\s*(\d{1,2})\b/.exec(t);
+  return trail ? Number(trail[1]) : 1;
+}
 
 const ALIASES: Record<string, string> = {
   yiwto: 'iywto',
@@ -189,7 +229,7 @@ export function buildProgress(
   }
 
   // ── series por ejercicio + trabajo por capacidad ──
-  interface Raw { date: string; s: number[]; reps: number[]; kg: number[]; text: string; name: string }
+  interface Raw { date: string; s: number[]; reps: number[]; kg: number[]; text: string; name: string; mult: number }
   const byKey = new Map<string, Raw[]>();
   const capOf = new Map<string, CapacityId | null>();
   const nameOf = new Map<string, string | undefined>();
@@ -200,6 +240,8 @@ export function buildProgress(
 
   sorted.forEach((s, si) => {
     const seen = new Map<string, Raw>();
+    const roundsOf = new Map<string, number>();
+    for (const b of s.routine.blocks) for (const g of b.groups) for (const it of g.items) roundsOf.set(it.id, b.rounds ?? 1);
     for (const it of ownItems(s.routine, who)) {
       const display = exerciseName(itemText(it));
       if (!display) continue;
@@ -228,7 +270,7 @@ export function buildProgress(
         prev.text += ` · ${itemText(it)}`;
         continue;
       }
-      const raw: Raw = { date: s.date, s: d.seconds, reps: d.reps, kg: d.kg, text: itemText(it), name: it.name };
+      const raw: Raw = { date: s.date, s: d.seconds, reps: d.reps, kg: d.kg, text: itemText(it), name: it.name, mult: setsOf(it.dose || itemText(it)) * (roundsOf.get(it.id) ?? 1) };
       seen.set(key, raw);
       byKey.set(key, [...(byKey.get(key) ?? []), raw]);
     }
@@ -256,9 +298,19 @@ export function buildProgress(
     const top = [...freq.entries()].sort((a, b) => b[1] - a[1])[0]![0];
     const name = nameOf.get(key) ?? top.charAt(0).toUpperCase() + top.slice(1);
     const vals = pick.pts.map((p) => p.value);
+    // Volumen: sólo si cambian las series o las vueltas (si no, es lo mismo que la dosis).
+    let volume: ExerciseSeries['volume'];
+    if (pick.unit !== 'kg') {
+      const get = pick.unit === 's' ? (r: Raw) => r.s : (r: Raw) => r.reps;
+      const vr = rows.filter((r) => get(r).length);
+      if (vr.length >= 3 && new Set(vr.map((r) => r.mult)).size > 1) {
+        volume = { unit: pick.unit, points: vr.map((r) => ({ date: r.date, value: Math.max(...get(r)) * r.mult, text: r.text })) };
+      }
+    }
     exercises.push({
       key, name, capacity: capOf.get(key) ?? null, unit: pick.unit, points: pick.pts,
       first: vals[0]!, last: vals[vals.length - 1]!, best: Math.max(...vals),
+      ...(volume ? { volume } : {}),
     });
   }
   exercises.sort((a, b) => b.points.length - a.points.length || a.name.localeCompare(b.name));
@@ -269,7 +321,19 @@ export function buildProgress(
     first_date: e.points[0]!.date, last_date: e.points[e.points.length - 1]!.date,
   });
   const improved = exercises.filter((e) => e.last > e.first && e.first > 0).sort((a, b) => gain(b) - gain(a));
-  const highlights = improved.slice(0, 6).map(toHighlight);
+  // Misma dosis por serie pero más series o vueltas: progresó en volumen.
+  const byVolume = exercises.filter((e) => {
+    if (!e.volume || e.last < e.first || improved.includes(e)) return false;
+    const v = e.volume.points;
+    return v[0]!.value > 0 && v[v.length - 1]!.value > v[0]!.value;
+  }).map((e): Highlight => {
+    const v = e.volume!.points;
+    return {
+      key: e.key, name: e.name, capacity: e.capacity, unit: e.volume!.unit, kind: 'volumen',
+      from: v[0]!.value, to: v[v.length - 1]!.value, first_date: v[0]!.date, last_date: v[v.length - 1]!.date,
+    };
+  }).sort((a, b) => (b.to - b.from) / b.from - (a.to - a.from) / a.from);
+  const highlights = [...improved.slice(0, 6).map(toHighlight), ...byVolume.slice(0, 3)];
 
   const recentTotal = [...recent.values()].reduce((a, b) => a + b, 0);
   const capacities: CapacitySummary[] = CAPACITIES.filter((c) => capSessions.has(c.id)).map((c) => {
@@ -303,8 +367,33 @@ export function buildProgress(
     }];
   }).sort((a, b) => b.recent - a.recent || b.weeks - a.weeks).slice(0, 8);
 
+  // Variantes: pasó de la versión más fácil a una más compleja del mismo movimiento
+  // (por el nombre, o porque el coach lo marcó en la biblioteca).
+  const keysInfo = [...practiced.entries()].map(([key, p]) => {
+    const dates = [...p.dates].sort();
+    const top = [...p.names.entries()].sort((a, b) => b[1] - a[1])[0]![0];
+    const name = nameOf.get(key) ?? top.charAt(0).toUpperCase() + top.slice(1);
+    return { key, name, dates, ...variantOf(name), easier: info(key, top).easier ?? null };
+  });
+  const variants: VariantStep[] = [];
+  for (const hard of keysInfo) {
+    if (hard.dates.length < 2) continue;
+    const start = hard.dates[0]!;
+    const candidates = keysInfo.filter((e) => e.key !== hard.key
+      && (e.key === hard.easier || (hard.family && e.family === hard.family && e.level < hard.level))
+      && e.dates.filter((d) => d < start).length >= 2);
+    if (!candidates.length) continue;
+    const from = candidates.sort((a, b) => Number(b.key === hard.easier) - Number(a.key === hard.easier) || b.level - a.level)[0]!;
+    variants.push({
+      from: from.name, to: hard.name, capacity: capOf.get(hard.key) ?? null,
+      date: start, from_date: from.dates[0]!, sessions: hard.dates.length,
+    });
+  }
+  variants.sort((a, b) => b.date.localeCompare(a.date));
+
   return {
     practice,
+    variants: variants.slice(0, 10),
     stats: {
       sessions: sorted.length,
       first_date: first,

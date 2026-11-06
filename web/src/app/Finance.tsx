@@ -8,7 +8,7 @@ import {
   ESTADO_LABEL, Fin, MARKS, MOD_LABEL, money, monthName, queCubre, shiftYM, StudentReport, urgente, weekOf, ym,
   fmtLong, PayState,
 } from './billing';
-import { Enter, Icon, Seg, Sheet, Skeleton, TopHeader } from './ui';
+import { DateInput, Enter, Icon, Seg, Sheet, Skeleton, TopHeader } from './ui';
 import { Avatar } from './social';
 
 export type OpenStudent = (id: string, tab?: 'rutina' | 'pagos' | 'informes' | 'agenda') => void;
@@ -295,13 +295,13 @@ function Attendance({ fin, day, setDay, onOpen, onAttendance, onMove, reload, to
 
 const RANGOS: Array<[string, string, number | null]> = [['1m', 'Último mes', 30], ['3m', '3 meses', 91], ['6m', '6 meses', 182], ['todo', 'Todo', null]];
 
-export function FinanzasView({ fin, right, onOpen, reload, toast }: { fin: Fin | null; right: ReactNode; onOpen: OpenStudent; reload: () => void; toast: Toast }) {
+export function FinanzasView({ fin, right, onOpen, reload, toast, onBack }: { fin: Fin | null; right: ReactNode; onOpen: OpenStudent; reload: () => void; toast: Toast; onBack?: () => void }) {
   const [view, setView] = useState<'pagos' | 'reportes'>('pagos');
   const [paying, setPaying] = useState<string | 'new' | null>(null);
   const [reminding, setReminding] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
   const [rango, setRango] = useState('3m');
-  if (!fin) return <><TopHeader title="Finanzas" right={right} /><Skeleton /></>;
+  if (!fin) return <><TopHeader title="Finanzas" right={right} onBack={onBack} /><Skeleton /></>;
   const m = ym(fin.today);
 
   const order: Record<string, number> = { debe: 0, pagar: 1, pronto: 2, sinfecha: 3, aldia: 4 };
@@ -323,7 +323,7 @@ export function FinanzasView({ fin, right, onOpen, reload, toast }: { fin: Fin |
 
   return (
     <>
-      <TopHeader title="Finanzas" right={right}
+      <TopHeader title="Finanzas" right={right} onBack={onBack}
         sub={<><span>Cobrado en {monthName(m)}: <b>{money(fin.cobradoEn(m))}</b></span><span>próximos 30 días: <b>{money(total30)}</b></span></>} />
       <Seg small value={view} onChange={setView} options={[['pagos', 'Pagos'], ['reportes', 'Reportes']]} />
       <Enter k={view}>
@@ -532,10 +532,10 @@ export function PaymentSheet({ fin, studentId, onClose, onSaved, toast }: {
             {options.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
           </select>
         </div>
-        <div className="field"><label htmlFor="pg-f">Fecha de pago</label><input id="pg-f" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></div>
+        <div className="field"><label htmlFor="pg-f">Fecha de pago</label><DateInput id="pg-f" value={fecha} onChange={(e) => setFecha(e.target.value)} /></div>
         <div className="field"><label htmlFor="pg-m">Monto (US$)</label><input id="pg-m" type="number" inputMode="decimal" min={0} step="any" value={monto} onChange={(e) => setMonto(e.target.value)} /></div>
         {m === 'clases' && <div className="field"><label htmlFor="pg-c">Clases que paga</label><input id="pg-c" type="number" inputMode="numeric" min={1} value={clases} onChange={(e) => setClases(e.target.value)} /></div>}
-        {m === 'mensual' && <div className="field"><label htmlFor="pg-p">Mes que paga</label><input id="pg-p" type="month" value={periodo} onChange={(e) => setPeriodo(e.target.value)} /></div>}
+        {m === 'mensual' && <div className="field"><label htmlFor="pg-p">Mes que paga</label><DateInput id="pg-p" type="month" value={periodo} onChange={(e) => setPeriodo(e.target.value)} /></div>}
         {m === 'prog' && (
           <label className="field full checkline"><input type="checkbox" checked={progPend} onChange={(e) => setProgPend(e.target.checked)} /> Falta mandarle la programación nueva</label>
         )}
@@ -609,7 +609,7 @@ export function MoveSheet({ fin, studentId, de, onClose, onSaved }: {
             {opts.map((f) => <option key={f} value={f}>{cap(longDate(f))}{timeOf(f) ? ` · ${timeOf(f)}` : ''}</option>)}
           </select>
         </div>
-        <div className="field"><label htmlFor="mv-a">Nuevo día</label><input id="mv-a" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
+        <div className="field"><label htmlFor="mv-a">Nuevo día</label><DateInput id="mv-a" value={to} onChange={(e) => setTo(e.target.value)} /></div>
         <div className="field"><label htmlFor="mv-h">Hora</label><input id="mv-h" type="time" value={time} onChange={(e) => setTime(e.target.value)} /></div>
       </div>
       <p className="hint" style={{ margin: 0 }}>{otherWeek ? 'Ojo: el nuevo día es de otra semana.' : 'La clase se cuenta una sola vez: sale del día original y aparece en el nuevo para tomar asistencia.'}</p>
@@ -819,7 +819,7 @@ function BillingForm({ fin, s, onCancel, onSaved, toast }: { fin: Fin; s: Financ
             <div className="field">
               <label htmlFor="b-pm">Forma de pago</label>
               <select id="b-pm" value={b.pago_modo} onChange={(e) => set({ pago_modo: e.target.value as Billing['pago_modo'] })}>
-                <option value="clases">Por paquete de clases</option><option value="mensual">Mensual, a principio de mes</option>
+                <option value="clases">Por paquete de clases</option><option value="mensual">Mensual (paga después de la 1ª clase del mes)</option>
               </select>
             </div>
           </>
@@ -831,7 +831,7 @@ function BillingForm({ fin, s, onCancel, onSaved, toast }: { fin: Fin; s: Financ
         {changedCuota && (
           <div className="field">
             <label htmlFor="b-desde">El cambio rige desde</label>
-            <input id="b-desde" type="date" value={desde} onChange={(e) => setDesde(e.target.value)} />
+            <DateInput id="b-desde" value={desde} onChange={(e) => setDesde(e.target.value)} />
             <small>Queda en el historial; los pagos anteriores conservan el monto viejo.</small>
           </div>
         )}
@@ -852,14 +852,14 @@ function BillingForm({ fin, s, onCancel, onSaved, toast }: { fin: Fin; s: Financ
         {!asinc && mensual && (
           <div className="field">
             <label htmlFor="b-vence">Próximo vencimiento</label>
-            <input id="b-vence" type="date" value={b.vence ?? ''} onChange={(e) => set({ vence: e.target.value || null })} />
+            <DateInput id="b-vence" value={b.vence ?? ''} onChange={(e) => set({ vence: e.target.value || null })} />
             <small>Sólo si todavía no tiene pagos cargados.</small>
           </div>
         )}
         {asinc && (
           <div className="field full">
             <label htmlFor="b-prog">Última programación enviada</label>
-            <input id="b-prog" type="date" value={b.prog_enviada ?? ''} onChange={(e) => set({ prog_enviada: e.target.value || null })} />
+            <DateInput id="b-prog" value={b.prog_enviada ?? ''} onChange={(e) => set({ prog_enviada: e.target.value || null })} />
             <label className="checkline"><input type="checkbox" checked={b.prog_pendiente} onChange={(e) => set({ prog_pendiente: e.target.checked })} /> Ya pagó y falta mandarle la próxima</label>
           </div>
         )}
@@ -891,3 +891,138 @@ export function usePayPill(fin: Fin | null) {
   }, [fin]);
 }
 
+
+// ── Asistencia: registro de presentes y ausencias ───────────────────────────
+
+const daysOfMonth = (m: string): string[] => {
+  const n = new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0).getDate();
+  return Array.from({ length: n }, (_, i) => `${m}-${String(i + 1).padStart(2, '0')}`);
+};
+
+interface MonthAtt { k: Record<Mark, number>; marks: Array<[string, Mark]>; sinMarcar: string[] }
+
+/** Marcas del mes de un alumno y las clases de su agenda (hasta hoy) que quedaron sin marcar. */
+function monthAtt(fin: Fin, s: FinanceStudent, m: string, scheduled: Map<string, Set<string>>): MonthAtt {
+  const marks = fin.marcasDe(s.id).filter(([f]) => f.startsWith(m));
+  const k: Record<Mark, number> = { p: 0, a: 0, e: 0 };
+  for (const [, v] of marks) k[v]++;
+  const sinMarcar = [...(scheduled.get(s.id) ?? [])].filter((f) => !fin.marca(s.id, f)).sort();
+  return { k, marks, sinMarcar };
+}
+
+function scheduledIn(fin: Fin, m: string): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const f of daysOfMonth(m)) {
+    if (f >= fin.today) break;
+    for (const x of fin.programados(f)) out.set(x.s.id, (out.get(x.s.id) ?? new Set()).add(f));
+  }
+  return out;
+}
+
+const pctOf = (k: Record<Mark, number>): number | null => {
+  const n = k.p + k.a + k.e;
+  return n ? Math.round((k.p / n) * 100) : null;
+};
+
+function MonthNav({ m, setM, today }: { m: string; setM: (m: string) => void; today: string }) {
+  return (
+    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+      <button className="btn sm" aria-label="Mes anterior" onClick={() => setM(shiftYM(m, -1))}>‹</button>
+      <span style={{ minWidth: 92, textAlign: 'center', fontWeight: 600 }}>{cap(monthName(m))} {m.slice(0, 4) !== today.slice(0, 4) ? m.slice(0, 4) : ''}</span>
+      <button className="btn sm" aria-label="Mes siguiente" disabled={m >= ym(today)} onClick={() => setM(shiftYM(m, 1))}>›</button>
+    </div>
+  );
+}
+
+function Dots({ marks, sinMarcar }: { marks: Array<[string, Mark]>; sinMarcar: string[] }) {
+  const all = [...marks.map(([f, k]) => ({ f, k: k as Mark | null })), ...sinMarcar.map((f) => ({ f, k: null }))].sort((a, b) => a.f.localeCompare(b.f));
+  if (!all.length) return null;
+  return (
+    <span className="attdots" aria-hidden="true">
+      {all.map(({ f, k }) => <i key={f} className={k ?? 'none'} title={`${shortDate(f)}: ${k ? MARKS[k].label : 'sin marcar'}`}>{parse(f).getDate()}</i>)}
+    </span>
+  );
+}
+
+/** Más → Asistencia: todos los alumnos, mes por mes. */
+export function AttendanceRegister({ fin, right, onOpen, onBack }: { fin: Fin | null; right: ReactNode; onOpen: OpenStudent; onBack: () => void }) {
+  const [m, setM] = useState(() => (fin ? ym(fin.today) : ''));
+  if (!fin) return <><TopHeader title="Asistencia" right={right} onBack={onBack} /><Skeleton /></>;
+  const mm = m || ym(fin.today);
+  const sch = scheduledIn(fin, mm);
+  const rows = fin.students.filter((s) => !fin.isAsinc(s))
+    .map((s) => ({ s, a: monthAtt(fin, s, mm, sch) }))
+    .filter((r) => r.a.marks.length || r.a.sinMarcar.length)
+    .sort((x, y) => x.s.name.localeCompare(y.s.name));
+  const tot = rows.reduce((t, r) => ({ p: t.p + r.a.k.p, a: t.a + r.a.k.a, e: t.e + r.a.k.e, sm: t.sm + r.a.sinMarcar.length }), { p: 0, a: 0, e: 0, sm: 0 });
+  return (
+    <>
+      <TopHeader title="Asistencia" right={right} onBack={onBack} sub={<span>Presentes, ausencias y clases sin marcar</span>} />
+      <Enter k={mm}>
+        <section className="card">
+          <div className="card-h"><h2>Por alumno</h2><MonthNav m={mm} setM={setM} today={fin.today} /></div>
+          <div className="attsum">
+            <span className="ok"><b>{tot.p}</b>presentes</span>
+            <span className="bad"><b>{tot.a}</b>ausentes</span>
+            <span className="info"><b>{tot.e}</b>con ejercicios</span>
+            <span><b>{tot.sm}</b>sin marcar</span>
+          </div>
+          {!rows.length ? <p className="hint">No hay clases registradas en este mes.</p> : (
+            <div className="rows">
+              {rows.map(({ s, a }) => {
+                const pct = pctOf(a.k);
+                return (
+                  <button key={s.id} className="frow attrow" onClick={() => onOpen(s.id, 'agenda')}>
+                    <span className="fw">
+                      <b>{s.name}</b>
+                      <small>{a.k.p} P · {a.k.a} A{a.k.e ? ` · ${a.k.e} E` : ''}{a.sinMarcar.length ? ` · ${a.sinMarcar.length} sin marcar` : ''}</small>
+                      <Dots marks={a.marks} sinMarcar={a.sinMarcar} />
+                    </span>
+                    {pct != null && <span className={`pill ${pct >= 85 ? 'ok' : pct >= 70 ? 'low' : 'bad'}`}>{pct}%</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <p className="hint" style={{ fontSize: 12 }}>P presente · A ausente · E faltó y entrenó con los ejercicios que le mandaste. Una sesión cargada cuenta como presente. "Sin marcar" son clases de su agenda que pasaron sin registro: se marcan en Hoy → Agenda.</p>
+        </section>
+      </Enter>
+    </>
+  );
+}
+
+/** Ficha del alumno → Agenda: su registro de asistencia. */
+export function AttendanceLog({ fin, studentId }: { fin: Fin | null; studentId: string }) {
+  const [m, setM] = useState(() => (fin ? ym(fin.today) : ''));
+  const s = fin?.students.find((x) => x.id === studentId);
+  if (!fin || !s) return null;
+  const mm = m || ym(fin.today);
+  const a = monthAtt(fin, s, mm, scheduledIn(fin, mm));
+  const pct = pctOf(a.k);
+  const total = fin.marcasDe(s.id);
+  const kt: Record<Mark, number> = { p: 0, a: 0, e: 0 };
+  for (const [, v] of total) kt[v]++;
+  const list = [...a.marks.map(([f, k]) => ({ f, k: k as Mark | null })), ...a.sinMarcar.map((f) => ({ f, k: null }))].sort((x, y) => y.f.localeCompare(x.f));
+  return (
+    <section className="card">
+      <div className="card-h"><h2>Asistencia</h2><MonthNav m={mm} setM={setM} today={fin.today} /></div>
+      <div className="attsum">
+        <span className="ok"><b>{a.k.p}</b>presentes</span>
+        <span className="bad"><b>{a.k.a}</b>ausentes</span>
+        <span className="info"><b>{a.k.e}</b>con ejercicios</span>
+        <span><b>{pct != null ? `${pct}%` : '—'}</b>asistencia</span>
+      </div>
+      {!list.length ? <p className="hint">Sin clases registradas en {monthName(mm)}.</p> : (
+        <div className="rows">
+          {list.map(({ f, k }) => (
+            <div key={f} className="frow" style={{ minHeight: 40 }}>
+              <span className="fw"><b style={{ fontWeight: 500 }}>{cap(longDate(f))}</b></span>
+              <span className={`pill ${k ? MARKS[k].cls : ''}`}>{k ? MARKS[k].label : 'Sin marcar'}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="hint" style={{ fontSize: 12 }}>Desde que empezó: {kt.p} presentes, {kt.a} ausencias{kt.e ? `, ${kt.e} con ejercicios` : ''}.</p>
+    </section>
+  );
+}

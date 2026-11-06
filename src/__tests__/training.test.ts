@@ -278,6 +278,36 @@ describe('progreso', () => {
     expect(p.stats.sessions).toBe(3);
   });
 
+  test('pasar a una variante más compleja cuenta como progreso', () => {
+    const v = [
+      s('2026-01-05', 'Pistol squat con anillas 5 - Long Bridge 10'),
+      s('2026-01-12', 'Pistol squat con anillas 6 - Long Bridge 12'),
+      s('2026-01-19', 'Pistol squat 3 - Long Bridge 12'),
+      s('2026-01-26', 'Pistol squat 4 - Long Bridge SL 8'),
+      s('2026-02-02', 'Pistol squat 4 - Long Bridge SL 10'),
+    ];
+    const p = buildProgress('Beto', v, undefined, new Date('2026-02-10'));
+    expect(p.variants.map((x) => [x.from, x.to, x.date])).toEqual([
+      ['Long Bridge', 'Long Bridge SL', '2026-01-26'],
+      ['Pistol squat con anillas', 'Pistol squat', '2026-01-19'],
+    ]);
+    // El coach también puede marcar la progresión en la biblioteca.
+    const m = buildProgress('Beto', [
+      s('2026-01-05', 'Push up iso 20s'), s('2026-01-12', 'Push up iso 25s'), s('2026-01-19', 'Planche lean 10s'), s('2026-01-26', 'Planche lean 12s'),
+    ], (k) => ({ capacity: null, easier: k === 'lean planche' ? 'iso push up' : null }), new Date('2026-02-10'));
+    expect(m.variants).toMatchObject([{ from: 'Push up iso', to: 'Planche lean' }]);
+  });
+
+  test('más series o vueltas con la misma dosis cuenta como volumen', () => {
+    const v = [
+      s('2026-01-05', '[Wall sit 30s - Plank 20s] x2'),
+      s('2026-01-12', '[Wall sit 30s - Plank 20s] x3'),
+      s('2026-01-19', '[Wall sit 30s - Plank 20s] x4'),
+    ];
+    const p = buildProgress('Beto', v, undefined, new Date('2026-02-10'));
+    expect(p.highlights.find((h) => h.name === 'Wall sit')).toMatchObject({ kind: 'volumen', from: 60, to: 120, unit: 's' });
+  });
+
   test('la base que reemplaza una variante personal no cuenta para esa persona', () => {
     const p = buildProgress('Ana Pérez', sessions, undefined, new Date('2026-04-15'));
     expect(p.exercises.find((e) => e.name === 'Push up iso')).toBeUndefined();

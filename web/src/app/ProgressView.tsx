@@ -5,7 +5,7 @@ import {
   QUALITY_SCORE, QualityAspect, QualityEntry, shortDate, todayIso, unitLabel,
 } from './data';
 import { CapacityDefs } from './ExerciseLibrary';
-import { CapTag, CountUp, Icon, LineChart, MonthBars, Sheet } from './ui';
+import { CapTag, CountUp, DateInput, Icon, LineChart, MonthBars, Sheet } from './ui';
 
 /** Logro: de dónde arrancó a dónde llegó, con barra proporcional. */
 export function WinCard({ h, i = 0 }: { h: Highlight; i?: number }) {
@@ -13,7 +13,7 @@ export function WinCard({ h, i = 0 }: { h: Highlight; i?: number }) {
   return (
     <div className="win" style={{ ['--c' as string]: h.capacity ? `var(--cap-${h.capacity})` : 'var(--accent)', ['--i' as string]: i }}>
       <div className="win-h">
-        <b>{h.name}</b>
+        <b>{h.name}{h.kind === 'volumen' && <small className="vtag">volumen</small>}</b>
         <span className="pct">+{pctGain(h.from, h.to)}%</span>
       </div>
       <div className="win-bar" role="img" aria-label={`${h.name}: de ${fmtValue(h.from, h.unit)} a ${fmtValue(h.to, h.unit)}`}>
@@ -42,6 +42,7 @@ export function ProgressView({ progress, you, quality = [], studentId, onQuality
   const shownWins = highlights.filter((h) => !capSel || h.capacity === capSel);
   const current = shownEx.find((e) => e.key === sel) ?? shownEx.find((e) => e.key === shownWins[0]?.key) ?? shownEx[0];
   const recent = capacities.filter((c) => c.recent_share > 0);
+  const variants = (progress.variants ?? []).filter((v) => !capSel || v.capacity === capSel);
 
   if (!stats.sessions) {
     return <p className="empty">{you ? 'Cuando completes tus primeras sesiones, acá vas a ver cómo vas mejorando.' : 'Todavía no hay sesiones realizadas.'}</p>;
@@ -122,7 +123,25 @@ export function ProgressView({ progress, you, quality = [], studentId, onQuality
         <section className="card">
           <h2>Logros</h2>
           <div className="hint">De la primera vez a la última, según lo que anotó {you ? 'tu profe' : 'el profe'}.</div>
-          <div className="wins">{shownWins.map((h, i) => <WinCard key={h.key} h={h} i={i} />)}</div>
+          <div className="wins">{shownWins.map((h, i) => <WinCard key={h.key + (h.kind ?? '')} h={h} i={i} />)}</div>
+          {shownWins.some((h) => h.kind === 'volumen') && <p className="hint" style={{ fontSize: 12 }}>Volumen: el total de la sesión (dosis × series × vueltas), cuando subió sin cambiar la dosis de cada serie.</p>}
+        </section>
+      )}
+
+      {variants.length > 0 && (
+        <section className="card">
+          <h2>Pasó a variantes más complejas</h2>
+          <p className="hint" style={{ margin: '4px 0 8px' }}>Cambiar a una versión más difícil del mismo movimiento también es progresar, aunque los números arranquen más abajo.</p>
+          <div className="rows">
+            {variants.map((v) => (
+              <div key={v.to + v.date} className="vstep" style={{ ['--c' as string]: v.capacity ? `var(--cap-${v.capacity})` : 'var(--accent)' }}>
+                <span className="vs-from">{v.from}</span>
+                <span className="vs-ar" aria-hidden="true">→</span>
+                <b>{v.to}</b>
+                <small>desde el {shortDate(v.date)}{v.date.slice(0, 4) !== String(new Date().getFullYear()) ? ` de ${v.date.slice(0, 4)}` : ''} · {v.sessions} {v.sessions === 1 ? 'sesión' : 'sesiones'}</small>
+              </div>
+            ))}
+          </div>
         </section>
       )}
 
@@ -305,7 +324,7 @@ function QualitySheet({ studentId, exercise, suggestions, onClose, onSaved, toas
           <input id="q-ex" list="q-ex-list" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej. Turkish get up" />
           <datalist id="q-ex-list">{suggestions.map((x) => <option key={x} value={x} />)}</datalist>
         </div>
-        <div className="field"><label htmlFor="q-day">Fecha</label><input id="q-day" type="date" value={day} onChange={(e) => setDay(e.target.value)} /></div>
+        <div className="field"><label htmlFor="q-day">Fecha</label><DateInput id="q-day" value={day} onChange={(e) => setDay(e.target.value)} /></div>
         <div className="field full">
           <span className="lab">Cómo lo ejecuta</span>
           <div className="qscore" role="radiogroup" aria-label="Cómo lo ejecuta">

@@ -1,6 +1,6 @@
-import { ReactNode, useEffect, useRef, useState } from 'react';
+import { InputHTMLAttributes, ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { fmtValue, monthShort, shortDate, Unit } from './data';
+import { dmy, fmtValue, monthLong, monthShort, shortDate, Unit } from './data';
 
 // ── íconos (trazo 1.8, mismos que la bitácora) ──────────────────────────────
 const svg = (children: ReactNode) => (
@@ -283,5 +283,22 @@ export function MonthBars({ months }: { months: Array<{ month: string; count: nu
         );
       })}
     </svg>
+  );
+}
+
+/**
+ * Campo de fecha que siempre se lee día/mes/año. El input nativo queda invisible
+ * encima (abre el calendario del sistema), pero el texto lo escribimos nosotros:
+ * así no aparece mes/día cuando la computadora está configurada en inglés.
+ */
+export function DateInput({ value, type = 'date', className, style, onClick, ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, 'value'> & { value: string; type?: 'date' | 'month' }) {
+  const txt = value ? (type === 'month' ? monthLong(value) : dmy(value)) : type === 'month' ? 'Elegir mes' : 'Elegir fecha';
+  return (
+    <span className={`dinput${className ? ` ${className}` : ''}`} style={style}>
+      <span className={value ? 'dv' : 'dv ph'}>{txt}</span>
+      {Icon.calendar}
+      <input {...rest} type={type} value={value}
+        onClick={(e) => { try { (e.currentTarget as HTMLInputElement & { showPicker?: () => void }).showPicker?.(); } catch { /* ya abierto */ } onClick?.(e); }} />
+    </span>
   );
 }

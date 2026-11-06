@@ -44,13 +44,14 @@ export const CAP_INFO: Record<CapacityId, { def: string; ref: string }> = {
 
 // ── calidad del movimiento ──────────────────────────────────────────────────
 
-export type QualityAspect = 'organizacion' | 'transferencia' | 'sensibilidad' | 'control' | 'respiracion';
+export type QualityAspect = 'organizacion' | 'transferencia' | 'sensibilidad' | 'control' | 'respiracion' | 'rom';
 export const QUALITY_ASPECTS: Array<[QualityAspect, string]> = [
   ['organizacion', 'Organización del cuerpo en el espacio'],
   ['transferencia', 'Transferencia de peso'],
   ['sensibilidad', 'Sensibilidad y percepción'],
   ['control', 'Control y fluidez'],
   ['respiracion', 'Respiración'],
+  ['rom', 'Rango de movimiento (ROM)'],
 ];
 export const ASPECT_LABEL = Object.fromEntries(QUALITY_ASPECTS) as Record<QualityAspect, string>;
 export const QUALITY_SCORE = ['', 'Le cuesta', 'En construcción', 'Lo resuelve', 'Con calidad', 'Dominado'];
@@ -136,6 +137,8 @@ export type Unit = 's' | 'reps' | 'kg';
 export interface Highlight {
   key: string; name: string; capacity: CapacityId | null; unit: Unit;
   from: number; to: number; first_date: string; last_date: string;
+  /** Subió el volumen total (series × vueltas) con la misma dosis por serie. */
+  kind?: 'volumen';
 }
 
 export interface Progress {
@@ -156,6 +159,8 @@ export interface Progress {
     first: number; last: number; best: number;
   }>;
   highlights: Highlight[];
+  /** Pasó a una variante más compleja del mismo movimiento. */
+  variants?: Array<{ from: string; to: string; capacity: CapacityId | null; date: string; from_date: string; sessions: number }>;
   practice: Array<{
     key: string; name: string; capacity: CapacityId | null;
     sessions: number; weeks: number; first_date: string; last_date: string; recent: number;
@@ -227,7 +232,8 @@ export interface ReportData {
   planned: number | null;
   attendance: { p: number; a: number; e: number };
   capacities: Array<{ id: CapacityId; label: string; share: number; previous_share: number }>;
-  improvements: Array<{ name: string; capacity: CapacityId | null; unit: Unit; from: number; to: number; from_date: string; to_date: string }>;
+  improvements: Array<{ name: string; capacity: CapacityId | null; unit: Unit; from: number; to: number; from_date: string; to_date: string; kind?: 'volumen' }>;
+  variants?: Array<{ from: string; to: string; date: string; capacity: CapacityId | null }>;
   new_exercises: Array<{ name: string; capacity: CapacityId | null }>;
   feeling: { average: number; count: number } | null;
   comments: Array<{ date: string; text: string }>;
@@ -242,7 +248,7 @@ export interface Cycle { n: number; start: string; end: string }
 
 export interface ExerciseEntry {
   key: string; name: string; capacity: CapacityId | null; capacity_source: 'coach' | 'auto' | null;
-  description: string | null; video_url: string | null; custom: boolean; uses: number; students: string[];
+  description: string | null; video_url: string | null; easier_key?: string | null; custom: boolean; uses: number; students: string[];
   last_date: string | null; last_text: string | null;
 }
 
@@ -281,9 +287,9 @@ export const coachApi = {
     req<{ session: Session }>(`/training/sessions/${id}`, json('PATCH', body)),
   deleteSession: (id: string) => req<{ ok: true }>(`/training/sessions/${id}`, json('DELETE')),
   exercises: () => req<{ exercises: ExerciseEntry[] }>('/training/exercises'),
-  createExercise: (body: { name: string; capacity: CapacityId | null; description?: string | null; video_url?: string | null }) =>
+  createExercise: (body: { name: string; capacity: CapacityId | null; description?: string | null; video_url?: string | null; easier_key?: string | null }) =>
     req<{ exercise: unknown }>('/training/exercises', json('POST', body)),
-  saveExercise: (key: string, body: { name: string; capacity: CapacityId | null; description?: string | null; video_url?: string | null }) =>
+  saveExercise: (key: string, body: { name: string; capacity: CapacityId | null; description?: string | null; video_url?: string | null; easier_key?: string | null }) =>
     req<{ exercise: unknown }>(`/training/exercises/${encodeURIComponent(key)}`, json('PUT', body)),
   activity: () => req<{ items: ActivityItem[]; unseen: number }>('/training/activity'),
   activitySeen: () => req<{ ok: true }>('/training/activity/seen', json('POST', {})),
@@ -459,6 +465,14 @@ export function longDate(d: string): string {
   return `${DAYS[x.getDay()]} ${x.getDate()} de ${MONTHS[x.getMonth()]}${y}`;
 }
 /** "12 oct" */
+/** "vie 06/11/2026": siempre día/mes, sin depender del idioma de la computadora. */
+export function dmy(d: string): string {
+  const x = parse(d);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${DAYS[x.getDay()]!.slice(0, 3)} ${p(x.getDate())}/${p(x.getMonth() + 1)}/${x.getFullYear()}`;
+}
+/** "noviembre de 2026" */
+export const monthLong = (m: string): string => `${MONTHS[Number(m.slice(5, 7)) - 1]} de ${m.slice(0, 4)}`;
 export const shortDate = (d: string): string => {
   const x = parse(d);
   return `${x.getDate()} ${MONTHS[x.getMonth()]!.slice(0, 3)}`;
@@ -521,3 +535,57 @@ export const firstName = (name: string): string => name.trim().split(/\s+/)[0] ?
 export const fold = (s: string): string => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 export const SEX_LABEL: Record<Sex, string> = { MALE: 'Masculino', FEMALE: 'Femenino' };
 export const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+
+/**
+ * La rutina escrita con el formato de siempre del profe (el mismo que entiende "Pegar texto"):
+ *   Cat/Cow - Spinal Bridge             ← lista
+ *   [Crawling 20s/ Tabletop - Plank] x2 ← circuito: estaciones con " - ", alternados con "/"
+ *   A1 - Skater Sq 10r + CMJ 3          ← bloque principal, y "x3" abajo
+ */
+export function routineToText(r: Routine): string {
+  const it = (x: RoutineItem) => (x.who ? `${x.who} ${itemText(x)}` : itemText(x));
+  const out: string[] = [];
+  let letter = 0;
+  for (const b of r.blocks) {
+    const groups = b.groups.map((g) => g.items.filter((x) => itemText(x)));
+    const has = groups.some((g) => g.length);
+    if (!has) continue;
+    if (b.kind === 'list') {
+      out.push(groups.flatMap((g) => g.map(it)).join(' - '));
+    } else if (b.kind === 'circuit') {
+      out.push(`[${groups.filter((g) => g.length).map((g) => g.map(it).join('/ ')).join(' - ')}]${b.rounds ? ` x${b.rounds}` : ''}`);
+    } else if (b.kind === 'superset') {
+      const L = String.fromCharCode(65 + letter++);
+      groups.filter((g) => g.length).forEach((g, i) => out.push(`${L}${i + 1} - ${g.map(it).join(' + ')}`));
+      if (b.rounds) out.push(`x${b.rounds}`);
+    } else {
+      for (const g of groups) for (const x of g) out.push(itemText(x));
+    }
+    out.push('');
+  }
+  if (r.note) out.push(r.note);
+  return out.join('\n').trim();
+}
+
+/** Después de leer el texto: los ejercicios que ya estaban conservan su id (notas y checks del alumno). */
+export function keepIds(prev: Routine, next: Routine): Routine {
+  const pool = new Map<string, string[]>();
+  for (const b of prev.blocks) for (const g of b.groups) for (const x of g.items) {
+    const k = `${(x.who ?? '').toLowerCase()}|${x.name.trim().toLowerCase()}`;
+    pool.set(k, [...(pool.get(k) ?? []), x.id]);
+  }
+  const used = new Set<string>();
+  const blocks = next.blocks.map((b) => ({
+    ...b,
+    groups: b.groups.map((g) => ({
+      ...g,
+      items: g.items.map((x) => {
+        const k = `${(x.who ?? '').toLowerCase()}|${x.name.trim().toLowerCase()}`;
+        const id = (pool.get(k) ?? []).find((i) => !used.has(i));
+        if (id) { used.add(id); return { ...x, id }; }
+        return x;
+      }),
+    })),
+  }));
+  return { ...next, blocks };
+}

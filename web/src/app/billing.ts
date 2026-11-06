@@ -74,6 +74,10 @@ export interface Fin {
   reporte(s: FinanceStudent, ini: string): StudentReport;
   /** Ciclo de 4 semanas terminado que todavía no tiene informe. */
   informePendiente(s: FinanceStudent): { n: number; start: string; end: string } | null;
+  /** Fecha de pago del mes (mensuales): la primera clase de ese mes. */
+  primeraDelMes(s: FinanceStudent, m: string): string;
+  /** Alumnos a los que les queda una clase antes de empezar el ciclo nuevo. */
+  avisosCiclo(): Array<{ s: FinanceStudent; key: string; t: string }>;
 }
 
 export interface StudentReport {
@@ -142,6 +146,16 @@ export function makeFin(d: FinanceData): Fin {
       .slice(0, n);
   };
 
+  const primeraDelMes = (s: FinanceStudent, m: string): string => {
+    const ini = `${m}-01`;
+    const fin = addDays(`${shiftYM(m, 1)}-01`, -1);
+    const cands = [
+      ...marcasDe(s.id).filter(([f, k]) => f >= ini && f <= fin && k === 'p').map(([f]) => f),
+      ...occurrences(s.schedule, ini, fin).map((o) => o.date).filter((f) => f >= today || marca(s.id, f) === 'p'),
+    ].sort();
+    return cands[0] ?? ini;
+  };
+
   const saldo = (s: FinanceStudent) => {
     if (modo(s) !== 'clases') return null;
     const b = billing(s);
@@ -159,24 +173,36 @@ export function makeFin(d: FinanceData): Fin {
       const sd = saldo(s);
       if (!sd) return { k: 'sinfecha', t: 'Sin datos del paquete', cls: '', due: null, monto };
       const N = clasesPaquete(s);
-      if (sd.restan < 0) {
-        return { k: 'debe', t: `Debe ${-sd.restan} ${-sd.restan === 1 ? 'clase' : 'clases'}`, cls: 'bad', due: proximasClases(s, 1)[0] ?? today, monto, restan: sd.restan };
+      // Se paga después de la primera clase del paquete nuevo.
+      if (sd.restan < -1) {
+        return { k: 'debe', t: `Debe ${-sd.restan} clases`, cls: 'bad', due: today, monto, restan: sd.restan };
+      }
+      if (sd.restan === -1) {
+        return { k: 'pagar', t: 'Tiene que pagar: ya tomó la 1ª del paquete', cls: 'bad', due: today, monto, restan: -1 };
       }
       if (sd.restan === 0) {
         const nx = proximasClases(s, 1)[0] ?? null;
-        return { k: 'pagar', t: nx ? `Paga el ${shortDate(nx)}` : 'Paga en la próxima clase', cls: 'bad', due: nx ?? today, monto, restan: 0 };
+        return { k: 'pronto', t: nx ? `Paga después de la clase del ${shortDate(nx)}` : 'Paga después de la próxima clase', cls: 'low', due: nx, monto, restan: 0 };
       }
       const fechas = proximasClases(s, sd.restan + 1);
       const due = fechas.length === sd.restan + 1 ? fechas[sd.restan]! : null;
-      const quedan = `Quedan ${sd.restan}${N ? ` de ${N}` : ''}`;
-      const t = due ? `${quedan} · paga el ${shortDate(due)}` : quedan;
+      const quedan = `${sd.restan === 1 ? 'Queda' : 'Quedan'} ${sd.restan}${N ? ` de ${N}` : ''}`;
+      const t = due ? `${quedan} · paga después del ${shortDate(due)}` : quedan;
       if (sd.restan <= (clasesSem(s) || 1)) return { k: 'pronto', t, cls: 'low', due, monto, restan: sd.restan };
       return { k: 'aldia', t, cls: 'ok', due, monto, restan: sd.restan };
     }
     let due: string | null = null;
     if (m === 'mensual') {
       const ult = pagosDe(s.id).map((p) => p.period ?? '').filter(Boolean).sort().pop();
-      due = ult ? `${shiftYM(ult, 1)}-01` : billing(s).vence;
+      const mes = ult ? shiftYM(ult, 1) : billing(s).vence ? ym(billing(s).vence!) : null;
+      due = mes ? primeraDelMes(s, mes) : null;
+      if (due) {
+        const diff = daysBetween(today, due);
+        if (diff < 0) return { k: 'debe', t: `Tenía que pagar el ${shortDate(due)}`, cls: 'bad', due, monto };
+        if (diff === 0) return { k: 'pagar', t: 'Paga después de la clase de hoy', cls: 'bad', due, monto };
+        if (diff <= 7) return { k: 'pronto', t: `Paga después de la clase del ${shortDate(due)}`, cls: 'low', due, monto };
+        return { k: 'aldia', t: `Al día · paga el ${shortDate(due)}`, cls: 'ok', due, monto };
+      }
     } else {
       const base = [pagosDe(s.id).map((p) => p.paid_on).pop(), billing(s).prog_enviada].filter((x): x is string => Boolean(x)).sort().pop();
       due = base ? addDays(base, PROG_DIAS) : null;
@@ -257,7 +283,7 @@ export function makeFin(d: FinanceData): Fin {
   const etiquetaPaquete = (s: FinanceStudent, f: string) => {
     const p = posPaquete(s, f);
     if (!p) return null;
-    if (p.primera) return p.pagado ? { t: '1ª del paquete · pagado', cls: 'ok' } : { t: '1ª del paquete · tiene que pagar', cls: 'bad' };
+    if (p.primera) return p.pagado ? { t: '1ª del paquete · pagado', cls: 'ok' } : { t: '1ª del paquete · paga después de esta clase', cls: 'bad' };
     if (p.ultima) return { t: 'Última del paquete', cls: 'low' };
     return null;
   };
@@ -269,7 +295,7 @@ export function makeFin(d: FinanceData): Fin {
 
   const modoTxt = (s: FinanceStudent) => ({
     clases: `Paquete de ${clasesPaquete(s) || '—'} clases (${billing(s).ciclo_sem || 4} semanas)`,
-    mensual: 'Mensual, a principio de mes',
+    mensual: 'Mensual, después de la 1ª clase del mes',
     prog: 'Por programación (4 semanas)',
   })[modo(s)];
 
@@ -280,13 +306,15 @@ export function makeFin(d: FinanceData): Fin {
     if (m === 'clases') {
       const r = c.restan ?? 0;
       return r <= 0
-        ? `Hola ${nombre}! Te aviso que terminaste el paquete de clases de HTC. Para la próxima clase${c.due ? ` (${shortDate(c.due)})` : ''} toca renovar: ${money(c.monto)}. Gracias!`
-        : `Hola ${nombre}! Te ${r === 1 ? 'queda 1 clase' : `quedan ${r} clases`} del paquete de HTC${c.due ? `; el ${shortDate(c.due)} toca renovar` : ''} (${money(c.monto)}). Gracias!`;
+        ? (r < 0
+          ? `Hola ${nombre}! Ya arrancaste el paquete nuevo de clases de HTC; cuando puedas, me pasás el pago (${money(c.monto)}). Gracias!`
+          : `Hola ${nombre}! Te aviso que terminaste el paquete de clases de HTC. Después de la próxima clase${c.due ? ` (${shortDate(c.due)})` : ''} toca renovar: ${money(c.monto)}. Gracias!`)
+        : `Hola ${nombre}! Te ${r === 1 ? 'queda 1 clase' : `quedan ${r} clases`} del paquete de HTC${c.due ? `; después de la clase del ${shortDate(c.due)} toca renovar` : ''} (${money(c.monto)}). Gracias!`;
     }
     if (m === 'mensual') {
       return c.k === 'debe'
-        ? `Hola ${nombre}! Te escribo porque todavía no tengo registrado el pago de HTC que vencía el ${c.due ? shortDate(c.due) : '—'} (${money(c.monto)}). Cuando puedas, avisame. Gracias!`
-        : `Hola ${nombre}! Te recuerdo que el ${c.due ? shortDate(c.due) : '—'} vence el pago mensual de HTC (${money(c.monto)}). Gracias!`;
+        ? `Hola ${nombre}! Te escribo porque todavía no tengo registrado el pago de HTC del mes (era después de la clase del ${c.due ? shortDate(c.due) : '—'}, ${money(c.monto)}). Cuando puedas, avisame. Gracias!`
+        : `Hola ${nombre}! Te recuerdo que después de la clase del ${c.due ? shortDate(c.due) : '—'} toca el pago mensual de HTC (${money(c.monto)}). Gracias!`;
     }
     return `Hola ${nombre}! Ya casi terminás tu programación de HTC. Para armarte la próxima son ${money(c.monto)}. Gracias!`;
   };
@@ -305,7 +333,7 @@ export function makeFin(d: FinanceData): Fin {
       }
     } else if (modo(s) === 'mensual') {
       for (const p of pagosDe(s.id).filter((p) => p.period && p.paid_on >= ini)) {
-        out.push({ atraso: Math.max(0, daysBetween(`${p.period}-01`, p.paid_on) - 5) });
+        out.push({ atraso: Math.max(0, daysBetween(primeraDelMes(s, p.period!), p.paid_on)) });
       }
     }
     return out;
@@ -341,7 +369,25 @@ export function makeFin(d: FinanceData): Fin {
     return { n: n - 1, start, end };
   };
 
+  const avisosCiclo = () => activos().filter((s) => !isAsinc(s)).flatMap((s) => {
+    const nombre = firstName(s.name);
+    if (modo(s) === 'clases') {
+      const sd = saldo(s);
+      if (!sd || sd.restan !== 1) return [];
+      const ult = proximasClases(s, 1)[0];
+      return [{ s, key: `${s.id}:paq:${sd.tomadas}`, t: `A ${nombre} le queda 1 clase del paquete${ult ? ` (${shortDate(ult)})` : ''}. Después arranca el ciclo nuevo y paga después de esa primera clase.` }];
+    }
+    if (modo(s) === 'mensual') {
+      const m = ym(today);
+      const resto = occurrences(s.schedule, today, addDays(`${shiftYM(m, 1)}-01`, -1)).map((o) => o.date).filter((f) => !marca(s.id, f));
+      if (resto.length !== 1) return [];
+      return [{ s, key: `${s.id}:mes:${m}`, t: `A ${nombre} le queda 1 clase este mes (${shortDate(resto[0]!)}). Después arranca el mes nuevo y paga después de la primera clase.` }];
+    }
+    return [];
+  });
+
   return {
+    primeraDelMes, avisosCiclo,
     today, students: d.students, payments: d.payments, billing, estado, activos, isAsinc, modo, modoTxt, clasesSem, clasesPaquete,
     cuotaEn, pagosDe, marca, marcaExplicita, marcasDe, proximasClases, saldo, estadoPago, cobradoEn, proximos30, estadoProg, racha,
     programados, movidosDesde, posPaquete, etiquetaPaquete, paqueteTxt, recordatorio, reporte, informePendiente,

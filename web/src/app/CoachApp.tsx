@@ -9,7 +9,7 @@ import {
   SEX_LABEL, Sex, shortDate, Student, StudentListItem, timeAgo, todayIso, uid, whenLabel, cap,
 } from './data';
 import { AgendaEditor } from './Agenda';
-import { FinanzasView, HoyView, StudentPayments, usePayPill } from './Finance';
+import { AttendanceLog, AttendanceRegister, FinanzasView, HoyView, StudentPayments, usePayPill } from './Finance';
 import { makeFin } from './billing';
 import { ReportsPanel } from './Report';
 import { Avatar, Community, PeopleProvider, PhotoPicker, usePeople, useUnread } from './social';
@@ -20,18 +20,19 @@ import { HistoryList, RoutineBlocks } from './RoutineView';
 import { lastRealized, NextCard, ProcessTimeline } from './StudentApp';
 import { Enter, Icon, Seg, Sheet, Skeleton, TabBar, TabDef, TopHeader, useToast } from './ui';
 
-type Tab = 'hoy' | 'alumnos' | 'planificar' | 'finanzas' | 'mas' | 'ejercicios' | 'evaluaciones' | 'comunidad';
-type BarTab = 'hoy' | 'alumnos' | 'planificar' | 'finanzas' | 'mas';
+type Tab = 'hoy' | 'alumnos' | 'planificar' | 'finanzas' | 'asistencia' | 'mas' | 'ejercicios' | 'evaluaciones' | 'comunidad';
+type BarTab = 'hoy' | 'alumnos' | 'planificar' | 'comunidad' | 'mas';
+/** Pantallas que se abren desde "Más" (no tienen pestaña propia abajo). */
+const IN_MAS: Tab[] = ['ejercicios', 'evaluaciones', 'finanzas', 'asistencia'];
 type DetailTab = 'rutina' | 'progreso' | 'historial' | 'informes' | 'agenda' | 'pagos' | 'datos';
 
 const TABS: TabDef<BarTab>[] = [
   { id: 'hoy', label: 'Hoy', icon: Icon.calendar },
   { id: 'alumnos', label: 'Alumnos', icon: Icon.users },
   { id: 'planificar', label: 'Planificar', icon: Icon.add },
-  { id: 'finanzas', label: 'Finanzas', icon: Icon.money },
   { id: 'mas', label: 'Más', icon: Icon.menu },
 ];
-const barTab = (t: Tab): BarTab => (t === 'ejercicios' || t === 'evaluaciones' || t === 'comunidad' ? 'mas' : t);
+const barTab = (t: Tab): BarTab => (IN_MAS.includes(t) ? 'mas' : t as BarTab);
 
 interface EvalCtx { key: number; studentId?: string; prefill?: { key: number; name: string; age: number | null; sex: Sex | null }; openId?: { key: number; id: string } }
 interface PlanCtx { key: number; ids: string[]; editing: Session | null; back?: string }
@@ -49,6 +50,17 @@ function CoachHome({ onLogout, authEnabled }: { onLogout: () => void; authEnable
   const [detailTab, setDetailTab] = useState<{ key: number; tab: DetailTab }>({ key: 0, tab: 'rutina' });
   const [finData, setFinData] = useState<FinanceData | null>(null);
   const fin = useMemo(() => (finData ? makeFin(finData) : null), [finData]);
+  // Avisos de fin de ciclo (le queda una clase): se marcan vistos al abrir la campana.
+  const avisos = useMemo(() => fin?.avisosCiclo() ?? [], [fin]);
+  const [vistos, setVistos] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('htc-avisos-vistos') ?? '[]') as string[]); } catch { return new Set(); }
+  });
+  const avisosNuevos = avisos.filter((a) => !vistos.has(a.key)).length;
+  const verAvisos = () => {
+    const next = new Set([...vistos, ...avisos.map((a) => a.key)]);
+    setVistos(next);
+    try { localStorage.setItem('htc-avisos-vistos', JSON.stringify([...next].slice(-300))); } catch { /* sin almacenamiento */ }
+  };
   const [students, setStudents] = useState<StudentListItem[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -92,7 +104,7 @@ function CoachHome({ onLogout, authEnabled }: { onLogout: () => void; authEnable
   }, [loadActivity]);
 
   const go = (t: Tab) => {
-    if (t === 'mas' && (tab === 'ejercicios' || tab === 'evaluaciones' || tab === 'comunidad')) { setTab('mas'); return; }
+    if (t === 'mas' && IN_MAS.includes(tab)) { setTab('mas'); return; }
     if (t === tab) {
       if (t === 'alumnos') setSelected(null);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -111,15 +123,17 @@ function CoachHome({ onLogout, authEnabled }: { onLogout: () => void; authEnable
     window.scrollTo(0, 0);
   };
 
+  const tabs: TabDef<BarTab>[] = [
+    ...TABS.slice(0, 3),
+    { id: 'comunidad', label: 'Comunidad', icon: Icon.chat, badge: unread },
+    TABS[3]!,
+  ];
+
   const right = (
     <>
-      <button className="avatar bell" onClick={() => setShowActivity(true)} aria-label={`Actividad${activity?.unseen ? `: ${activity.unseen} nuevas` : ''}`}>
+      <button className="avatar bell" onClick={() => setShowActivity(true)} aria-label={`Actividad${(activity?.unseen ?? 0) + avisosNuevos ? `: ${(activity?.unseen ?? 0) + avisosNuevos} nuevas` : ''}`}>
         {Icon.bell}
-        {activity && activity.unseen > 0 && <span className="count">{activity.unseen}</span>}
-      </button>
-      <button className="avatar bell" onClick={() => { setTab('comunidad'); window.scrollTo(0, 0); }} aria-label={`Comunidad${unread ? `: ${unread} sin leer` : ''}`}>
-        {Icon.chat}
-        {unread > 0 && <span className="count">{unread}</span>}
+        {(activity?.unseen ?? 0) + avisosNuevos > 0 && <span className="count">{(activity?.unseen ?? 0) + avisosNuevos}</span>}
       </button>
       <button className={`avatar${menu ? ' on' : ''}`} onClick={() => setMenu(true)} aria-label="Cuenta del profe">
         <Avatar id="coach" name={byId.get('coach')?.name ?? 'Profe'} size={40} />
@@ -147,7 +161,8 @@ function CoachHome({ onLogout, authEnabled }: { onLogout: () => void; authEnable
               {tab === 'hoy' && (
                 <HoyView fin={fin} right={right} onOpen={openStudent} onAttendance={onAttendance} reload={loadFin} toast={showToast} />
               )}
-              {tab === 'finanzas' && <FinanzasView fin={fin} right={right} onOpen={openStudent} reload={loadFin} toast={showToast} />}
+              {tab === 'finanzas' && <FinanzasView fin={fin} right={right} onOpen={openStudent} reload={loadFin} toast={showToast} onBack={() => setTab('mas')} />}
+              {tab === 'asistencia' && <AttendanceRegister fin={fin} right={right} onOpen={openStudent} onBack={() => setTab('mas')} />}
               {tab === 'comunidad' && (
                 <>
                   <TopHeader title="Comunidad" right={right} />
@@ -158,8 +173,11 @@ function CoachHome({ onLogout, authEnabled }: { onLogout: () => void; authEnable
                 <>
                   <TopHeader title="Más" right={right} />
                   <Enter>
-                    <button className="menuopt" onClick={() => setTab('comunidad')}>
-                      <span className="ic">{Icon.chat}</span><span><b>Comunidad{unread ? ` · ${unread} sin leer` : ''}</b><small>Mensajes para todos tus alumnos; ellos también pueden escribirse</small></span>
+                    <button className="menuopt" onClick={() => go('finanzas')}>
+                      <span className="ic">{Icon.money}</span><span><b>Finanzas</b><small>Pagos para cobrar, cobrado por mes y reportes</small></span>
+                    </button>
+                    <button className="menuopt" onClick={() => go('asistencia')}>
+                      <span className="ic">{Icon.calendar}</span><span><b>Asistencia</b><small>Registro de presentes y ausencias, por mes y por alumno</small></span>
                     </button>
                     <button className="menuopt" onClick={() => setMenu(true)}>
                       <span className="ic">{Icon.user}</span><span><b>Mi perfil</b><small>Tu nombre y tu foto, como te ven los alumnos</small></span>
@@ -232,7 +250,7 @@ function CoachHome({ onLogout, authEnabled }: { onLogout: () => void; authEnable
               {tab === 'ejercicios' && <ExerciseLibrary avatar={right} toast={(m) => { showToast(m); reloadLibrary(); }} />}
             </div>
           </div>
-          <TabBar tabs={TABS} current={barTab(tab)} onChange={go} />
+          <TabBar tabs={tabs} current={barTab(tab)} onChange={go} />
           {toast}
         </div>
       ) : (
@@ -259,7 +277,7 @@ function CoachHome({ onLogout, authEnabled }: { onLogout: () => void; authEnable
             )}
           </div>
           <div className="bt">
-            <TabBar tabs={TABS} current={barTab(tab)} onChange={go} />
+            <TabBar tabs={tabs} current={barTab(tab)} onChange={go} />
             {toast}
           </div>
         </>
@@ -276,9 +294,9 @@ function CoachHome({ onLogout, authEnabled }: { onLogout: () => void; authEnable
         </Sheet>
       )}
       {showActivity && (
-        <ActivitySheet data={activity} onClose={() => setShowActivity(false)}
+        <ActivitySheet data={activity} avisos={avisos} vistos={vistos} onAvisos={verAvisos} onClose={() => setShowActivity(false)}
           onSeen={() => { coachApi.activitySeen().then(() => setActivity((a) => (a ? { ...a, unseen: 0 } : a))).catch(() => undefined); }}
-          onOpen={(id) => { setShowActivity(false); openStudent(id); }} />
+          onOpen={(id, t) => { setShowActivity(false); openStudent(id, t); }} />
       )}
     </>
   );
@@ -286,12 +304,26 @@ function CoachHome({ onLogout, authEnabled }: { onLogout: () => void; authEnable
 
 // ── actividad ───────────────────────────────────────────────────────────────
 
-function ActivitySheet({ data, onClose, onSeen, onOpen }: {
-  data: { items: ActivityItem[]; unseen: number } | null; onClose: () => void; onSeen: () => void; onOpen: (studentId: string) => void;
+function ActivitySheet({ data, avisos, vistos, onAvisos, onClose, onSeen, onOpen }: {
+  data: { items: ActivityItem[]; unseen: number } | null; onClose: () => void; onSeen: () => void; onOpen: (studentId: string, tab?: DetailTab) => void;
+  avisos: Array<{ s: { id: string; name: string }; key: string; t: string }>; vistos: Set<string>; onAvisos: () => void;
 }) {
-  useEffect(() => { if (data?.unseen) onSeen(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [nuevos] = useState(() => new Set(avisos.filter((a) => !vistos.has(a.key)).map((a) => a.key)));
+  useEffect(() => { if (data?.unseen) onSeen(); onAvisos(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <Sheet title="Actividad" onClose={onClose}>
+      {avisos.length > 0 && (
+        <div className="card" style={{ marginTop: 0 }}>
+          <div className="label">Termina el ciclo</div>
+          {avisos.map((a) => (
+            <div key={a.key} className="act">
+              <div className="act-h"><b>{nuevos.has(a.key) && <span className="new" aria-label="nuevo" />}{a.s.name}</b></div>
+              <div className="hint" style={{ margin: 0 }}>{a.t}</div>
+              <div><button className="btn ghost sm" style={{ paddingLeft: 0 }} onClick={() => onOpen(a.s.id, 'pagos')}>Ver pagos →</button></div>
+            </div>
+          ))}
+        </div>
+      )}
       <p className="hint" style={{ margin: 0 }}>Sesiones que terminaron tus alumnos, con lo que anotaron.</p>
       {!data ? <Skeleton /> : !data.items.length ? <p className="empty">Todavía nadie terminó una rutina asignada.</p> : (
         <div>
@@ -666,8 +698,11 @@ function StudentDetail({ id, initialTab, fin, reloadFin, all, right, toast, onBa
                 reload={() => { reloadFin(); load(); }} />
             )}
             {tab === 'agenda' && (
-              <AgendaEditor student={s} sessions={profile.sessions} toast={toast}
-                onSaved={(st) => { setProfile({ ...profile, student: st }); load(); onChanged(); }} />
+              <>
+                <AgendaEditor student={s} sessions={profile.sessions} toast={toast}
+                  onSaved={(st) => { setProfile({ ...profile, student: st }); load(); onChanged(); }} />
+                <AttendanceLog fin={fin} studentId={s.id} />
+              </>
             )}
             {tab === 'datos' && (
               <DataTab profile={profile} toast={toast} onEvaluate={() => onEvaluate(s)}

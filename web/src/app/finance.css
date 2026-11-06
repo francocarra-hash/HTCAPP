@@ -155,14 +155,31 @@
   /* Siempre en claro, aunque el teléfono esté en modo oscuro. */
   .print-root {
     color-scheme: light;
-    --bg: #F1F3F5; --surface: #FFFFFF; --raised: #FFFFFF; --ink: #14181D; --ink-2: #3B444F; --muted: #5C6672; --line: #D5DAE0;
-    --accent: #2B45D8; --accent-ink: #FFFFFF; --accent-soft: #DDE3FB; --good: #1F7A45; --good-soft: #D7EFE0;
+    --bg: #F7F5F0; --surface: #FFFFFF; --raised: #FFFFFF; --ink: #1D2023; --ink-2: #3C4145; --muted: #606364; --line: #D8D3C9;
+    --accent: #536F58; --accent-ink: #FFFFFF; --accent-soft: #DDE5DB; --good: #4A6650; --good-soft: #DDE5DB;
     --cap-fuerza: #2a78d6; --cap-reactividad: #eb6834; --cap-movilidad: #1baf7a; --cap-estabilidad: #eda100; --cap-control_motor: #e87ba4; --cap-resistencia: #008300;
-    color: #14181D;
+    color: #1D2023;
   }
   .print-root * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .print-root .no-print { display: none !important; }
   .print-root .report { border: none !important; padding: 0 !important; max-width: none !important; }
   .print-root .rp-sec, .print-root .rp-win { break-inside: avoid; }
   @page { margin: 14mm; }
+}
+
+/* registro de asistencia */
+@layer components {
+  .bt .attsum { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 10px 0 4px; }
+  .bt .attsum span { display: grid; gap: 0; background: var(--bg); border-radius: 12px; padding: 8px 6px; text-align: center; font-size: 11.5px; color: var(--muted); }
+  .bt .attsum b { font-family: var(--f-display); font-size: 24px; line-height: 1.05; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .bt .attsum .ok b { color: var(--good); }
+  .bt .attsum .bad b { color: var(--danger); }
+  .bt .attsum .info b { color: var(--accent); }
+  .bt .attdots { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+  .bt .attdots i { font-style: normal; font-family: var(--f-data); font-size: 10px; min-width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; background: var(--chip); color: var(--muted); }
+  .bt .attdots i.p { background: var(--good-soft); color: var(--good); }
+  .bt .attdots i.a { background: var(--danger-soft); color: var(--danger); }
+  .bt .attdots i.e { background: var(--accent-soft); color: var(--accent); }
+  .bt .attdots i.none { background: none; border: 1px dashed var(--line); }
+  .bt .pill.info { background: var(--accent-soft); color: var(--accent); }
 }

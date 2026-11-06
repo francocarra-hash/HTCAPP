@@ -51,7 +51,7 @@ export default function ResultView({
         <div>
           <button onClick={onBack} className="text-sm font-medium text-slate-500 hover:text-slate-900">← Volver</button>
           <h1 className="mt-1 text-xl font-bold tracking-tight sm:text-2xl">{r.client.name}</h1>
-          <p className="text-sm text-slate-500">{r.client.age} años · {r.client.sex === 'MALE' ? 'M' : 'F'} · {new Date(r.timestamp).toLocaleString()}</p>
+          <p className="text-sm text-slate-500">{r.client.age} años · {r.client.sex === 'MALE' ? 'M' : 'F'} · {new Date(r.timestamp).toLocaleString('es-AR')}</p>
         </div>
         <button
           onClick={() => (report ? setReport(null) : loadReport('es'))}

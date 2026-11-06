@@ -8,10 +8,10 @@
  * preflight de Tailwind y pierde contra sus utilidades.
  */
 :root {
-  --bg: #ECEEF0; --surface: #F8F9FA; --raised: #FFFFFF; --thumb: #FFFFFF; --ink: #14181D; --ink-2: #3B444F;
-  --muted: #5C6672; --line: #D5DAE0;
-  --accent: #2B45D8; --accent-ink: #FFFFFF; --accent-soft: #DDE3FB; --good: #1F7A45; --good-fill: #1F8A4C;
-  --good-soft: #D7EFE0; --chip: #E1E5EA; --danger: #B3261E; --danger-soft: #F9DEDC; --warn: #A8530B; --warn-soft: #FBEBD9;
+  --bg: #EDEAE3; --surface: #F7F5F0; --raised: #FCFBF8; --thumb: #FFFFFF; --ink: #1D2023; --ink-2: #3C4145;
+  --muted: #606364; --line: #D8D3C9;
+  --accent: #536F58; --accent-ink: #FFFFFF; --accent-soft: #DDE5DB; --good: #4A6650; --good-fill: #5B7760;
+  --good-soft: #DDE5DB; --chip: #E3DFD6; --danger: #A63D2F; --danger-soft: #F3DDD6; --warn: #8F5B0E; --warn-soft: #F2E5CF;
   --f-display: 'Barlow Condensed', 'Arial Narrow', sans-serif;
   --f-body: 'Hanken Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --f-data: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
@@ -21,18 +21,18 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #101318; --surface: #181C22; --raised: #2A313B; --thumb: #3B4451; --ink: #E9ECEF; --ink-2: #C2C9D1;
-    --muted: #8B95A1; --line: #2A3038;
-    --accent: #8397FF; --accent-ink: #0E1220; --accent-soft: #262D4D; --good: #4CC38A; --good-fill: #3FB57C;
-    --good-soft: #18352A; --chip: #222831; --danger: #FF8A80; --danger-soft: #3A1D1B; --warn: #F0B252; --warn-soft: #3A2C17;
+    --bg: #16181A; --surface: #1E2124; --raised: #2A2E31; --thumb: #3A3F43; --ink: #ECE8E0; --ink-2: #C9C4BA;
+    --muted: #9A9D99; --line: #2F3337;
+    --accent: #9DB8A0; --accent-ink: #14181A; --accent-soft: #263129; --good: #9DB8A0; --good-fill: #86A68B;
+    --good-soft: #223027; --chip: #26292C; --danger: #E8918A; --danger-soft: #3A2220; --warn: #D9AE62; --warn-soft: #362C1B;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #101318; --surface: #181C22; --raised: #2A313B; --thumb: #3B4451; --ink: #E9ECEF; --ink-2: #C2C9D1;
-  --muted: #8B95A1; --line: #2A3038;
-  --accent: #8397FF; --accent-ink: #0E1220; --accent-soft: #262D4D; --good: #4CC38A; --good-fill: #3FB57C;
-  --good-soft: #18352A; --chip: #222831; --danger: #FF8A80; --danger-soft: #3A1D1B; --warn: #F0B252; --warn-soft: #3A2C17;
+  --bg: #16181A; --surface: #1E2124; --raised: #2A2E31; --thumb: #3A3F43; --ink: #ECE8E0; --ink-2: #C9C4BA;
+  --muted: #9A9D99; --line: #2F3337;
+  --accent: #9DB8A0; --accent-ink: #14181A; --accent-soft: #263129; --good: #9DB8A0; --good-fill: #86A68B;
+  --good-soft: #223027; --chip: #26292C; --danger: #E8918A; --danger-soft: #3A2220; --warn: #D9AE62; --warn-soft: #362C1B;
   color-scheme: dark;
 }
 @media (prefers-reduced-motion: reduce) {
