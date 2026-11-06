@@ -9,7 +9,7 @@ import {
   SEX_LABEL, Sex, shortDate, Student, StudentListItem, timeAgo, todayIso, uid, whenLabel, cap,
 } from './data';
 import { AgendaEditor } from './Agenda';
-import { AttendanceLog, AttendanceRegister, FinanzasView, HoyView, StudentPayments, usePayPill } from './Finance';
+import { AttendanceLog, AttendanceRegister, FinanzasView, HoyView, StudentPayments } from './Finance';
 import { makeFin } from './billing';
 import { ReportsPanel } from './Report';
 import { Avatar, Community, PeopleProvider, PhotoPicker, usePeople, useUnread } from './social';
@@ -319,7 +319,7 @@ function ActivitySheet({ data, avisos, vistos, onAvisos, onClose, onSeen, onOpen
             <div key={a.key} className="act">
               <div className="act-h"><b>{nuevos.has(a.key) && <span className="new" aria-label="nuevo" />}{a.s.name}</b></div>
               <div className="hint" style={{ margin: 0 }}>{a.t}</div>
-              <div><button className="btn ghost sm" style={{ paddingLeft: 0 }} onClick={() => onOpen(a.s.id, 'pagos')}>Ver pagos →</button></div>
+              <div><button className="btn ghost sm" style={{ paddingLeft: 0 }} onClick={() => onOpen(a.s.id, 'pagos')}>Ver pagos</button></div>
             </div>
           ))}
         </div>
@@ -339,7 +339,7 @@ function ActivitySheet({ data, avisos, vistos, onAvisos, onClose, onSeen, onOpen
               </div>
               {a.comment && <div className="quote">“{a.comment}”</div>}
               {a.notes.map((n, i) => <div key={i} className="nt"><b>{n.item}:</b> {n.note}</div>)}
-              <div><button className="btn ghost sm" style={{ paddingLeft: 0 }} onClick={() => onOpen(a.student_id)}>Ver perfil →</button></div>
+              <div><button className="btn ghost sm" style={{ paddingLeft: 0 }} onClick={() => onOpen(a.student_id)}>Ver perfil</button></div>
             </div>
           ))}
         </div>
@@ -358,7 +358,6 @@ function StudentList({ students, fin, error, right, onOpen, onCreated, toast }: 
 }) {
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState<ListFilter>('todos');
-  const payPill = usePayPill(fin);
   const fs = (id: string) => fin?.students.find((x) => x.id === id);
   const matches = (s: StudentListItem) => {
     if (filter === 'todos' || !fin) return true;
@@ -409,7 +408,6 @@ function StudentList({ students, fin, error, right, onOpen, onCreated, toast }: 
             </span>
             {trainedToday && <span className="pill done">✓ Entrenó hoy</span>}
             {!trainedToday && s.pending_count > 0 && <span className="pill">Rutina asignada</span>}
-            {(() => { const c = payPill(s.id); return c && <span className={`pill ${c.cls}`}>{c.t}</span>; })()}
             {fin && fs(s.id) && fin.billing(fs(s.id)!).rehab && <span className="pill low">Rehab</span>}
           </span>
         </span>
