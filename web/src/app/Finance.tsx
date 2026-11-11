@@ -2,7 +2,7 @@ import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../api';
 import {
   addDays, Billing, cap, coachApi, emptyBilling, Estado, FinanceStudent, longDate, Mark, parse, Schedule, shortDate,
-  WEEKDAYS, firstName, emptySchedule, Modalidad,
+  WEEKDAYS, firstName, emptySchedule, Modalidad, Payment,
 } from './data';
 import {
   ESTADO_LABEL, Fin, MARKS, MOD_LABEL, money, monthName, queCubre, shiftYM, StudentReport, urgente, weekOf, ym,
@@ -153,7 +153,7 @@ function Ahora({ fin, onOpen, onAttendance }: {
                 <b>{r.s.name}{fin.billing(r.s).rehab && <span className="tag rehab">Rehab</span>}</b>
                 <small>{[r.planned ? 'Rutina asignada' : 'Ver rutina', fin.billing(r.s).enfoque, mk ? MARKS[mk].label : null].filter(Boolean).join(' · ')}</small>
               </span>
-              <span className="chev" aria-hidden="true">›</span>
+              <span className="chev" aria-hidden="true" />
             </button>
           );
         })}
@@ -299,7 +299,6 @@ export function FinanzasView({ fin, right, onOpen, reload, toast, onBack }: { fi
   const [view, setView] = useState<'pagos' | 'reportes'>('pagos');
   const [paying, setPaying] = useState<string | 'new' | null>(null);
   const [reminding, setReminding] = useState<string | null>(null);
-  const [confirm, setConfirm] = useState<string | null>(null);
   const [rango, setRango] = useState('3m');
   if (!fin) return <><TopHeader title="Finanzas" right={right} onBack={onBack} /><Skeleton /></>;
   const m = ym(fin.today);
@@ -312,19 +311,12 @@ export function FinanzasView({ fin, right, onOpen, reload, toast, onBack }: { fi
   const mx = Math.max(1, ...vals);
   const p30 = fin.proximos30().sort((a, b) => String(a.c.due ?? '').localeCompare(String(b.c.due ?? '')));
   const total30 = p30.reduce((a, x) => a + x.c.monto, 0);
-  const ps = [...fin.payments].sort((a, b) => b.paid_on.localeCompare(a.paid_on) || b.created_at.localeCompare(a.created_at));
-  const name = (id: string) => fin.students.find((s) => s.id === id)?.name ?? 'Alumno eliminado';
   const cobrar = st.filter((x) => urgente(x.c) || x.c.k === 'pronto');
   const sinf = st.filter((x) => x.c.k === 'sinfecha' && fin.billing(x.s).cuota == null);
 
-  const del = async (id: string) => {
-    try { await coachApi.deletePayment(id); setConfirm(null); toast('Pago borrado'); reload(); } catch (e) { toast((e as ApiError).message); }
-  };
-
   return (
     <>
-      <TopHeader title="Finanzas" right={right} onBack={onBack}
-        sub={<><span>Cobrado en {monthName(m)}: <b>{money(fin.cobradoEn(m))}</b></span><span>próximos 30 días: <b>{money(total30)}</b></span></>} />
+      <TopHeader title="Finanzas" right={right} onBack={onBack} />
       <Seg small value={view} onChange={setView} options={[['pagos', 'Pagos'], ['reportes', 'Reportes']]} />
       <Enter k={view}>
         {view === 'pagos' ? (
@@ -332,6 +324,9 @@ export function FinanzasView({ fin, right, onOpen, reload, toast, onBack }: { fi
             <div className="actions" style={{ marginTop: 12 }}>
               <button className="btn primary wide" onClick={() => setPaying('new')}>{Icon.plus} Registrar pago</button>
             </div>
+
+            <Facturado fin={fin} onPay={setPaying} onRemind={setReminding} onOpen={onOpen} reload={reload} toast={toast} />
+
             <section className="card">
               <div className="card-h"><h2>Para cobrar</h2>{cobrar.length > 0 && <span className="mini">{cobrar.length}</span>}</div>
               {cobrar.length ? (
@@ -351,6 +346,7 @@ export function FinanzasView({ fin, right, onOpen, reload, toast, onBack }: { fi
                 </div>
               </div>
             )}
+
             <div className="fin-cols">
               <section className="card">
                 <div className="card-h"><h2>Cobrado por mes</h2></div>
@@ -370,7 +366,7 @@ export function FinanzasView({ fin, right, onOpen, reload, toast, onBack }: { fi
                   <div className="rows">
                     {p30.map(({ s, c }) => (
                       <button key={s.id} className="frow" onClick={() => setPaying(s.id)}>
-                        <span className="fw"><b>{s.name}</b><small>{c.due ? `${urgente(c) ? 'Tiene que pagar · ' : 'Paga el '}${shortDate(c.due)}` : 'Tiene que pagar'}</small></span>
+                        <span className="fw"><b>{s.name}</b><small>{c.due ? `${urgente(c) ? 'Tiene que pagar, ' : 'Paga el '}${shortDate(c.due)}` : 'Tiene que pagar'}</small></span>
                         <span className="amt">{money(c.monto)}</span>
                       </button>
                     ))}
@@ -378,48 +374,6 @@ export function FinanzasView({ fin, right, onOpen, reload, toast, onBack }: { fi
                 ) : <p className="hint">Nadie paga en los próximos 30 días. Los alumnos sin datos de pago no se cuentan.</p>}
               </section>
             </div>
-
-            <section className="card">
-              <div className="card-h"><h2>Estado de cada alumno</h2><span className="mini">{st.length} activos</span></div>
-              {!st.length ? <p className="hint">No hay alumnos activos.</p> : (
-                <div className="rows">
-                  {st.map(({ s, c }) => (
-                    <div key={s.id} className="frow">
-                      <button className="fw" onClick={() => onOpen(s.id, 'pagos')}>
-                        <b>{s.name}{fin.billing(s).rehab && <span className="tag rehab">Rehab</span>}</b>
-                        <small>{fin.billing(s).cuota != null ? `${money(c.monto)} · ` : ''}{fin.modoTxt(s)}</small>
-                      </button>
-                      <span className="fr-r">
-                        <Pill c={c} />
-                        <span style={{ display: 'flex', gap: 4 }}>
-                          {(urgente(c) || c.k === 'pronto') && <button className="btn sm" onClick={() => setReminding(s.id)}>Recordar</button>}
-                          <button className="btn sm" onClick={() => setPaying(s.id)}>Registrar</button>
-                        </span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="card">
-              <div className="card-h"><h2>Últimos pagos</h2><span className="mini">{ps.length} registrados</span></div>
-              {!ps.length ? <p className="hint">Todavía no hay pagos registrados.</p> : (
-                <div className="rows">
-                  {ps.slice(0, 50).map((p) => (
-                    <div key={p.id} className="frow">
-                      <span className="fw"><b>{name(p.student_id)}</b><small>{shortDate(p.paid_on)} · {queCubre(p)}{p.note ? ` · ${p.note}` : ''}</small></span>
-                      <span className="fr-r">
-                        <span className="amt">{money(p.amount)}</span>
-                        {confirm === p.id
-                          ? <span style={{ display: 'flex', gap: 4 }}><button className="btn sm danger" onClick={() => del(p.id)}>Borrar</button><button className="btn sm" onClick={() => setConfirm(null)}>No</button></span>
-                          : <button className="btn sm ghost" aria-label="Borrar pago" onClick={() => setConfirm(p.id)}>{Icon.trash}</button>}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
           </>
         ) : (
           <Reportes fin={fin} rango={rango} setRango={setRango} onOpen={onOpen} />
@@ -429,6 +383,155 @@ export function FinanzasView({ fin, right, onOpen, reload, toast, onBack }: { fi
         onSaved={() => { setPaying(null); reload(); toast('Pago registrado'); }} toast={toast} />}
       {reminding && <ReminderSheet fin={fin} studentId={reminding} onClose={() => setReminding(null)} toast={toast} />}
     </>
+  );
+}
+
+// ── Facturado: total del período y lo que pagó cada alumno ──────────────────
+
+type Periodo = 'mes' | 'anio' | 'todo';
+
+function Facturado({ fin, onPay, onRemind, onOpen, reload, toast }: {
+  fin: Fin; onPay: (id: string) => void; onRemind: (id: string) => void; onOpen: OpenStudent; reload: () => void; toast: Toast;
+}) {
+  const cur = ym(fin.today);
+  const [per, setPer] = useState<Periodo>('mes');
+  const [cm, setCm] = useState(cur);
+  const [open, setOpen] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<string | null>(null);
+
+  const year = cm.slice(0, 4);
+  const inPer = (f: string) => per === 'todo' || f.startsWith(per === 'mes' ? cm : year);
+  const pays = fin.payments.filter((p) => inPer(p.paid_on));
+  const total = pays.reduce((a, p) => a + p.amount, 0);
+  const byStu = new Map<string, Payment[]>();
+  for (const p of pays) byStu.set(p.student_id, [...(byStu.get(p.student_id) ?? []), p]);
+  // Los activos aparecen aunque no hayan pagado: así se ve quién falta.
+  const ids = new Set([...byStu.keys(), ...fin.activos().map((x) => x.id)]);
+  const nameOf = (id: string) => fin.students.find((x) => x.id === id)?.name ?? 'Alumno eliminado';
+  const rows = [...ids].map((id) => {
+    const ps = byStu.get(id) ?? [];
+    return {
+      id, name: nameOf(id), n: ps.length, sum: ps.reduce((a, p) => a + p.amount, 0), last: ps.map((p) => p.paid_on).sort().pop() ?? null,
+      ever: ps.length > 0 || fin.payments.some((p) => p.student_id === id),
+    };
+  }).sort((x, y) => x.name.localeCompare(y.name));
+  const pagaron = rows.filter((r) => r.n);
+  const sinPago = rows.filter((r) => !r.n);
+
+  const step = (k: number) => {
+    const next = per === 'mes' ? shiftYM(cm, k) : `${Number(year) + k}${cm.slice(4)}`;
+    setCm(next > cur ? cur : next);
+  };
+  const atEnd = per === 'mes' ? cm >= cur : year >= cur.slice(0, 4);
+  const label = per === 'mes' ? `${cap(monthName(cm))} ${year}` : year;
+  const sinPagos = per === 'mes' ? `Sin pagos en ${monthName(cm)}` : per === 'anio' ? `Sin pagos en ${year}` : 'Sin pagos registrados';
+
+  const del = async (id: string) => {
+    try { await coachApi.deletePayment(id); setConfirm(null); toast('Pago borrado'); reload(); } catch (e) { toast((e as ApiError).message); }
+  };
+
+  return (
+    <section className="card">
+      <div className="card-h">
+        <h2>Facturado</h2>
+        {per !== 'todo' && (
+          <div className="pernav">
+            <button className="btn sm" aria-label={per === 'mes' ? 'Mes anterior' : 'Año anterior'} onClick={() => step(-1)}>‹</button>
+            <span>{label}</span>
+            <button className="btn sm" aria-label={per === 'mes' ? 'Mes siguiente' : 'Año siguiente'} disabled={atEnd} onClick={() => step(1)}>›</button>
+          </div>
+        )}
+      </div>
+      <Seg small value={per} onChange={(v) => { setPer(v); setOpen(null); }} options={[['mes', 'Mes'], ['anio', 'Año'], ['todo', 'Todo']]} />
+      <div className="fin-total">
+        <b>{money(total)}</b>
+        <small>{pays.length ? `${pays.length === 1 ? '1 pago' : `${pays.length} pagos`} de ${byStu.size === 1 ? '1 alumno' : `${byStu.size} alumnos`}` : 'Todavía no hay pagos en este período'}</small>
+      </div>
+      {[pagaron, sinPago].map((group, gi) => group.length > 0 && (
+      <div key={gi} className="rows">
+        {gi === 1 && <div className="lgroup">{sinPagos} ({group.length})</div>}
+        {group.map((r) => {
+          const isOpen = open === r.id;
+          return (
+            <div key={r.id} className={`lrow${isOpen ? ' open' : ''}`}>
+              <button className="frow" aria-expanded={isOpen} onClick={() => { setOpen(isOpen ? null : r.id); setConfirm(null); }}>
+                <span className="fw">
+                  <b>{r.name}</b>
+                  <small>{r.n ? `${r.n === 1 ? '1 pago' : `${r.n} pagos`}, el último el ${shortDate(r.last!)}` : r.ever ? 'Tocá para ver sus pagos anteriores' : 'Todavía no tiene pagos registrados'}</small>
+                </span>
+                <span className={`amt${r.sum ? '' : ' zero'}`}>{r.sum ? money(r.sum) : '—'}</span>
+                <span className="chev" aria-hidden="true">›</span>
+              </button>
+              {isOpen && (
+                <Ledger fin={fin} id={r.id} confirm={confirm} setConfirm={setConfirm} onDelete={del}
+                  onPay={onPay} onRemind={onRemind} onOpen={onOpen} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      ))}
+    </section>
+  );
+}
+
+/** Registro de pagos de un alumno, mes a mes, con la fecha de cada pago. */
+function Ledger({ fin, id, confirm, setConfirm, onDelete, onPay, onRemind, onOpen }: {
+  fin: Fin; id: string; confirm: string | null; setConfirm: (id: string | null) => void; onDelete: (id: string) => void;
+  onPay: (id: string) => void; onRemind: (id: string) => void; onOpen: OpenStudent;
+}) {
+  const [all, setAll] = useState(false);
+  const s = fin.students.find((x) => x.id === id);
+  const pays = s ? fin.pagosDe(id) : fin.payments.filter((p) => p.student_id === id);
+  const byMonth = new Map<string, Payment[]>();
+  for (const p of pays) byMonth.set(ym(p.paid_on), [...(byMonth.get(ym(p.paid_on)) ?? []), p]);
+  const first = pays.length ? ym(pays[0]!.paid_on) : null;
+  const top = [ym(fin.today), ...byMonth.keys()].sort().pop()!;
+  const months: string[] = [];
+  if (first) for (let mm = top; mm >= first && months.length < 240; mm = shiftYM(mm, -1)) months.push(mm);
+  const shown = all ? months : months.slice(0, 12);
+  const activo = s && fin.estado(s).estado === 'activo';
+  const c = activo ? fin.estadoPago(s) : null;
+
+  return (
+    <div className="ledger">
+      {s && (
+        <p className="lstate">
+          {c ? <Pill c={c} /> : <span className="pill">{ESTADO_LABEL[fin.estado(s).estado]}</span>}
+          <span>{fin.modoTxt(s)}</span>
+        </p>
+      )}
+      {!months.length && <p className="hint" style={{ margin: '8px 0' }}>Todavía no tiene pagos registrados.</p>}
+      {shown.map((mm) => {
+        const ps = byMonth.get(mm) ?? [];
+        return (
+          <div key={mm} className="lmonth">
+            <div className="lm-h">
+              <span>{cap(monthName(mm))} {mm.slice(0, 4)}</span>
+              <span className={`amt${ps.length ? '' : ' zero'}`}>{ps.length ? money(ps.reduce((a, p) => a + p.amount, 0)) : 'Sin pagos'}</span>
+            </div>
+            {ps.map((p) => (
+              <div key={p.id} className="lpay">
+                <span className="ld">{shortDate(p.paid_on)}</span>
+                <span className="lc">{queCubre(p)}{p.note ? `, ${p.note}` : ''}</span>
+                <span className="amt">{money(p.amount)}</span>
+                {confirm === p.id
+                  ? <span className="lconf"><button className="btn sm danger" onClick={() => onDelete(p.id)}>Borrar</button><button className="btn sm" onClick={() => setConfirm(null)}>No</button></span>
+                  : <button className="btn sm ghost" aria-label={`Borrar el pago del ${shortDate(p.paid_on)}`} onClick={() => setConfirm(p.id)}>{Icon.trash}</button>}
+              </div>
+            ))}
+          </div>
+        );
+      })}
+      {months.length > shown.length && (
+        <button className="btn sm ghost" onClick={() => setAll(true)}>Ver los {months.length - shown.length} meses anteriores</button>
+      )}
+      <div className="lacts">
+        <button className="btn sm" onClick={() => onPay(id)}>Registrar pago</button>
+        {c && (urgente(c) || c.k === 'pronto') && <button className="btn sm" onClick={() => onRemind(id)}>Recordar</button>}
+        {s && <button className="btn sm ghost" onClick={() => onOpen(id, 'pagos')}>Abrir su ficha</button>}
+      </div>
+    </div>
   );
 }
 

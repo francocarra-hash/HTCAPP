@@ -183,3 +183,32 @@
   .bt .attdots i.none { background: none; border: 1px dashed var(--line); }
   .bt .pill.info { background: var(--accent-soft); color: var(--accent); }
 }
+
+/* Facturado: total del período y registro de cada alumno */
+@layer components {
+  .bt .pernav { display: flex; align-items: center; gap: 4px; }
+  .bt .pernav span { min-width: 112px; text-align: center; font-weight: 600; font-size: 14px; }
+  .bt .fin-total { display: grid; gap: 2px; margin: 14px 0 8px; }
+  .bt .fin-total b { font-family: var(--f-display); font-stretch: 118%; font-weight: 500; font-size: 34px; letter-spacing: -.02em; line-height: 1.05; }
+  .bt .fin-total small { color: var(--muted); font-size: 13px; }
+  .bt .lrow > .frow { gap: 10px; }
+  .bt .lrow > .frow .chev { flex: none; width: 8px; height: 8px; margin: 0 4px 3px 2px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); transition: transform var(--t2) var(--ease); }
+  .bt .lrow.open > .frow .chev { transform: rotate(45deg); }
+  .bt .amt.zero { color: var(--muted); }
+  .bt .ledger { background: var(--bg); border-radius: 10px; padding: 10px 12px 12px; margin: 0 0 10px; }
+  .bt .lstate { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 6px; font-size: 13px; color: var(--muted); }
+  .bt .lmonth { padding: 8px 0 4px; border-top: 1px solid var(--line); }
+  .bt .lm-h { display: flex; justify-content: space-between; gap: 10px; font-weight: 600; font-size: 14px; }
+  .bt .lm-h .amt.zero { font-weight: 400; }
+  .bt .lpay { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; font-size: 14px; min-height: 34px; }
+  .bt .lpay .ld { color: var(--ink-2); }
+  .bt .lpay .lc { color: var(--muted); overflow-wrap: anywhere; }
+  .bt .lpay .btn.sm.ghost { min-height: 32px; padding: 4px 6px; }
+  .bt .lconf { display: flex; gap: 4px; }
+  .bt .lacts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+}
+
+@layer components {
+  .bt .lgroup { font-size: 13px; font-weight: 600; color: var(--muted); padding: 14px 0 6px; border-top: 1px solid var(--line); margin-top: 6px; }
+  .bt .rows > .lgroup + div > .frow { border-top: none; }
+}
