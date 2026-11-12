@@ -2,7 +2,7 @@ import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../api';
 import {
   addDays, Billing, cap, coachApi, emptyBilling, Estado, FinanceStudent, longDate, Mark, parse, Schedule, shortDate,
-  WEEKDAYS, firstName, emptySchedule, Modalidad, Payment,
+  WEEKDAYS, firstName, emptySchedule, Modalidad, Payment, Moneda, PayLink, isMercadoPago,
 } from './data';
 import {
   ESTADO_LABEL, Fin, MARKS, MOD_LABEL, money, monthName, queCubre, shiftYM, StudentReport, urgente, weekOf, ym,
@@ -174,7 +174,7 @@ function PayRow({ fin, s, c, onClick }: { fin: Fin; s: FinanceStudent; c: PaySta
         <b>{s.name}{fin.billing(s).rehab && <span className="tag rehab">Rehab</span>}</b>
         <small>{MOD_LABEL[fin.billing(s).modalidad]} · {fin.modoTxt(s)}</small>
       </span>
-      <span className="fr-r"><span className="amt">{money(c.monto)}</span><Pill c={c} /></span>
+      <span className="fr-r"><span className="amt">{money(c.monto, c.moneda)}</span><Pill c={c} /></span>
     </button>
   );
 }
@@ -354,20 +354,20 @@ export function FinanzasView({ fin, right, onOpen, reload, toast, onBack }: { fi
                   {meses.map((mm, i) => (
                     <div key={mm} className="hbar">
                       <span>{cap(monthName(mm))}{mm === m ? ' (este mes)' : ''}</span>
-                      <span className="amt">{money(vals[i]!)}</span>
+                      <span className="amt">{fin.totalTxt(fin.payments.filter((p) => p.paid_on.startsWith(mm)))}</span>
                       <div className="track"><i style={{ width: `${(vals[i]! / mx) * 100}%` }} /></div>
                     </div>
                   ))}
                 </div>
               </section>
               <section className="card">
-                <div className="card-h"><h2>Próximos 30 días</h2><span className="amt">{money(total30)}</span></div>
+                <div className="card-h"><h2>Próximos 30 días</h2><span className="amt">{fin.totalTxt(p30.map(({ s, c }) => ({ student_id: s.id, amount: c.monto })))}</span></div>
                 {p30.length ? (
                   <div className="rows">
                     {p30.map(({ s, c }) => (
                       <button key={s.id} className="frow" onClick={() => setPaying(s.id)}>
                         <span className="fw"><b>{s.name}</b><small>{c.due ? `${urgente(c) ? 'Tiene que pagar, ' : 'Paga el '}${shortDate(c.due)}` : 'Tiene que pagar'}</small></span>
-                        <span className="amt">{money(c.monto)}</span>
+                        <span className="amt">{money(c.monto, c.moneda)}</span>
                       </button>
                     ))}
                   </div>
@@ -444,7 +444,7 @@ function Facturado({ fin, onPay, onRemind, onOpen, reload, toast }: {
       </div>
       <Seg small value={per} onChange={(v) => { setPer(v); setOpen(null); }} options={[['mes', 'Mes'], ['anio', 'Año'], ['todo', 'Todo']]} />
       <div className="fin-total">
-        <b>{money(total)}</b>
+        <b>{fin.totalTxt(pays)}</b>
         <small>{pays.length ? `${pays.length === 1 ? '1 pago' : `${pays.length} pagos`} de ${byStu.size === 1 ? '1 alumno' : `${byStu.size} alumnos`}` : 'Todavía no hay pagos en este período'}</small>
       </div>
       {[pagaron, sinPago].map((group, gi) => group.length > 0 && (
@@ -459,7 +459,7 @@ function Facturado({ fin, onPay, onRemind, onOpen, reload, toast }: {
                   <b>{r.name}</b>
                   <small>{r.n ? `${r.n === 1 ? '1 pago' : `${r.n} pagos`}, el último el ${shortDate(r.last!)}` : r.ever ? 'Tocá para ver sus pagos anteriores' : 'Todavía no tiene pagos registrados'}</small>
                 </span>
-                <span className={`amt${r.sum ? '' : ' zero'}`}>{r.sum ? money(r.sum) : '—'}</span>
+                <span className={`amt${r.sum ? '' : ' zero'}`}>{r.sum ? money(r.sum, fin.moneda(r.id)) : '—'}</span>
                 <span className="chev" aria-hidden="true">›</span>
               </button>
               {isOpen && (
@@ -508,13 +508,13 @@ function Ledger({ fin, id, confirm, setConfirm, onDelete, onPay, onRemind, onOpe
           <div key={mm} className="lmonth">
             <div className="lm-h">
               <span>{cap(monthName(mm))} {mm.slice(0, 4)}</span>
-              <span className={`amt${ps.length ? '' : ' zero'}`}>{ps.length ? money(ps.reduce((a, p) => a + p.amount, 0)) : 'Sin pagos'}</span>
+              <span className={`amt${ps.length ? '' : ' zero'}`}>{ps.length ? money(ps.reduce((a, p) => a + p.amount, 0), fin.moneda(id)) : 'Sin pagos'}</span>
             </div>
             {ps.map((p) => (
               <div key={p.id} className="lpay">
                 <span className="ld">{shortDate(p.paid_on)}</span>
                 <span className="lc">{queCubre(p)}{p.note ? `, ${p.note}` : ''}</span>
-                <span className="amt">{money(p.amount)}</span>
+                <span className="amt">{money(p.amount, fin.moneda(id))}</span>
                 {confirm === p.id
                   ? <span className="lconf"><button className="btn sm danger" onClick={() => onDelete(p.id)}>Borrar</button><button className="btn sm" onClick={() => setConfirm(null)}>No</button></span>
                   : <button className="btn sm ghost" aria-label={`Borrar el pago del ${shortDate(p.paid_on)}`} onClick={() => setConfirm(p.id)}>{Icon.trash}</button>}
@@ -752,6 +752,9 @@ export function StudentPayments({ fin, studentId, reload, toast, onAgenda }: {
     ? s.schedule.weekly.map((w) => `${WEEKDAYS[w.weekday]}${w.time ? ` ${w.time}` : ''}`).join(' · ')
     : 'Sin días fijos';
   const moves = (s.schedule?.once ?? []).filter((o) => o.from && (o.date >= fin.today || o.from >= fin.today));
+  const lastPay = fin.pagosDe(s.id).map((p) => p.created_at).sort().pop() ?? '';
+  const aviso = b.pago_avisado && b.pago_avisado > lastPay ? b.pago_avisado : null;
+  const link = b.pago_link && b.pago_link.creado > lastPay ? b.pago_link : null;
 
   const del = async (id: string) => {
     try { await coachApi.deletePayment(id); setConfirm(null); toast('Pago borrado'); reload(); } catch (e) { toast((e as ApiError).message); }
@@ -774,7 +777,7 @@ export function StudentPayments({ fin, studentId, reload, toast, onAgenda }: {
           <dt>Modalidad</dt><dd>{MOD_LABEL[b.modalidad]}{fin.isAsinc(s) ? '' : ` · ${fin.clasesSem(s)} ${fin.clasesSem(s) === 1 ? 'clase' : 'clases'} por semana`}</dd>
           {!fin.isAsinc(s) && <><dt>Horario</dt><dd>{horario} <button className="linkbtn" onClick={onAgenda}>Agenda</button></dd></>}
           {prog && <><dt>Programación</dt><dd>{b.prog_pendiente ? 'Ya pagó, falta mandarle la próxima' : b.prog_enviada ? `Última el ${fmtLong(b.prog_enviada)} · próxima el ${fmtLong(prog.prox)}` : 'Sin envío registrado'}</dd></>}
-          <dt>Honorarios</dt><dd>{b.cuota != null ? <><span className="amt">{money(fin.cuotaEn(s, fin.today))}</span> · {fin.modoTxt(s)}</> : <span className="hint">Sin cargar</span>}</dd>
+          <dt>Honorarios</dt><dd>{b.cuota != null ? <><span className="amt">{money(fin.cuotaEn(s, fin.today), fin.moneda(s))}</span> · {fin.modoTxt(s)}</> : <span className="hint">Sin cargar</span>}</dd>
           {sd && <><dt>Paquete</dt><dd>{sd.restan > 0 ? `Le ${sd.restan === 1 ? 'queda 1 clase' : `quedan ${sd.restan} clases`}` : sd.restan === 0 ? 'Terminó el paquete' : `Debe ${-sd.restan} ${-sd.restan === 1 ? 'clase' : 'clases'}`}{c?.due && sd.restan >= 0 ? ` · paga el ${fmtLong(c.due)}` : ''}</dd></>}
           {!sd && c?.due && <><dt>Vence</dt><dd>{fmtLong(c.due)}</dd></>}
           <dt>Enfoque</dt><dd>{b.enfoque || '—'}</dd>
@@ -786,12 +789,19 @@ export function StudentPayments({ fin, studentId, reload, toast, onAgenda }: {
           {!fin.isAsinc(s) && est.estado === 'activo' && <button className="btn" onClick={() => setMoving(true)}>Pasar una clase</button>}
           <button className="btn" onClick={() => setEditing(true)}>{Icon.edit} Honorarios y datos</button>
         </div>
+        {aviso && (
+          <div className="phase warn" style={{ marginTop: 12 }}><span className="ph-tag">A confirmar</span>
+            <div>Avisó desde la app que pagó el {shortDate(aviso.slice(0, 10))}. Cuando lo verifiques, registrá el pago.</div>
+          </div>
+        )}
         {moves.length > 0 && (
           <div className="phase" style={{ marginTop: 12 }}><span className="ph-tag">Cambios</span>
             <div>{moves.map((o) => <div key={o.from!}>Clase del {shortDate(o.from!)} pasada al {shortDate(o.date)}{o.time ? ` · ${o.time}` : ''}</div>)}</div>
           </div>
         )}
       </section>
+
+      <PayLinkCard fin={fin} s={s} link={link} suggested={c?.monto ?? fin.cuotaEn(s, fin.today)} toast={toast} reload={reload} />
 
       {!fin.isAsinc(s) && (
         <section className="card">
@@ -808,14 +818,14 @@ export function StudentPayments({ fin, studentId, reload, toast, onAgenda }: {
       )}
 
       <section className="card">
-        <div className="card-h"><h2>Pagos</h2><span className="mini">Total {money(total)}</span></div>
+        <div className="card-h"><h2>Pagos</h2><span className="mini">Total {money(total, fin.moneda(s))}</span></div>
         {ps.length ? (
           <div className="rows">
             {ps.map((p) => (
               <div key={p.id} className="frow">
                 <span className="fw"><b>{queCubre(p)}</b><small>Pagó el {shortDate(p.paid_on)}{p.note ? ` · ${p.note}` : ''}</small></span>
                 <span className="fr-r">
-                  <span className="amt">{money(p.amount)}</span>
+                  <span className="amt">{money(p.amount, fin.moneda(s))}</span>
                   {confirm === p.id
                     ? <span style={{ display: 'flex', gap: 4 }}><button className="btn sm danger" onClick={() => del(p.id)}>Borrar</button><button className="btn sm" onClick={() => setConfirm(null)}>No</button></span>
                     : <button className="btn sm ghost" aria-label="Borrar pago" onClick={() => setConfirm(p.id)}>{Icon.trash}</button>}
@@ -836,8 +846,8 @@ export function StudentPayments({ fin, studentId, reload, toast, onAgenda }: {
               return (
                 <div key={x.desde} className="frow">
                   <span className="fw"><b>{x.desde < '1900' ? 'Monto anterior' : `Desde el ${fmtLong(x.desde)}`}</b>
-                    <small>{prev ? (pct !== null ? `${pct > 0 ? '+' : ''}${pct}% sobre ${money(prev.monto)}` : 'Cambio') : 'Antes del primer cambio registrado'}</small></span>
-                  <span className="amt">{money(x.monto)}</span>
+                    <small>{prev ? (pct !== null ? `${pct > 0 ? '+' : ''}${pct}% sobre ${money(prev.monto, fin.moneda(s))}` : 'Cambio') : 'Antes del primer cambio registrado'}</small></span>
+                  <span className="amt">{money(x.monto, fin.moneda(s))}</span>
                 </div>
               );
             })}
@@ -849,6 +859,78 @@ export function StudentPayments({ fin, studentId, reload, toast, onAgenda }: {
       {reminding && <ReminderSheet fin={fin} studentId={s.id} onClose={() => setReminding(false)} toast={toast} />}
       {moving && <MoveSheet fin={fin} studentId={s.id} onClose={() => setMoving(false)} onSaved={(m) => { setMoving(false); reload(); toast(m); }} />}
     </>
+  );
+}
+
+/** Link de Mercado Pago para la cuota que sigue: lo ve el alumno en "Mi plan y pagos". */
+function PayLinkCard({ fin, s, link, suggested, toast, reload }: {
+  fin: Fin; s: FinanceStudent; link: PayLink | null; suggested: number; toast: Toast; reload: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [url, setUrl] = useState('');
+  const [monto, setMonto] = useState('');
+  const [detalle, setDetalle] = useState('');
+  const [busy, setBusy] = useState(false);
+  const moneda = fin.moneda(s);
+  const cuota = fin.cuotaEn(s, fin.today);
+  const save = async (next: PayLink | null) => {
+    setBusy(true);
+    try {
+      await coachApi.updateStudent(s.id, { billing: { ...fin.billing(s), pago_link: next } });
+      setEditing(false);
+      reload();
+      toast(next ? 'Link de pago guardado' : 'Link quitado');
+    } catch (e) { toast((e as ApiError).message); } finally { setBusy(false); }
+  };
+  const open = () => { setUrl(''); setMonto(suggested ? String(suggested) : ''); setDetalle(''); setEditing(true); };
+  const valid = isMercadoPago(url) && monto !== '' && Number(monto) > 0;
+  return (
+    <section className="card">
+      <div className="card-h">
+        <h2>Link de pago</h2>
+        {!editing && <button className="btn sm" onClick={open}>{link ? 'Cambiar' : <>{Icon.plus} Cargar link</>}</button>}
+      </div>
+      {!editing && (link ? (
+        <>
+          <div className="paylink">
+            <span className="fw"><b>{money(link.monto, link.moneda)}</b><small>{link.detalle || 'Próxima cuota'} · cargado el {shortDate(link.creado.slice(0, 10))}</small></span>
+            <a className="btn sm" href={link.url} target="_blank" rel="noopener noreferrer">Abrir</a>
+          </div>
+          {link.moneda !== moneda || (cuota && link.monto !== cuota)
+            ? <p className="hint warn-t">El link no coincide con sus honorarios ({money(cuota, moneda)}). Revisá que sea el correcto.</p>
+            : null}
+          <div className="actions" style={{ marginTop: 6 }}><button className="btn sm ghost" disabled={busy} onClick={() => save(null)}>Quitar link</button></div>
+        </>
+      ) : <p className="hint">Pegá el link de cobro de Mercado Pago de su próxima cuota y lo ve en su perfil con el botón para pagar. Se oculta solo cuando registrás el pago.</p>)}
+      {editing && (
+        <>
+          <div className="fields">
+            <div className="field full">
+              <label htmlFor="pl-url">Link de Mercado Pago</label>
+              <input id="pl-url" inputMode="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://mpago.la/…" />
+              {url && !isMercadoPago(url) && <small className="err">Tiene que ser un link https de Mercado Pago (mercadopago.com.ar, mpago.la o mpago.li).</small>}
+            </div>
+            <div className="field">
+              <label htmlFor="pl-monto">Importe del link ({moneda === 'ARS' ? '$' : 'US$'})</label>
+              <input id="pl-monto" type="number" inputMode="decimal" min={0} step="any" value={monto} onChange={(e) => setMonto(e.target.value)} />
+              {monto !== '' && cuota > 0 && Number(monto) !== cuota && <small>Sus honorarios son {money(cuota, moneda)}: el importe tiene que coincidir con lo que configuraste en Mercado Pago.</small>}
+            </div>
+            <div className="field">
+              <label htmlFor="pl-det">Detalle (opcional)</label>
+              <input id="pl-det" value={detalle} onChange={(e) => setDetalle(e.target.value)} placeholder="Ej.: paquete de 8 clases" />
+            </div>
+          </div>
+          <p className="hint">Que el alumno abra el link no marca la cuota como pagada: cuando te llegue el pago, registralo acá.</p>
+          <div className="actions">
+            <button className="btn primary" disabled={busy || !valid}
+              onClick={() => save({ url: url.trim(), monto: Number(monto), moneda, detalle: detalle.trim() || null, creado: new Date().toISOString() })}>
+              {busy ? 'Guardando…' : 'Guardar link'}
+            </button>
+            <button className="btn ghost" onClick={() => setEditing(false)}>Cancelar</button>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -928,7 +1010,13 @@ function BillingForm({ fin, s, onCancel, onSaved, toast }: { fin: Fin; s: Financ
           </>
         )}
         <div className="field">
-          <label htmlFor="b-cuota">Honorarios (US$)</label>
+          <label htmlFor="b-mon">Moneda</label>
+          <select id="b-mon" value={b.moneda ?? 'USD'} onChange={(e) => set({ moneda: e.target.value as Moneda })}>
+            <option value="USD">Dólares (US$)</option><option value="ARS">Pesos ($)</option>
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="b-cuota">Honorarios ({b.moneda === 'ARS' ? '$' : 'US$'})</label>
           <input id="b-cuota" type="number" inputMode="decimal" min={0} step="any" value={cuota} onChange={(e) => setCuota(e.target.value)} />
         </div>
         {changedCuota && (

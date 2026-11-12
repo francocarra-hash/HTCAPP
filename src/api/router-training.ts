@@ -21,6 +21,10 @@ import { exerciseGroups, itemText, Routine, routineFromParsed, RoutineItem, Rout
 import { localNow, nextSessions, ScheduleSchema } from '../training/schedule';
 import { Completion, NewSession, StoredSession, Student, TrainingRepository } from '../training/repository';
 import { AttendanceInput, BillingSchema, PaymentInput } from '../training/billing';
+import {
+  dataQuality, Execution, prescribedOf, RecordInput, SessionResponse, Source,
+} from '../training/execution';
+import { buildMonitoring, responseContext, routineDiff } from '../training/monitoring';
 import { buildReport, cycleOf, CYCLE_DAYS, ReportInput } from '../training/report';
 
 export interface RoutineItemView extends RoutineItem { capacity: CapacityId | null; video: string | null }
@@ -89,6 +93,9 @@ const SessionPatchInput = z.object({
   status: Status.optional(),
   routine: RoutineSchema.optional(),
   participant_ids: z.array(z.string().uuid()).min(1).optional(),
+  /** Por qué se modificó la programación (opcional; queda en el registro de cambios). */
+  change_category: z.enum(['progresar', 'mantener', 'reducir', 'cambiar_ejercicios', 'adaptar']).nullable().optional(),
+  change_reason: z.string().trim().max(300).nullable().optional(),
 });
 const VideoUrl = z.string().trim().max(500).regex(/^https?:\/\/\S+$/, 'El video tiene que ser un link que empiece con http.');
 const ExerciseInput = z.object({
@@ -197,6 +204,102 @@ async function studentProfile(repo: TrainingRepository, student: Student, onlyOw
     student, sessions, progress, partners, next_sessions: nextSessions(student.schedule, 3),
     quality: await repo.listQuality(student.id),
   };
+}
+
+// ── lo realizado: registro por serie y respuesta a la sesión ────────────────
+
+type RecordBody = ReturnType<typeof RecordInput.parse>;
+
+/**
+ * Guarda lo realizado por un alumno en una sesión. Cada ejercicio queda con la
+ * foto de lo indicado en ese momento; corregir algo ya registrado sube la
+ * versión y deja la anterior en el registro de cambios. El alumno no pisa lo
+ * que registró el profe.
+ */
+async function saveRecord(
+  repo: TrainingRepository, session: StoredSession, student: Student, body: RecordBody, source: Source,
+): Promise<{ executions: Execution[]; response: SessionResponse | null; skipped: string[] }> {
+  const students = new Map((await repo.listStudents()).map((x) => [x.id, x]));
+  let routine = routineOf(session, students);
+  // Sesión cargada como texto: se fija la rutina derivada para que los ids de los ejercicios no cambien.
+  if (!session.routine) {
+    const fixed = await repo.updateSession(session.id, { routine });
+    routine = fixed?.routine ?? routine;
+  }
+  const info = await exerciseInfo(repo);
+  const items = new Map<string, { it: RoutineItem; block: { title: string; rounds: number | null } }>();
+  for (const b of routine.blocks) {
+    if (b.kind === 'notes') continue;
+    for (const g of b.groups) for (const it of g.items) items.set(it.id, { it, block: { title: b.title, rounds: b.rounds } });
+  }
+  const existing = new Map((await repo.listExecutions({ sessionId: session.id, studentId: student.id })).map((e) => [e.item_id, e]));
+  const actor = source === 'coach' ? 'coach' : `client:${student.id}`;
+  const reason = body.reason || null;
+  const skipped: string[] = [];
+  for (const d of body.executions) {
+    const found = items.get(d.item_id);
+    if (!found) { skipped.push(d.item_id); continue; }
+    const prev = existing.get(d.item_id);
+    if (source === 'client' && prev?.source === 'coach') { skipped.push(d.item_id); continue; }
+    const empty = !d.sets.length && !d.notes;
+    if (empty) {
+      if (prev) {
+        const gone = await repo.deleteExecution(session.id, student.id, d.item_id);
+        if (gone) await repo.addChange({ entity: 'execution', entity_id: gone.id, student_id: student.id, session_id: session.id, action: 'delete', actor, category: null, reason, before: gone, after: null });
+      }
+      continue;
+    }
+    const name = info(itemKey(found.it), found.it.name).name ?? found.it.name;
+    const sets = [...d.sets].sort((a, b) => a.n - b.n || (a.side ?? '').localeCompare(b.side ?? ''));
+    const draft = {
+      session_id: session.id, student_id: student.id, item_id: d.item_id, day: session.date,
+      exercise_key: itemKey(found.it), exercise_name: name || found.it.name, variant: d.variant, tracking: d.tracking,
+      load_config: d.load_config, assistance: d.assistance, body_mass_kg: d.body_mass_kg,
+      // La foto de lo indicado se toma la primera vez y no se reescribe.
+      prescribed: prev?.prescribed ?? prescribedOf(found.it, found.block),
+      sets, notes: d.notes, source, data_quality: dataQuality(d.tracking, d.load_config, sets),
+    };
+    if (prev && JSON.stringify({ ...prev, id: 0, version: 0, created_at: 0, updated_at: 0 }) === JSON.stringify({ ...prev, ...draft, id: 0, version: 0, created_at: 0, updated_at: 0 })) continue;
+    const { execution, before } = await repo.saveExecution(draft);
+    await repo.addChange({
+      entity: 'execution', entity_id: execution.id, student_id: student.id, session_id: session.id,
+      action: before ? 'update' : 'create', actor, category: null, reason: before ? reason : null, before, after: execution,
+    });
+  }
+  let response: SessionResponse | null = (await repo.listResponses({ sessionId: session.id, studentId: student.id }))[0] ?? null;
+  if (body.response) {
+    const r = body.response;
+    const prev = response;
+    // El alumno no pisa la respuesta que registró el profe.
+    const blocked = source === 'client' && prev?.source === 'coach';
+    const same = blocked || prev && (['srpe', 'duration_min', 'status', 'fatigue', 'soreness', 'pain', 'pain_area', 'recovery', 'note'] as const).every((k) => prev[k] === r[k]);
+    if (!same) {
+      const saved = await repo.saveResponse({ session_id: session.id, student_id: student.id, ...r, source });
+      response = saved.response;
+      await repo.addChange({
+        entity: 'response', entity_id: `${session.id}:${student.id}`, student_id: student.id, session_id: session.id,
+        action: saved.before ? 'update' : 'create', actor, category: null, reason: saved.before ? reason : null, before: saved.before, after: saved.response,
+      });
+    }
+  }
+  return { executions: await repo.listExecutions({ sessionId: session.id, studentId: student.id }), response, skipped };
+}
+
+async function monitoringFor(repo: TrainingRepository, student: Student) {
+  const sessions = await sessionViews(repo, await repo.listSessions(student.id), student.id);
+  return buildMonitoring({
+    today: localNow().date,
+    studentName: student.name,
+    sessions: sessions.map((x) => {
+      const c = x.completions.find((y) => y.student_id === student.id);
+      return { id: x.id, date: x.date, status: x.status, routine: x.routine, checks: c ? c.checks : null, completed_at: c?.completed_at ?? null };
+    }),
+    executions: await repo.listExecutions({ studentId: student.id }),
+    responses: await repo.listResponses({ studentId: student.id }),
+    attendance: (await repo.listAttendance(student.id)).map((a) => ({ day: a.day, mark: a.mark })),
+    changes: await repo.listChanges({ studentId: student.id }),
+    info: await exerciseInfo(repo),
+  });
 }
 
 // ── informes de 4 semanas ───────────────────────────────────────────────────
@@ -359,6 +462,13 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
     if (patch.username === coachUsername()) {
       fail(res, 409, 'USERNAME_TAKEN', 'Ese usuario está reservado para el profe.');
       return;
+    }
+    // La fecha del link de pago la pone el servidor (se compara con la de los pagos registrados).
+    if (patch.billing?.pago_link) {
+      const prev = (await repo.getStudent(req.params.id!))?.billing?.pago_link;
+      const l = patch.billing.pago_link;
+      const same = prev && prev.url === l.url && prev.monto === l.monto && prev.moneda === l.moneda && prev.detalle === l.detalle;
+      patch.billing = { ...patch.billing, pago_link: { ...l, creado: same ? prev.creado : new Date().toISOString() } };
     }
     const student = await repo.updateStudent(req.params.id!, patch);
     if (!student) {
@@ -567,18 +677,53 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
         return;
       }
     }
+    const prevSession = await repo.getSession(req.params.id!);
+    if (!prevSession) {
+      fail(res, 404, 'NOT_FOUND', 'Sesión inexistente.');
+      return;
+    }
+    const students = new Map((await repo.listStudents()).map((x) => [x.id, x]));
+    const beforeRoutine = routineOf(prevSession, students);
+    const { change_category, change_reason, ...rest } = patch;
     // Si el coach corrige la fecha, la nota de "fecha fuera de orden" ya no aplica.
-    const update = { ...patch, routine: patch.routine as Routine | undefined, ...(patch.date ? { date_note: null } : {}) };
+    const update = { ...rest, routine: rest.routine as Routine | undefined, ...(rest.date ? { date_note: null } : {}) };
     if (update.routine === undefined) delete update.routine;
     const session = await repo.updateSession(req.params.id!, update);
     if (!session) {
       fail(res, 404, 'NOT_FOUND', 'Sesión inexistente.');
       return;
     }
+    // Registro de cambios de la programación: antes, después, qué cambió y por qué.
+    const lines = update.routine ? routineDiff(beforeRoutine, update.routine) : [];
+    if (rest.date && rest.date !== prevSession.date) lines.push(`Fecha: ${prevSession.date} → ${rest.date}`);
+    if (lines.length) {
+      for (const sid of new Set([...prevSession.participant_ids, ...session.participant_ids])) {
+        const last = (await repo.listResponses({ studentId: sid })).sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
+        await repo.addChange({
+          entity: 'session', entity_id: session.id, student_id: sid, session_id: session.id, action: 'update', actor: 'coach',
+          category: change_category ?? null, reason: change_reason || null,
+          before: { date: prevSession.date, title: prevSession.title, routine: beforeRoutine },
+          after: { date: session.date, title: session.title, routine: update.routine ?? beforeRoutine, lines, context: responseContext(last, undefined) },
+        });
+      }
+    }
     res.json({ session: (await sessionViews(repo, [session]))[0] });
   }));
 
   router.delete('/sessions/:id', handle(async (req, res) => {
+    const prev = await repo.getSession(req.params.id!);
+    if (prev) {
+      const students = new Map((await repo.listStudents()).map((x) => [x.id, x]));
+      const execs = await repo.listExecutions({ sessionId: prev.id });
+      for (const sid of prev.participant_ids) {
+        await repo.addChange({
+          entity: 'session', entity_id: prev.id, student_id: sid, session_id: prev.id, action: 'delete', actor: 'coach',
+          category: null, reason: null,
+          before: { date: prev.date, title: prev.title, routine: routineOf(prev, students), executions: execs.filter((e) => e.student_id === sid) },
+          after: null,
+        });
+      }
+    }
     const ok = await repo.deleteSession(req.params.id!);
     if (!ok) {
       fail(res, 404, 'NOT_FOUND', 'Sesión inexistente.');
@@ -754,6 +899,57 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
     res.json({ ok: true });
   }));
 
+  // ── lo realizado y monitoreo de carga ──
+  router.get('/students/:id/monitoring', handle(async (req, res) => {
+    const student = await repo.getStudent(req.params.id!);
+    if (!student) {
+      fail(res, 404, 'NOT_FOUND', 'Alumno inexistente.');
+      return;
+    }
+    res.json({ monitoring: await monitoringFor(repo, student) });
+  }));
+
+  router.get('/sessions/:id/record/:studentId', handle(async (req, res) => {
+    const session = await repo.getSession(req.params.id!);
+    if (!session || !session.participant_ids.includes(req.params.studentId!)) {
+      fail(res, 404, 'NOT_FOUND', 'Sesión inexistente.');
+      return;
+    }
+    res.json({
+      executions: await repo.listExecutions({ sessionId: session.id, studentId: req.params.studentId! }),
+      response: (await repo.listResponses({ sessionId: session.id, studentId: req.params.studentId! }))[0] ?? null,
+      changes: (await repo.listChanges({ sessionId: session.id, studentId: req.params.studentId! })).filter((c) => c.entity !== 'session'),
+    });
+  }));
+
+  router.put('/sessions/:id/record/:studentId', handle(async (req, res) => {
+    const body = RecordInput.parse(req.body);
+    const session = await repo.getSession(req.params.id!);
+    const student = await repo.getStudent(req.params.studentId!);
+    if (!session || !student || !session.participant_ids.includes(student.id)) {
+      fail(res, 404, 'NOT_FOUND', 'Sesión inexistente.');
+      return;
+    }
+    res.json(await saveRecord(repo, session, student, body, 'coach'));
+  }));
+
+  /** Últimos alumnos abiertos en Planificar (del profe, se conservan entre sesiones y dispositivos). */
+  router.get('/prefs/plan-recent', handle(async (_req, res) => {
+    const ids = (await repo.getSetting<string[]>('plan_recent')) ?? [];
+    res.json({ ids });
+  }));
+  router.put('/prefs/plan-recent', handle(async (req, res) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.body);
+    if (!(await repo.getStudent(id))) {
+      fail(res, 404, 'NOT_FOUND', 'Alumno inexistente.');
+      return;
+    }
+    const prev = (await repo.getSetting<string[]>('plan_recent')) ?? [];
+    const ids = [id, ...prev.filter((x) => x !== id)].slice(0, 12);
+    await repo.setSetting('plan_recent', ids);
+    res.json({ ids });
+  }));
+
   router.post('/activity/seen', handle(async (_req, res) => {
     await repo.markActivitySeen();
     res.json({ ok: true });
@@ -848,6 +1044,67 @@ export function createStudentRouter(repo: TrainingRepository): Router {
       session_id: req.params.id!, student_id: res.locals.studentId as string, complete: true, ...input,
     });
     res.json({ completion: c });
+  }));
+
+  /** Lo realizado en una sesión propia: series, esfuerzo y respuesta. */
+  router.get('/sessions/:id/record', handle(async (req, res) => {
+    const s = await ownSession(req, res);
+    if (!s) return;
+    const sid = res.locals.studentId as string;
+    res.json({
+      executions: await repo.listExecutions({ sessionId: s.id, studentId: sid }),
+      response: (await repo.listResponses({ sessionId: s.id, studentId: sid }))[0] ?? null,
+    });
+  }));
+  router.put('/sessions/:id/record', handle(async (req, res) => {
+    const body = RecordInput.parse(req.body);
+    const s = await ownSession(req, res);
+    if (!s) return;
+    const student = await me(res);
+    if (!student) return;
+    res.json(await saveRecord(repo, s, student, body, 'client'));
+  }));
+
+  /**
+   * Mi plan y pagos: lo mismo que usa Finanzas, sólo del alumno y sin datos
+   * internos del profe (enfoque, notas de los pagos, rehabilitación).
+   */
+  router.get('/plan', handle(async (_req, res) => {
+    const student = await me(res);
+    if (!student) return;
+    const [sessions, completions, payments, attendance] = await Promise.all([
+      repo.listSessions(student.id), repo.listCompletions({ studentId: student.id }), repo.listPayments(student.id), repo.listAttendance(student.id),
+    ]);
+    const done = new Set(completions.filter((c) => c.completed_at).map((c) => c.session_id));
+    const realized = sessions.filter((x) => x.status === 'done' || done.has(x.id));
+    const b = student.billing ? BillingSchema.parse(student.billing) : null;
+    const billing = b ? { ...b, enfoque: null, rehab: false, telefono: null } : null;
+    // El link sólo vale para la cuota que sigue: si ya hay un pago cargado después, no se muestra.
+    const lastPay = payments.map((p) => p.created_at).sort().pop() ?? '';
+    if (billing?.pago_link && lastPay && billing.pago_link.creado <= lastPay) billing.pago_link = null;
+    if (billing?.pago_avisado && lastPay && billing.pago_avisado <= lastPay) billing.pago_avisado = null;
+    res.json({
+      today: localNow().date,
+      students: [{
+        id: student.id, name: student.name, username: student.username, billing, schedule: student.schedule, created_at: student.created_at,
+        first_date: realized[0]?.date ?? null,
+        last_date: realized[realized.length - 1]?.date ?? null,
+        session_days: [...new Set(realized.map((x) => x.date))],
+        planned_days: [...new Set(sessions.filter((x) => x.status === 'planned' && !done.has(x.id)).map((x) => x.date))],
+        last_report_start: null,
+      }],
+      payments: payments.map((p) => ({ ...p, note: null })),
+      attendance,
+    });
+  }));
+
+  /** El alumno avisa que pagó: el profe lo ve "a confirmar". No marca la cuota como pagada. */
+  router.post('/plan/aviso', handle(async (_req, res) => {
+    const student = await me(res);
+    if (!student) return;
+    const billing = BillingSchema.parse({ ...(student.billing ?? {}), pago_avisado: new Date().toISOString() });
+    await repo.updateStudent(student.id, { billing });
+    res.json({ ok: true, pago_avisado: billing.pago_avisado });
   }));
 
   router.post('/password', handle(async (req, res) => {

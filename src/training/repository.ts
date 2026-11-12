@@ -10,6 +10,8 @@ import { ProcessPhase } from './process';
 import { Routine } from './routine';
 import { Schedule } from './schedule';
 import { Billing } from './billing';
+import { Execution, SessionResponse } from './execution';
+import { ChangeEntry } from './monitoring';
 
 export type Sex = 'MALE' | 'FEMALE';
 export type SessionStatus = 'planned' | 'done';
@@ -139,6 +141,11 @@ export interface CompletionUpdate {
   comment?: string | null;
 }
 
+export type NewExecution = Omit<Execution, 'id' | 'version' | 'created_at' | 'updated_at'>;
+export type NewResponse = Omit<SessionResponse, 'version' | 'created_at' | 'updated_at'>;
+export type NewChange = Omit<ChangeEntry, 'id' | 'at'>;
+export interface RecordFilter { studentId?: string; sessionId?: string }
+
 export interface TrainingRepository {
   listStudents(): Promise<Student[]>;
   getStudent(id: string): Promise<Student | undefined>;
@@ -203,6 +210,16 @@ export interface TrainingRepository {
   listQuality(studentId: string): Promise<QualityEntry[]>;
   createQuality(q: NewQuality): Promise<QualityEntry>;
   deleteQuality(id: string): Promise<boolean>;
+
+  /** Lo realizado por ejercicio (uno por sesión, alumno e ítem). */
+  listExecutions(filter: RecordFilter): Promise<Execution[]>;
+  /** Crea o corrige (versión + 1). Devuelve la versión anterior para el registro de cambios. */
+  saveExecution(e: NewExecution): Promise<{ execution: Execution; before: Execution | null }>;
+  deleteExecution(sessionId: string, studentId: string, itemId: string): Promise<Execution | null>;
+  listResponses(filter: RecordFilter): Promise<SessionResponse[]>;
+  saveResponse(r: NewResponse): Promise<{ response: SessionResponse; before: SessionResponse | null }>;
+  addChange(c: NewChange): Promise<void>;
+  listChanges(filter: RecordFilter): Promise<ChangeEntry[]>;
 }
 
 const bySessionOrder = (a: StoredSession, b: StoredSession): number =>
@@ -226,6 +243,9 @@ export class InMemoryTrainingRepository implements TrainingRepository {
   private messages: Array<Message & { deleted: boolean }> = [];
   private reads = new Map<string, string>();
   private quality = new Map<string, QualityEntry>();
+  private executions = new Map<string, Execution>();
+  private responses = new Map<string, SessionResponse>();
+  private changes: ChangeEntry[] = [];
 
   private pub(s: Student & { password_hash: string }): Student {
     const { password_hash: _h, ...rest } = s;
@@ -275,6 +295,9 @@ export class InMemoryTrainingRepository implements TrainingRepository {
     for (const [k, a] of this.attendance) if (a.student_id === id) this.attendance.delete(k);
     for (const [k, r] of this.reports) if (r.student_id === id) this.reports.delete(k);
     for (const [k, q] of this.quality) if (q.student_id === id) this.quality.delete(k);
+    for (const [k, e] of this.executions) if (e.student_id === id) this.executions.delete(k);
+    for (const [k, r] of this.responses) if (r.student_id === id) this.responses.delete(k);
+    this.changes = this.changes.filter((c) => c.student_id !== id);
     this.messages = this.messages.filter((m) => m.author_id !== id);
     this.avatars.delete(id);
     for (const [sid, sess] of this.sessions) {
@@ -307,6 +330,8 @@ export class InMemoryTrainingRepository implements TrainingRepository {
   }
   async deleteSession(id: string): Promise<boolean> {
     for (const [k, c] of this.completions) if (c.session_id === id) this.completions.delete(k);
+    for (const [k, e] of this.executions) if (e.session_id === id) this.executions.delete(k);
+    for (const [k, r] of this.responses) if (r.session_id === id) this.responses.delete(k);
     return this.sessions.delete(id);
   }
 
@@ -487,6 +512,49 @@ export class InMemoryTrainingRepository implements TrainingRepository {
   async deleteQuality(id: string): Promise<boolean> {
     return this.quality.delete(id);
   }
+
+  async listExecutions(f: RecordFilter): Promise<Execution[]> {
+    return [...this.executions.values()]
+      .filter((e) => (!f.studentId || e.student_id === f.studentId) && (!f.sessionId || e.session_id === f.sessionId))
+      .sort((a, b) => a.day.localeCompare(b.day) || a.created_at.localeCompare(b.created_at)).map((e) => clone(e));
+  }
+  async saveExecution(e: NewExecution): Promise<{ execution: Execution; before: Execution | null }> {
+    const k = `${e.session_id}|${e.student_id}|${e.item_id}`;
+    const prev = this.executions.get(k) ?? null;
+    const now = new Date().toISOString();
+    const full: Execution = prev
+      ? { ...clone(e), id: prev.id, version: prev.version + 1, created_at: prev.created_at, updated_at: now }
+      : { ...clone(e), id: randomUUID(), version: 1, created_at: now, updated_at: now };
+    this.executions.set(k, full);
+    return { execution: clone(full), before: clone(prev) };
+  }
+  async deleteExecution(sessionId: string, studentId: string, itemId: string): Promise<Execution | null> {
+    const k = `${sessionId}|${studentId}|${itemId}`;
+    const prev = this.executions.get(k) ?? null;
+    this.executions.delete(k);
+    return clone(prev);
+  }
+  async listResponses(f: RecordFilter): Promise<SessionResponse[]> {
+    return [...this.responses.values()]
+      .filter((r) => (!f.studentId || r.student_id === f.studentId) && (!f.sessionId || r.session_id === f.sessionId)).map((r) => clone(r));
+  }
+  async saveResponse(r: NewResponse): Promise<{ response: SessionResponse; before: SessionResponse | null }> {
+    const k = `${r.session_id}|${r.student_id}`;
+    const prev = this.responses.get(k) ?? null;
+    const now = new Date().toISOString();
+    const full: SessionResponse = prev
+      ? { ...clone(r), version: prev.version + 1, created_at: prev.created_at, updated_at: now }
+      : { ...clone(r), version: 1, created_at: now, updated_at: now };
+    this.responses.set(k, full);
+    return { response: clone(full), before: clone(prev) };
+  }
+  async addChange(c: NewChange): Promise<void> {
+    this.changes.push({ ...clone(c), id: randomUUID(), at: new Date().toISOString() });
+  }
+  async listChanges(f: RecordFilter): Promise<ChangeEntry[]> {
+    return this.changes
+      .filter((c) => (!f.studentId || c.student_id === f.studentId) && (!f.sessionId || c.session_id === f.sessionId)).map((c) => clone(c));
+  }
 }
 
 // ── PostgreSQL ──────────────────────────────────────────────────────────────
@@ -586,6 +654,39 @@ const SESSION_SELECT = `
 const COMPLETION_COLS =
   'session_id::text AS session_id, student_id::text AS student_id, checks, notes, completed_at, feeling, comment, coach_seen_at, updated_at';
 const json = (v: unknown): string | null => (v == null ? null : JSON.stringify(v));
+const numOrNull = (v: any): number | null => (v == null ? null : Number(v));
+
+const EXECUTION_COLS = `id::text AS id, session_id::text AS session_id, student_id::text AS student_id, item_id,
+  to_char(day, 'YYYY-MM-DD') AS day, exercise_key, exercise_name, variant, tracking, load_config, assistance, body_mass_kg,
+  prescribed, sets, notes, source, data_quality, version, created_at, updated_at`;
+const toExecution = (r: any): Execution => ({
+  id: r.id, session_id: r.session_id, student_id: r.student_id, item_id: r.item_id, day: r.day,
+  exercise_key: r.exercise_key, exercise_name: r.exercise_name, variant: r.variant ?? null, tracking: r.tracking,
+  load_config: r.load_config ?? null, assistance: r.assistance ?? null, body_mass_kg: numOrNull(r.body_mass_kg),
+  prescribed: r.prescribed, sets: r.sets ?? [], notes: r.notes ?? null, source: r.source, data_quality: r.data_quality,
+  version: r.version, created_at: ts(r.created_at)!, updated_at: ts(r.updated_at)!,
+});
+const RESPONSE_FIELDS = ['srpe', 'duration_min', 'status', 'fatigue', 'soreness', 'pain', 'pain_area', 'recovery', 'note'] as const;
+const RESPONSE_COLS = `session_id::text AS session_id, student_id::text AS student_id, ${RESPONSE_FIELDS.join(', ')}, source, version, created_at, updated_at`;
+const toResponse = (r: any): SessionResponse => ({
+  session_id: r.session_id, student_id: r.student_id, srpe: r.srpe ?? null, duration_min: r.duration_min ?? null,
+  status: r.status ?? null, fatigue: r.fatigue ?? null, soreness: r.soreness ?? null, pain: r.pain ?? null,
+  pain_area: r.pain_area ?? null, recovery: r.recovery ?? null, note: r.note ?? null, source: r.source,
+  version: r.version, created_at: ts(r.created_at)!, updated_at: ts(r.updated_at)!,
+});
+const CHANGE_COLS = `id::text AS id, entity, entity_id, student_id::text AS student_id, session_id::text AS session_id,
+  action, actor, category, reason, before, after, at`;
+const toChange = (r: any): ChangeEntry => ({
+  id: r.id, entity: r.entity, entity_id: r.entity_id, student_id: r.student_id ?? null, session_id: r.session_id ?? null,
+  action: r.action, actor: r.actor, category: r.category ?? null, reason: r.reason ?? null, before: r.before ?? null,
+  after: r.after ?? null, at: ts(r.at)!,
+});
+const filterSql = (f: RecordFilter, params: unknown[]): string => {
+  const w: string[] = [];
+  if (f.studentId) { params.push(f.studentId); w.push(`student_id = ${params.length}`); }
+  if (f.sessionId) { params.push(f.sessionId); w.push(`session_id = ${params.length}`); }
+  return w.length ? `WHERE ${w.join(' AND ')}` : '';
+};
 
 export class PgTrainingRepository implements TrainingRepository {
   constructor(private pool: Pool) {}
@@ -962,6 +1063,68 @@ export class PgTrainingRepository implements TrainingRepository {
   async deleteQuality(id: string): Promise<boolean> {
     const r = await this.pool.query('DELETE FROM training_quality WHERE id = $1 RETURNING id', [id]);
     return r.rows.length > 0;
+  }
+
+  async listExecutions(f: RecordFilter): Promise<Execution[]> {
+    const params: unknown[] = [];
+    const r = await this.pool.query(`SELECT ${EXECUTION_COLS} FROM training_executions ${filterSql(f, params)} ORDER BY day, created_at`, params);
+    return r.rows.map(toExecution);
+  }
+  async saveExecution(e: NewExecution): Promise<{ execution: Execution; before: Execution | null }> {
+    return this.tx(async (q) => {
+      const prev = await q(`SELECT ${EXECUTION_COLS} FROM training_executions WHERE session_id = $1 AND student_id = $2 AND item_id = $3 FOR UPDATE`,
+        [e.session_id, e.student_id, e.item_id]);
+      const vals = [e.day, e.exercise_key, e.exercise_name, e.variant, e.tracking, e.load_config, e.assistance, e.body_mass_kg,
+        json(e.prescribed), json(e.sets), e.notes, e.source, e.data_quality];
+      if (prev.rows.length) {
+        const r = await q(`UPDATE training_executions SET day = $4, exercise_key = $5, exercise_name = $6, variant = $7, tracking = $8,
+            load_config = $9, assistance = $10, body_mass_kg = $11, prescribed = $12, sets = $13, notes = $14, source = $15,
+            data_quality = $16, version = version + 1, updated_at = now()
+          WHERE session_id = $1 AND student_id = $2 AND item_id = $3 RETURNING ${EXECUTION_COLS}`,
+          [e.session_id, e.student_id, e.item_id, ...vals]);
+        return { execution: toExecution(r.rows[0]), before: toExecution(prev.rows[0]) };
+      }
+      const r = await q(`INSERT INTO training_executions (id, session_id, student_id, item_id, day, exercise_key, exercise_name, variant,
+          tracking, load_config, assistance, body_mass_kg, prescribed, sets, notes, source, data_quality)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING ${EXECUTION_COLS}`,
+        [randomUUID(), e.session_id, e.student_id, e.item_id, ...vals]);
+      return { execution: toExecution(r.rows[0]), before: null };
+    });
+  }
+  async deleteExecution(sessionId: string, studentId: string, itemId: string): Promise<Execution | null> {
+    const r = await this.pool.query(
+      `DELETE FROM training_executions WHERE session_id = $1 AND student_id = $2 AND item_id = $3 RETURNING ${EXECUTION_COLS}`,
+      [sessionId, studentId, itemId]);
+    return r.rows[0] ? toExecution(r.rows[0]) : null;
+  }
+  async listResponses(f: RecordFilter): Promise<SessionResponse[]> {
+    const params: unknown[] = [];
+    const r = await this.pool.query(`SELECT ${RESPONSE_COLS} FROM training_session_responses ${filterSql(f, params)}`, params);
+    return r.rows.map(toResponse);
+  }
+  async saveResponse(n: NewResponse): Promise<{ response: SessionResponse; before: SessionResponse | null }> {
+    return this.tx(async (q) => {
+      const prev = await q(`SELECT ${RESPONSE_COLS} FROM training_session_responses WHERE session_id = $1 AND student_id = $2 FOR UPDATE`,
+        [n.session_id, n.student_id]);
+      const vals = [...RESPONSE_FIELDS.map((k) => n[k]), n.source];
+      const r = await q(`INSERT INTO training_session_responses (session_id, student_id, ${RESPONSE_FIELDS.join(', ')}, source)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          ON CONFLICT (session_id, student_id) DO UPDATE SET ${RESPONSE_FIELDS.map((k) => `${k} = EXCLUDED.${k}`).join(', ')},
+            source = EXCLUDED.source, version = training_session_responses.version + 1, updated_at = now()
+          RETURNING ${RESPONSE_COLS}`, [n.session_id, n.student_id, ...vals]);
+      return { response: toResponse(r.rows[0]), before: prev.rows[0] ? toResponse(prev.rows[0]) : null };
+    });
+  }
+  async addChange(c: NewChange): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO training_change_log (id, entity, entity_id, student_id, session_id, action, actor, category, reason, before, after)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [randomUUID(), c.entity, c.entity_id, c.student_id, c.session_id, c.action, c.actor, c.category, c.reason, json(c.before), json(c.after)]);
+  }
+  async listChanges(f: RecordFilter): Promise<ChangeEntry[]> {
+    const params: unknown[] = [];
+    const r = await this.pool.query(`SELECT ${CHANGE_COLS} FROM training_change_log ${filterSql(f, params)} ORDER BY at`, params);
+    return r.rows.map(toChange);
   }
 
 

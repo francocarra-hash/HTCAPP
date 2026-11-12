@@ -1,9 +1,10 @@
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CAP_LABEL, capacityMix, checkableItems, Completion, firstName, fold, groupLabels, itemText, KIND_LABEL, longDate,
-  Routine, RoutineBlock, RoutineItem, routineSummary, Session, studentApi, timeAgo, cap,
+  Routine, RoutineBlock, RoutineItem, routineSummary, Session, studentApi, timeAgo, cap, emptyResponse,
 } from './data';
 import { Celebration } from './Celebration';
+import { RecordSheet } from './Record';
 import { Icon } from './ui';
 import { VideoBtn } from './social';
 
@@ -136,11 +137,13 @@ export function RoutineBlocks({ routine, viewer, completions, names, defaultOpen
 
 // ── rutina interactiva del alumno ───────────────────────────────────────────
 
-export function RoutinePlayer({ session, studentId, studentName, onProgress, onDone }: {
+export function RoutinePlayer({ session, studentId, studentName, onProgress, onDone, toast }: {
   session: Session; studentId: string; studentName: string;
   onProgress: (done: number, total: number) => void;
   onDone: () => void;
+  toast?: (m: string) => void;
 }) {
+  const [recItem, setRecItem] = useState<string | null>(null);
   const viewer = firstName(studentName);
   const routine = session.routine;
   const own = session.completions.find((c) => c.student_id === studentId);
@@ -212,6 +215,7 @@ export function RoutinePlayer({ session, studentId, studentName, onProgress, onD
           {it.dose && <span className="rx">{it.dose}</span>}
           <VideoBtn url={it.video} name={it.name} />
         </div>
+        <button className="nb" aria-label={`Anotar series de ${it.name}`} title="Anotar series" onClick={() => setRecItem(it.id)}>{Icon.progress}</button>
         <button className={`nb${note ? ' has' : ''}`} aria-label={note ? 'Editar nota' : 'Agregar nota'}
           onClick={() => setNoteOpen(noteOpen === it.id ? null : it.id)}>{Icon.note}</button>
         <button className="ck" aria-pressed={on} aria-label={on ? `Desmarcar ${it.name}` : `Marcar ${it.name} como hecho`}
@@ -271,12 +275,19 @@ export function RoutinePlayer({ session, studentId, studentName, onProgress, onD
       {celebrate && (
         <Celebration
           routine={routine} seed={session.id} done={done} total={total} studentName={studentName}
-          onClose={async (feeling, comment) => {
+          onClose={async (feeling, comment, srpe, minutes) => {
             setCelebrate(false);
             if (feeling || comment) await studentApi.complete(session.id, { feeling, comment }).catch(() => undefined);
+            if (srpe != null || minutes != null) {
+              await studentApi.saveRecord(session.id, { executions: [], response: { ...emptyResponse(), srpe, duration_min: minutes } }).catch(() => undefined);
+            }
             onDone();
           }}
         />
+      )}
+      {recItem && (
+        <RecordSheet session={session} studentId={studentId} studentName={studentName} mode="client" only={recItem}
+          toast={toast ?? (() => undefined)} onClose={() => setRecItem(null)} />
       )}
     </>
   );
@@ -307,7 +318,7 @@ export function RoutineCompact({ routine, viewer }: { routine: Routine; viewer: 
   );
 }
 
-export function HistoryList({ sessions, viewer, studentId, names, onEdit, onDelete }: {
+export function HistoryList({ sessions, viewer, studentId, names, onEdit, onDelete, onRecord }: {
   sessions: Session[];
   viewer: Viewer;
   /** Alumno dueño del perfil (para mostrar si terminó cada sesión). */
@@ -316,6 +327,8 @@ export function HistoryList({ sessions, viewer, studentId, names, onEdit, onDele
   names?: Map<string, string>;
   onEdit?: (s: Session) => void;
   onDelete?: (s: Session) => void;
+  /** Registrar lo realizado (series, esfuerzo, respuesta). */
+  onRecord?: (s: Session) => void;
 }) {
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   if (!sessions.length) return <p className="empty">Todavía no hay sesiones.</p>;
@@ -357,8 +370,9 @@ export function HistoryList({ sessions, viewer, studentId, names, onEdit, onDele
                     <span>{c.checks.length} ejercicios tildados{c.feeling ? ` · se sintió ${c.feeling}/5` : ''}{c.comment ? ` · “${c.comment}”` : ''}</span>
                   </div>
                 ))}
-                {(onEdit || onDelete) && (
+                {(onEdit || onDelete || onRecord) && (
                   <div className="actions" style={{ marginTop: 0 }}>
+                    {onRecord && <button className="btn" onClick={() => onRecord(s)}>{Icon.note} Registrar lo realizado</button>}
                     {onEdit && <button className="btn" onClick={() => onEdit(s)}>{Icon.edit} Editar</button>}
                     {onDelete && <button className="btn danger" onClick={() => onDelete(s)}>{Icon.trash} Borrar</button>}
                   </div>

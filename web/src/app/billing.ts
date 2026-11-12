@@ -5,14 +5,14 @@
  * una sesión cargada cuenta como presente si ese día no tiene otra marca.
  */
 import {
-  addDays, AttendanceRow, Billing, emptyBilling, Estado, FinanceData, FinanceStudent, Mark, occurrences, parse, Payment,
+  addDays, AttendanceRow, Billing, emptyBilling, Estado, FinanceData, FinanceStudent, Mark, Moneda, occurrences, parse, Payment,
   shortDate, longDate, MONTH_NAMES, firstName,
 } from './data';
 
 export const PROG_DIAS = 28;
 
-export const money = (n: number): string =>
-  `US$ ${(Math.round((n || 0) * 100) / 100).toLocaleString('es-AR')}`;
+export const money = (n: number, cur: Moneda = 'USD'): string =>
+  `${cur === 'ARS' ? '$' : 'US$'} ${(Math.round((n || 0) * 100) / 100).toLocaleString('es-AR')}`;
 export const ym = (d: string): string => d.slice(0, 7);
 export const shiftYM = (m: string, k: number): string => {
   const d = parse(`${m}-01`);
@@ -37,7 +37,7 @@ export const MOD_LABEL: Record<Billing['modalidad'], string> = {
 export const ESTADO_LABEL: Record<Estado, string> = { activo: 'Activo', pausa: 'En pausa', baja: 'Baja' };
 
 export type PayKind = 'debe' | 'pagar' | 'pronto' | 'aldia' | 'sinfecha';
-export interface PayState { k: PayKind; t: string; cls: string; due: string | null; monto: number; restan?: number }
+export interface PayState { k: PayKind; t: string; cls: string; due: string | null; monto: number; moneda: Moneda; restan?: number }
 export const urgente = (c: PayState): boolean => c.k === 'debe' || c.k === 'pagar';
 
 export interface Fin {
@@ -45,6 +45,9 @@ export interface Fin {
   students: FinanceStudent[];
   payments: Payment[];
   billing(s: FinanceStudent): Billing;
+  moneda(s: FinanceStudent | string): Moneda;
+  /** Total de pagos o montos, separado por moneda si hay más de una. */
+  totalTxt(items: Array<{ student_id: string; amount: number }>): string;
   estado(s: FinanceStudent): { estado: Estado; auto: boolean };
   activos(): FinanceStudent[];
   isAsinc(s: FinanceStudent): boolean;
@@ -97,6 +100,16 @@ export function makeFin(d: FinanceData): Fin {
   const payCache = new Map<string, Payment[]>();
 
   const billing = (s: FinanceStudent): Billing => ({ ...emptyBilling(), ...(s.billing ?? {}) });
+  const moneda = (s: FinanceStudent | string): Moneda => {
+    const st = typeof s === 'string' ? byId.get(s) : s;
+    return (st && billing(st).moneda) || 'USD';
+  };
+  const totalTxt = (items: Array<{ student_id: string; amount: number }>): string => {
+    const by = new Map<Moneda, number>();
+    for (const x of items) by.set(moneda(x.student_id), (by.get(moneda(x.student_id)) ?? 0) + x.amount);
+    if (!by.size) return money(0);
+    return [...by.entries()].map(([c, n]) => money(n, c)).join(' + ');
+  };
   const isAsinc = (s: FinanceStudent) => billing(s).modalidad === 'virtual_asinc';
   const modo = (s: FinanceStudent) => (isAsinc(s) ? 'prog' : billing(s).pago_modo) as 'clases' | 'mensual' | 'prog';
   const clasesSem = (s: FinanceStudent) => billing(s).clases_sem ?? s.schedule?.weekly.length ?? 0;
@@ -171,25 +184,25 @@ export function makeFin(d: FinanceData): Fin {
     const m = modo(s);
     if (m === 'clases') {
       const sd = saldo(s);
-      if (!sd) return { k: 'sinfecha', t: 'Sin datos del paquete', cls: '', due: null, monto };
+      if (!sd) return { k: 'sinfecha', t: 'Sin datos del paquete', cls: '', due: null, monto, moneda: moneda(s) };
       const N = clasesPaquete(s);
       // Se paga después de la primera clase del paquete nuevo.
       if (sd.restan < -1) {
-        return { k: 'debe', t: `Debe ${-sd.restan} clases`, cls: 'bad', due: today, monto, restan: sd.restan };
+        return { k: 'debe', t: `Debe ${-sd.restan} clases`, cls: 'bad', due: today, monto, moneda: moneda(s), restan: sd.restan };
       }
       if (sd.restan === -1) {
-        return { k: 'pagar', t: 'Tiene que pagar: ya tomó la 1ª del paquete', cls: 'bad', due: today, monto, restan: -1 };
+        return { k: 'pagar', t: 'Tiene que pagar: ya tomó la 1ª del paquete', cls: 'bad', due: today, monto, moneda: moneda(s), restan: -1 };
       }
       if (sd.restan === 0) {
         const nx = proximasClases(s, 1)[0] ?? null;
-        return { k: 'pronto', t: nx ? `Paga después de la clase del ${shortDate(nx)}` : 'Paga después de la próxima clase', cls: 'low', due: nx, monto, restan: 0 };
+        return { k: 'pronto', t: nx ? `Paga después de la clase del ${shortDate(nx)}` : 'Paga después de la próxima clase', cls: 'low', due: nx, monto, moneda: moneda(s), restan: 0 };
       }
       const fechas = proximasClases(s, sd.restan + 1);
       const due = fechas.length === sd.restan + 1 ? fechas[sd.restan]! : null;
       const quedan = `${sd.restan === 1 ? 'Queda' : 'Quedan'} ${sd.restan}${N ? ` de ${N}` : ''}`;
       const t = due ? `${quedan} · paga después del ${shortDate(due)}` : quedan;
-      if (sd.restan <= (clasesSem(s) || 1)) return { k: 'pronto', t, cls: 'low', due, monto, restan: sd.restan };
-      return { k: 'aldia', t, cls: 'ok', due, monto, restan: sd.restan };
+      if (sd.restan <= (clasesSem(s) || 1)) return { k: 'pronto', t, cls: 'low', due, monto, moneda: moneda(s), restan: sd.restan };
+      return { k: 'aldia', t, cls: 'ok', due, monto, moneda: moneda(s), restan: sd.restan };
     }
     let due: string | null = null;
     if (m === 'mensual') {
@@ -198,20 +211,20 @@ export function makeFin(d: FinanceData): Fin {
       due = mes ? primeraDelMes(s, mes) : null;
       if (due) {
         const diff = daysBetween(today, due);
-        if (diff < 0) return { k: 'debe', t: `Tenía que pagar el ${shortDate(due)}`, cls: 'bad', due, monto };
-        if (diff === 0) return { k: 'pagar', t: 'Paga después de la clase de hoy', cls: 'bad', due, monto };
-        if (diff <= 7) return { k: 'pronto', t: `Paga después de la clase del ${shortDate(due)}`, cls: 'low', due, monto };
-        return { k: 'aldia', t: `Al día · paga el ${shortDate(due)}`, cls: 'ok', due, monto };
+        if (diff < 0) return { k: 'debe', t: `Tenía que pagar el ${shortDate(due)}`, cls: 'bad', due, monto, moneda: moneda(s) };
+        if (diff === 0) return { k: 'pagar', t: 'Paga después de la clase de hoy', cls: 'bad', due, monto, moneda: moneda(s) };
+        if (diff <= 7) return { k: 'pronto', t: `Paga después de la clase del ${shortDate(due)}`, cls: 'low', due, monto, moneda: moneda(s) };
+        return { k: 'aldia', t: `Al día · paga el ${shortDate(due)}`, cls: 'ok', due, monto, moneda: moneda(s) };
       }
     } else {
       const base = [pagosDe(s.id).map((p) => p.paid_on).pop(), billing(s).prog_enviada].filter((x): x is string => Boolean(x)).sort().pop();
       due = base ? addDays(base, PROG_DIAS) : null;
     }
-    if (!due) return { k: 'sinfecha', t: 'Sin vencimiento', cls: '', due, monto };
+    if (!due) return { k: 'sinfecha', t: 'Sin vencimiento', cls: '', due, monto, moneda: moneda(s) };
     const diff = daysBetween(today, due);
-    if (diff < 0) return { k: 'debe', t: `Vencido hace ${-diff} d`, cls: 'bad', due, monto };
-    if (diff <= 7) return { k: 'pronto', t: diff === 0 ? 'Vence hoy' : `Vence el ${shortDate(due)}`, cls: 'low', due, monto };
-    return { k: 'aldia', t: `Al día hasta ${shortDate(due)}`, cls: 'ok', due, monto };
+    if (diff < 0) return { k: 'debe', t: `Vencido hace ${-diff} d`, cls: 'bad', due, monto, moneda: moneda(s) };
+    if (diff <= 7) return { k: 'pronto', t: diff === 0 ? 'Vence hoy' : `Vence el ${shortDate(due)}`, cls: 'low', due, monto, moneda: moneda(s) };
+    return { k: 'aldia', t: `Al día hasta ${shortDate(due)}`, cls: 'ok', due, monto, moneda: moneda(s) };
   };
 
   const cobradoEn = (m: string) => d.payments.filter((p) => p.paid_on.startsWith(m)).reduce((a, p) => a + p.amount, 0);
@@ -307,16 +320,16 @@ export function makeFin(d: FinanceData): Fin {
       const r = c.restan ?? 0;
       return r <= 0
         ? (r < 0
-          ? `Hola ${nombre}! Ya arrancaste el paquete nuevo de clases de HTC; cuando puedas, me pasás el pago (${money(c.monto)}). Gracias!`
-          : `Hola ${nombre}! Te aviso que terminaste el paquete de clases de HTC. Después de la próxima clase${c.due ? ` (${shortDate(c.due)})` : ''} toca renovar: ${money(c.monto)}. Gracias!`)
-        : `Hola ${nombre}! Te ${r === 1 ? 'queda 1 clase' : `quedan ${r} clases`} del paquete de HTC${c.due ? `; después de la clase del ${shortDate(c.due)} toca renovar` : ''} (${money(c.monto)}). Gracias!`;
+          ? `Hola ${nombre}! Ya arrancaste el paquete nuevo de clases de HTC; cuando puedas, me pasás el pago (${money(c.monto, c.moneda)}). Gracias!`
+          : `Hola ${nombre}! Te aviso que terminaste el paquete de clases de HTC. Después de la próxima clase${c.due ? ` (${shortDate(c.due)})` : ''} toca renovar: ${money(c.monto, c.moneda)}. Gracias!`)
+        : `Hola ${nombre}! Te ${r === 1 ? 'queda 1 clase' : `quedan ${r} clases`} del paquete de HTC${c.due ? `; después de la clase del ${shortDate(c.due)} toca renovar` : ''} (${money(c.monto, c.moneda)}). Gracias!`;
     }
     if (m === 'mensual') {
       return c.k === 'debe'
-        ? `Hola ${nombre}! Te escribo porque todavía no tengo registrado el pago de HTC del mes (era después de la clase del ${c.due ? shortDate(c.due) : '—'}, ${money(c.monto)}). Cuando puedas, avisame. Gracias!`
-        : `Hola ${nombre}! Te recuerdo que después de la clase del ${c.due ? shortDate(c.due) : '—'} toca el pago mensual de HTC (${money(c.monto)}). Gracias!`;
+        ? `Hola ${nombre}! Te escribo porque todavía no tengo registrado el pago de HTC del mes (era después de la clase del ${c.due ? shortDate(c.due) : '—'}, ${money(c.monto, c.moneda)}). Cuando puedas, avisame. Gracias!`
+        : `Hola ${nombre}! Te recuerdo que después de la clase del ${c.due ? shortDate(c.due) : '—'} toca el pago mensual de HTC (${money(c.monto, c.moneda)}). Gracias!`;
     }
-    return `Hola ${nombre}! Ya casi terminás tu programación de HTC. Para armarte la próxima son ${money(c.monto)}. Gracias!`;
+    return `Hola ${nombre}! Ya casi terminás tu programación de HTC. Para armarte la próxima son ${money(c.monto, c.moneda)}. Gracias!`;
   };
 
   const puntualidad = (s: FinanceStudent, ini: string) => {
@@ -387,7 +400,7 @@ export function makeFin(d: FinanceData): Fin {
   });
 
   return {
-    primeraDelMes, avisosCiclo,
+    primeraDelMes, avisosCiclo, moneda, totalTxt,
     today, students: d.students, payments: d.payments, billing, estado, activos, isAsinc, modo, modoTxt, clasesSem, clasesPaquete,
     cuotaEn, pagosDe, marca, marcaExplicita, marcasDe, proximasClases, saldo, estadoPago, cobradoEn, proximos30, estadoProg, racha,
     programados, movidosDesde, posPaquete, etiquetaPaquete, paqueteTxt, recordatorio, reporte, informePendiente,

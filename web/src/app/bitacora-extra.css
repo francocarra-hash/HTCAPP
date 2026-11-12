@@ -91,7 +91,7 @@
   .bt .pbar { height: 6px; border-radius: 3px; background: var(--chip); overflow: hidden; margin-top: 10px; }
   .bt .pbar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 3px; transition: width var(--t3) var(--ease), background-color var(--t2); }
   .bt .pbar.full i { background: var(--good-fill); }
-  .bt .chk { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; align-items: center; padding: 6px 0; }
+  .bt .chk { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 4px; align-items: center; padding: 6px 0; }
   .bt .chk + .chk { border-top: 1px dashed var(--line); }
   .bt .chk .nm { min-width: 0; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
   .bt .chk .nm b { font-weight: 600; font-size: 15px; transition: color var(--t2); }

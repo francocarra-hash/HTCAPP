@@ -9,6 +9,8 @@ import { StudentReports } from './Report';
 import { HistoryList, RoutineBlocks, RoutinePlayer } from './RoutineView';
 import { CapTag, Enter, Icon, Skeleton, TabBar, TabDef, TopHeader, useToast } from './ui';
 import { Avatar, Community, PeopleProvider, PhotoPicker, usePeople, useUnread } from './social';
+import { MyPlan } from './MyPlan';
+import { RecordSheet } from './Record';
 
 type Tab = 'hoy' | 'progreso' | 'historial' | 'comunidad' | 'perfil';
 
@@ -62,6 +64,7 @@ function StudentHome({ onLogout }: { onLogout: () => void }) {
   const [tab, setTab] = useState<Tab>('hoy');
   const [prog, setProg] = useState<{ done: number; total: number } | null>(null);
   const [toast, showToast] = useToast();
+  const [recording, setRecording] = useState<Session | null>(null);
 
   const load = useCallback(() => {
     studentApi.me().then(setProfile).catch((e: Error) => setError(e.message));
@@ -111,7 +114,7 @@ function StudentHome({ onLogout }: { onLogout: () => void }) {
                   {tab === 'hoy' && (pending
                     ? (
                       <RoutinePlayer key={pending.id} session={pending} studentId={profile.student.id} studentName={profile.student.name}
-                        onProgress={onProgress} onDone={() => { setProg(null); load(); }} />
+                        onProgress={onProgress} onDone={() => { setProg(null); load(); }} toast={showToast} />
                     )
                     : <TodayIdle profile={profile} last={last} />)}
                   {tab === 'progreso' && (
@@ -120,7 +123,8 @@ function StudentHome({ onLogout }: { onLogout: () => void }) {
                       <ProgressView progress={profile.progress} you quality={profile.quality} />
                     </>
                   )}
-                  {tab === 'historial' && <HistoryList sessions={profile.sessions} viewer={firstName(profile.student.name)} studentId={profile.student.id} />}
+                  {tab === 'historial' && <HistoryList sessions={profile.sessions} viewer={firstName(profile.student.name)} studentId={profile.student.id}
+                    onRecord={(x) => (x.status === 'done' || x.completions.some((c) => c.student_id === profile.student.id && c.completed_at) ? setRecording(x) : showToast('Primero hacé la rutina y terminala.'))} />}
                   {tab === 'comunidad' && <Community isCoach={false} toast={showToast} onRead={reloadUnread} />}
                   {tab === 'perfil' && (
                     <ProfileTab profile={profile} onLogout={onLogout} onSaved={() => showToast('Contraseña actualizada')} toast={showToast}
@@ -131,6 +135,10 @@ function StudentHome({ onLogout }: { onLogout: () => void }) {
           </main>
         </div>
       </div>
+      {recording && profile && (
+        <RecordSheet session={recording} studentId={profile.student.id} studentName={profile.student.name} mode="client" toast={showToast}
+          onClose={() => setRecording(null)} />
+      )}
       <TabBar tabs={TABS} current={tab} onChange={go} />
       {toast}
     </div>
@@ -247,6 +255,8 @@ function ProfileTab({ profile, onLogout, onSaved, onData, toast }: {
         )}
         <NextCard next={profile.next_sessions[0]} you />
       </section>
+
+      <MyPlan toast={toast} />
 
       {s.goal && (
         <section className="card">

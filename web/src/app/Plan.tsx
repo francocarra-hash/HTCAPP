@@ -2,8 +2,10 @@ import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../api';
 import {
   cloneRoutine, keepIds, routineToText, coachApi, ExerciseEntry, longDate, PreviewSession, Profile, relDays, Routine, Session, shortDate,
-  StudentListItem, todayIso, cap, firstName,
+  StudentListItem, todayIso, cap, firstName, CHANGE_CATEGORIES, ChangeCategory,
 } from './data';
+import { StudentPicker } from './StudentPicker';
+import { Avatar } from './social';
 import { RoutineCompact } from './RoutineView';
 import { cleanRoutine, newBlock, RoutineBuilder, routineCount } from './RoutineBuilder';
 import { DateInput, Icon, Seg, Sheet, TopHeader } from './ui';
@@ -25,6 +27,17 @@ export function PlanSession({ students, initialIds, editing, avatar, library, on
   toast: (m: string) => void;
 }) {
   const [ids, setIds] = useState<string[]>(editing?.participant_ids ?? initialIds);
+  // Últimos alumnos abiertos en Planificar (se guardan en el servidor: valen en cualquier dispositivo).
+  const [recents, setRecents] = useState<string[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [why, setWhy] = useState<ChangeCategory | null>(null);
+  const [whyText, setWhyText] = useState('');
+  const remember = (id: string) => { coachApi.pushPlanRecent(id).then((r) => setRecents(r.ids)).catch(() => undefined); };
+  useEffect(() => {
+    coachApi.planRecent().then((r) => setRecents(r.ids)).catch(() => undefined);
+    if (!editing && initialIds[0]) remember(initialIds[0]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const choose = (id: string) => { setIds([id]); setAdding(false); remember(id); };
   const firstStudent = students.find((s) => s.id === ids[0]);
   const [date, setDate] = useState(editing?.date ?? todayIso());
   const [status, setStatus] = useState<'planned' | 'done'>(editing?.status ?? 'planned');
@@ -113,7 +126,10 @@ export function PlanSession({ students, initialIds, editing, avatar, library, on
       if (!base) return;
       const clean = cleanRoutine(base);
       if (editing) {
-        await coachApi.updateSession(editing.id, { date, title: title.trim() || null, status, participant_ids: ids, routine: clean });
+        await coachApi.updateSession(editing.id, {
+          date, title: title.trim() || null, status, participant_ids: ids, routine: clean,
+          change_category: why, change_reason: whyText.trim() || null,
+        });
         onSaved(ids, 'Sesión actualizada');
       } else {
         await coachApi.createRoutine({ date, title: title.trim() || null, status, participant_ids: ids, routine: clean });
@@ -167,13 +183,29 @@ export function PlanSession({ students, initialIds, editing, avatar, library, on
         sub={<span>{editing ? cap(longDate(editing.date)) : 'Armá la próxima sesión por bloques'}</span>} />
 
       <section className="card" style={{ marginTop: 4 }}>
-        <h2>¿Para quién?</h2>
-        <div className="chipset" style={{ marginTop: 10 }}>
-          {students.map((s) => (
-            <button key={s.id} className="tog" aria-pressed={ids.includes(s.id)} onClick={() => toggle(s.id)}>{s.name}</button>
+        {!ids.length ? (
+          <>
+            <h2>¿Con quién trabajás?</h2>
+            {students.length
+              ? <div style={{ marginTop: 10 }}><StudentPicker students={students} recents={recents} onPick={choose} /></div>
+              : <p className="hint">Primero creá un alumno en la pestaña Alumnos.</p>}
+          </>
+        ) : (
+        <>
+        <div className="who-sel">
+          {participants.map((p) => (
+            <span key={p.id} className="who-chip">
+              <Avatar id={p.id} name={p.name} size={30} />
+              <b>{p.name}</b>
+              {ids.length > 1 && <button className="xbtn" aria-label={`Quitar a ${p.name}`} onClick={() => toggle(p.id)}>{Icon.x}</button>}
+            </span>
           ))}
-          {!students.length && <p className="hint">Primero creá un alumno en la pestaña Alumnos.</p>}
+          <button className="linkbtn" onClick={() => { setIds([]); setAdding(false); }}>Cambiar</button>
         </div>
+        {adding
+          ? <div style={{ marginTop: 8 }}><StudentPicker students={students} exclude={ids} label="Sumar un alumno a la sesión" autoFocus
+              onPick={(id) => { setIds((p) => [...p, id]); setAdding(false); }} /></div>
+          : <button className="btn sm ghost" style={{ marginTop: 6, paddingLeft: 0 }} onClick={() => setAdding(true)}>{Icon.plus} Entrena con alguien más</button>}
         <div className="fields">
           <div className="field">
             <label htmlFor="pl-date">Fecha</label>
@@ -190,8 +222,11 @@ export function PlanSession({ students, initialIds, editing, avatar, library, on
               options={[['planned', 'Asignar: la hace y la tilda'], ['done', 'Registrar: ya la hicieron']]} />
           </div>
         </div>
+        </>
+        )}
       </section>
 
+      {ids.length > 0 && (
       <div className="plan-grid" style={{ marginTop: 12 }}>
         <div>
           {!editing && (
@@ -233,9 +268,26 @@ export function PlanSession({ students, initialIds, editing, avatar, library, on
         </div>
         <div className="plan-side-desk">{reference}</div>
       </div>
+      )}
+
+      {editing && routine && ids.length > 0 && (
+        <section className="card">
+          <h2>¿Por qué el cambio?</h2>
+          <p className="hint">Opcional. Queda en el registro de cambios del alumno, junto con lo que había antes.</p>
+          <div className="chipset" style={{ marginTop: 8 }}>
+            {CHANGE_CATEGORIES.map(([k, l]) => (
+              <button key={k} className="tog" aria-pressed={why === k} onClick={() => setWhy(why === k ? null : k)}>{l}</button>
+            ))}
+          </div>
+          <div className="field" style={{ marginTop: 10 }}>
+            <label htmlFor="pl-why">Motivo</label>
+            <input id="pl-why" value={whyText} maxLength={300} onChange={(e) => setWhyText(e.target.value)} placeholder="Ej.: molestia en la rodilla, bajo la profundidad" />
+          </div>
+        </section>
+      )}
 
       {err && <p className="err">{err}</p>}
-      {routine && (
+      {routine && ids.length > 0 && (
         <div className="savebar">
           <div className="meta">
             <span>{mode === 'texto' ? (textDirty ? 'Texto con cambios' : 'Texto') : `${routine.blocks.length} bloques · ${count} ejercicios`}</span>

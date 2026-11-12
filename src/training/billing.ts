@@ -8,6 +8,17 @@ import { z } from 'zod';
 
 const DATE = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
+/** Sólo links https de Mercado Pago. */
+export function isMercadoPago(url: string): boolean {
+  try {
+    const u = new URL(url);
+    const h = u.hostname.toLowerCase();
+    return u.protocol === 'https:' && ['mercadopago.com.ar', 'mercadopago.com', 'mpago.la', 'mpago.li'].some((d) => h === d || h.endsWith(`.${d}`));
+  } catch {
+    return false;
+  }
+}
+
 export const BillingSchema = z.object({
   /** null = se deduce de la actividad (entrenó en los últimos 2 meses → activo). */
   estado: z.enum(['activo', 'pausa', 'baja']).nullable().default(null),
@@ -28,6 +39,18 @@ export const BillingSchema = z.object({
   /** Asincrónicos: última programación enviada y si ya pagó la próxima. */
   prog_enviada: DATE.nullable().default(null),
   prog_pendiente: z.boolean().default(false),
+  /** Moneda de los honorarios. */
+  moneda: z.enum(['USD', 'ARS']).default('USD'),
+  /** Link de pago de la próxima cuota (lo carga el profe). Abrirlo no la marca como pagada. */
+  pago_link: z.object({
+    url: z.string().trim().url().max(500).refine(isMercadoPago, 'El link tiene que ser de Mercado Pago (mercadopago.com.ar, mpago.la o mpago.li).'),
+    monto: z.number().min(0).max(100_000_000),
+    moneda: z.enum(['USD', 'ARS']),
+    detalle: z.string().trim().max(120).nullable().default(null),
+    creado: z.string().max(40),
+  }).nullable().default(null),
+  /** El alumno avisó que pagó (queda a confirmar hasta que el profe registra el pago). */
+  pago_avisado: z.string().max(40).nullable().default(null),
 });
 export type Billing = z.infer<typeof BillingSchema>;
 

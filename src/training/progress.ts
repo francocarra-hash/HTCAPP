@@ -33,6 +33,8 @@ export interface ExerciseSeries {
   best: number;
   /** Volumen por sesión (cantidad × series × vueltas), cuando cambian las series o vueltas. */
   volume?: { unit: Unit; points: ProgressPoint[] };
+  /** Aclaración de comparabilidad (p. ej. se excluyeron sesiones con carga externa). */
+  note?: string;
 }
 
 export interface ProgressStats {
@@ -281,17 +283,24 @@ export function buildProgress(
     if (rows.length < 3) continue;
     const units: Array<[Unit, (r: Raw) => number[]]> = [['kg', (r) => r.kg], ['s', (r) => r.s], ['reps', (r) => r.reps]];
     let pick: { unit: Unit; pts: ProgressPoint[]; spread: number } | null = null;
+    // Con carga externa en algunas sesiones y sin carga en otras no son comparables:
+    // si no se grafica la carga, se usan sólo las sesiones sin carga.
+    const withKg = rows.filter((r) => r.kg.length).length;
+    const mixed = withKg > 0 && withKg < rows.length;
+    let note: string | undefined;
     for (const [unit, get] of units) {
       const pts = rows
-        .filter((r) => get(r).length)
+        .filter((r) => get(r).length && (unit === 'kg' || !mixed || !r.kg.length))
         .map((r) => ({ date: r.date, value: Math.max(...get(r)), text: r.text }));
-      if (pts.length < 3 || pts.length < rows.length * 0.6) continue;
+      const pool = unit === 'kg' || !mixed ? rows.length : rows.length - withKg;
+      if (pts.length < 3 || pts.length < pool * 0.6) continue;
       const vals = pts.map((p) => p.value);
       const max = Math.max(...vals);
       const spread = max > 0 ? (max - Math.min(...vals)) / max : 0;
       if (!pick || spread > pick.spread) pick = { unit, pts, spread };
     }
     if (!pick) continue;
+    if (mixed) note = pick.unit === 'kg' ? 'Sólo las sesiones con carga externa.' : 'En algunas sesiones tuvo carga externa: esas no se comparan acá.';
     // Nombre visible: el que eligió el coach, o la forma más frecuente con la que lo escribió.
     const freq = new Map<string, number>();
     for (const r of rows) freq.set(r.name, (freq.get(r.name) ?? 0) + 1);
@@ -302,7 +311,7 @@ export function buildProgress(
     let volume: ExerciseSeries['volume'];
     if (pick.unit !== 'kg') {
       const get = pick.unit === 's' ? (r: Raw) => r.s : (r: Raw) => r.reps;
-      const vr = rows.filter((r) => get(r).length);
+      const vr = rows.filter((r) => get(r).length && (!mixed || !r.kg.length));
       if (vr.length >= 3 && new Set(vr.map((r) => r.mult)).size > 1) {
         volume = { unit: pick.unit, points: vr.map((r) => ({ date: r.date, value: Math.max(...get(r)) * r.mult, text: r.text })) };
       }
@@ -311,6 +320,7 @@ export function buildProgress(
       key, name, capacity: capOf.get(key) ?? null, unit: pick.unit, points: pick.pts,
       first: vals[0]!, last: vals[vals.length - 1]!, best: Math.max(...vals),
       ...(volume ? { volume } : {}),
+      ...(note ? { note } : {}),
     });
   }
   exercises.sort((a, b) => b.points.length - a.points.length || a.name.localeCompare(b.name));

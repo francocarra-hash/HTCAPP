@@ -15,7 +15,8 @@ import { ReportsPanel } from './Report';
 import { Avatar, Community, PeopleProvider, PhotoPicker, usePeople, useUnread } from './social';
 import { ExerciseLibrary, useLibrary } from './ExerciseLibrary';
 import { PlanSession } from './Plan';
-import { ProgressView } from './ProgressView';
+import { CoachProgress } from './Monitoring';
+import { RecordSheet } from './Record';
 import { HistoryList, RoutineBlocks } from './RoutineView';
 import { lastRealized, NextCard, ProcessTimeline } from './StudentApp';
 import { Enter, Icon, Seg, Sheet, Skeleton, TabBar, TabDef, TopHeader, useToast } from './ui';
@@ -51,7 +52,18 @@ function CoachHome({ onLogout, authEnabled }: { onLogout: () => void; authEnable
   const [finData, setFinData] = useState<FinanceData | null>(null);
   const fin = useMemo(() => (finData ? makeFin(finData) : null), [finData]);
   // Avisos de fin de ciclo (le queda una clase): se marcan vistos al abrir la campana.
-  const avisos = useMemo(() => fin?.avisosCiclo() ?? [], [fin]);
+  const avisos = useMemo(() => {
+    if (!fin) return [];
+    // El alumno avisó desde la app que pagó: queda a confirmar hasta que se registra el pago.
+    const pagos = fin.students.flatMap((s) => {
+      const b = fin.billing(s);
+      const last = fin.pagosDe(s.id).map((p) => p.created_at).sort().pop() ?? '';
+      return b.pago_avisado && b.pago_avisado > last
+        ? [{ s, key: `${s.id}:aviso:${b.pago_avisado}`, t: `${firstName(s.name)} avisó que pagó el ${shortDate(b.pago_avisado.slice(0, 10))}. Confirmalo y registrá el pago.` }]
+        : [];
+    });
+    return [...pagos, ...fin.avisosCiclo()];
+  }, [fin]);
   const [vistos, setVistos] = useState<Set<string>>(() => {
     try { return new Set(JSON.parse(localStorage.getItem('htc-avisos-vistos') ?? '[]') as string[]); } catch { return new Set(); }
   });
@@ -314,7 +326,7 @@ function ActivitySheet({ data, avisos, vistos, onAvisos, onClose, onSeen, onOpen
     <Sheet title="Actividad" onClose={onClose}>
       {avisos.length > 0 && (
         <div className="card" style={{ marginTop: 0 }}>
-          <div className="label">Termina el ciclo</div>
+          <div className="label">Avisos</div>
           {avisos.map((a) => (
             <div key={a.key} className="act">
               <div className="act-h"><b>{nuevos.has(a.key) && <span className="new" aria-label="nuevo" />}{a.s.name}</b></div>
@@ -585,6 +597,7 @@ function StudentDetail({ id, initialTab, fin, reloadFin, all, right, toast, onBa
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<DetailTab>(initialTab);
+  const [recording, setRecording] = useState<Session | null>(null);
 
   const load = useCallback(() => {
     coachApi.student(id).then(setProfile).catch((e: Error) => setError(e.message));
@@ -668,13 +681,17 @@ function StudentDetail({ id, initialTab, fin, reloadFin, all, right, toast, onBa
                       </div>
                     ))}
                     {last.date_note && <div className="phase warn"><span className="ph-tag">Fecha</span><div>{last.date_note}</div></div>}
+                    <div className="actions" style={{ marginTop: 8 }}>
+                      <button className="btn sm" onClick={() => setRecording(last)}>{Icon.note} Registrar lo realizado</button>
+                    </div>
                     <RoutineBlocks routine={last.routine} viewer={undefined} completions={last.completions} names={names} />
                   </>
                 ) : !planned.length && <p className="empty">Todavía no tiene sesiones. Planificale la primera.</p>}
               </>
             )}
             {tab === 'progreso' && (
-              <ProgressView progress={profile.progress} you={false} quality={profile.quality} studentId={s.id} onQualityChanged={load} toast={toast} />
+              <CoachProgress profile={profile} quality={profile.quality} onQualityChanged={load} toast={toast}
+                onOpenAssessment={(aid) => onOpenAssessment(s.id, aid)} />
             )}
             {tab === 'historial' && (
               <>
@@ -685,7 +702,7 @@ function StudentDetail({ id, initialTab, fin, reloadFin, all, right, toast, onBa
                   </div>
                 )}
                 <HistoryList sessions={profile.sessions} viewer={undefined} studentId={s.id} names={names}
-                  onEdit={(x) => onPlan(x.participant_ids, x)} onDelete={remove} />
+                  onEdit={(x) => onPlan(x.participant_ids, x)} onDelete={remove} onRecord={setRecording} />
               </>
             )}
             {tab === 'informes' && (
@@ -709,6 +726,10 @@ function StudentDetail({ id, initialTab, fin, reloadFin, all, right, toast, onBa
                 onDeleted={onDeleted} reload={load} />
             )}
           </Enter>
+          {recording && (
+            <RecordSheet session={recording} studentId={s.id} studentName={s.name} mode="coach" toast={toast}
+              onClose={() => setRecording(null)} onSaved={load} />
+          )}
         </>
       )}
     </>

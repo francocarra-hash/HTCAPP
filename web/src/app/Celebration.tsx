@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { benefitsFor } from './benefits';
-import { CAP_LABEL, capacityMix, firstName, Routine } from './data';
+import { CAP_LABEL, capacityMix, firstName, Routine, SRPE_LABEL } from './data';
 import { Icon } from './ui';
 
 const FEEL = [
@@ -78,7 +78,7 @@ function useConfetti(canvas: React.RefObject<HTMLCanvasElement>, colors: string[
 
 export function Celebration({ routine, seed, done, total, studentName, onClose }: {
   routine: Routine; seed: string; done: number; total: number; studentName: string;
-  onClose: (feeling: number | null, comment: string | null) => void;
+  onClose: (feeling: number | null, comment: string | null, srpe: number | null, minutes: number | null) => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const mix = capacityMix(routine);
@@ -95,6 +95,8 @@ export function Celebration({ routine, seed, done, total, studentName, onClose }
   useConfetti(canvas, colors);
   const [feeling, setFeeling] = useState<number | null>(null);
   const [comment, setComment] = useState('');
+  const [srpe, setSrpe] = useState<number | null>(null);
+  const [minutes, setMinutes] = useState('');
   const benefits = benefitsFor(routine, seed);
 
   // En el <body>: dentro de una pantalla animada el position:fixed queda atrapado
@@ -138,11 +140,22 @@ export function Celebration({ routine, seed, done, total, studentName, onClose }
               </button>
             ))}
           </div>
+          <div className="label" style={{ marginTop: 14 }}>¿Qué tan intensa fue la sesión en general?</div>
+          <div className="scale" role="radiogroup" aria-label="Esfuerzo de la sesión, de 0 a 10">
+            {SRPE_LABEL.map((_, n) => (
+              <button key={n} type="button" role="radio" aria-checked={srpe === n} onClick={() => setSrpe(srpe === n ? null : n)}>{n}</button>
+            ))}
+          </div>
+          <div className="scale-ends"><span>0 · reposo</span><span>{srpe != null && SRPE_LABEL[srpe] ? `${srpe} · ${SRPE_LABEL[srpe]}` : ''}</span><span>10 · máximo</span></div>
+          <div className="field" style={{ marginTop: 10 }}>
+            <label htmlFor="cel-min">¿Cuántos minutos duró?</label>
+            <input id="cel-min" type="number" inputMode="numeric" min={1} max={600} value={minutes} onChange={(e) => setMinutes(e.target.value)} />
+          </div>
           <div className="field" style={{ marginTop: 10 }}>
             <textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Algo para contarle a tu profe (opcional)" rows={2} />
           </div>
         </div>
-        <button className="btn primary wide" style={{ marginTop: 14 }} onClick={() => onClose(feeling, comment.trim() || null)}>
+        <button className="btn primary wide" style={{ marginTop: 14 }} onClick={() => onClose(feeling, comment.trim() || null, srpe, minutes ? Math.max(1, Math.min(600, Math.round(Number(minutes)))) || null : null)}>
           Listo
         </button>
       </div>

@@ -13,7 +13,7 @@ export function WinCard({ h, i = 0 }: { h: Highlight; i?: number }) {
   return (
     <div className="win" style={{ ['--c' as string]: h.capacity ? `var(--cap-${h.capacity})` : 'var(--accent)', ['--i' as string]: i }}>
       <div className="win-h">
-        <b>{h.name}{h.kind === 'volumen' && <small className="vtag">volumen</small>}</b>
+        <b>{h.name}<small className="vtag">{h.kind === 'volumen' ? 'volumen' : h.unit === 's' ? 'duración' : h.unit === 'kg' ? 'carga' : 'repeticiones'}</small></b>
         <span className="pct">+{pctGain(h.from, h.to)}%</span>
       </div>
       <div className="win-bar" role="img" aria-label={`${h.name}: de ${fmtValue(h.from, h.unit)} a ${fmtValue(h.to, h.unit)}`}>
@@ -107,7 +107,7 @@ export function ProgressView({ progress, you, quality = [], studentId, onQuality
       {!capSel && recent.length > 1 && (
         <section className="card">
           <h2>En qué {you ? 'estás' : 'está'} trabajando</h2>
-          <div className="hint">Reparto de los ejercicios de las últimas 4 semanas.</div>
+          <div className="hint">De los ejercicios anotados en las últimas 4 semanas, qué parte fue de cada capacidad. No es el reparto del estímulo total.</div>
           <div className="cap-strip" role="img" aria-label={recent.map((c) => `${c.label} ${Math.round(c.recent_share * 100)}%`).join(', ')}>
             {recent.map((c) => <span key={c.id} style={{ flexGrow: c.recent_share, ['--c' as string]: `var(--cap-${c.id})` }} title={`${c.label}: ${Math.round(c.recent_share * 100)}%`} />)}
           </div>
@@ -122,7 +122,7 @@ export function ProgressView({ progress, you, quality = [], studentId, onQuality
       {shownWins.length > 0 && (
         <section className="card">
           <h2>Logros</h2>
-          <div className="hint">De la primera vez a la última, según lo que anotó {you ? 'tu profe' : 'el profe'}.</div>
+          <div className="hint">De la primera vez a la última, según lo que quedó escrito en la rutina{you ? '' : ' (indicado o registrado por vos)'}. Cada número mide sólo eso: no es un porcentaje de fuerza.</div>
           <div className="wins">{shownWins.map((h, i) => <WinCard key={h.key + (h.kind ?? '')} h={h} i={i} />)}</div>
           {shownWins.some((h) => h.kind === 'volumen') && <p className="hint" style={{ fontSize: 12 }}>Volumen: el total de la sesión (dosis × series × vueltas), cuando subió sin cambiar la dosis de cada serie.</p>}
         </section>
@@ -189,7 +189,8 @@ export function ProgressView({ progress, you, quality = [], studentId, onQuality
                 </tbody>
               </table>
             </div>
-            <p className="hint">Se grafica la mejor serie de cada sesión. Entran los ejercicios anotados con cantidades en al menos 3 sesiones.</p>
+            {current.note && <p className="hint">{current.note}</p>}
+            <p className="hint">Se grafica la mejor serie de cada sesión según lo escrito en la rutina. Entran los ejercicios anotados con cantidades en al menos 3 sesiones.</p>
           </section>
         </>
       ) : (

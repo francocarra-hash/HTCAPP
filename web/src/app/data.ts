@@ -157,6 +157,8 @@ export interface Progress {
     key: string; name: string; capacity: CapacityId | null; unit: Unit;
     points: Array<{ date: string; value: number; text: string }>;
     first: number; last: number; best: number;
+    /** Aclaración de comparabilidad. */
+    note?: string;
   }>;
   highlights: Highlight[];
   /** Pasó a una variante más compleja del mismo movimiento. */
@@ -205,12 +207,27 @@ export interface Billing {
   rehab: boolean;
   prog_enviada: string | null;
   prog_pendiente: boolean;
+  moneda?: Moneda;
+  /** Link de pago de la próxima cuota (Mercado Pago). Abrirlo no la marca como pagada. */
+  pago_link?: PayLink | null;
+  /** El alumno avisó que pagó: queda a confirmar hasta que se registra el pago. */
+  pago_avisado?: string | null;
 }
+export type Moneda = 'USD' | 'ARS';
+export interface PayLink { url: string; monto: number; moneda: Moneda; detalle: string | null; creado: string }
 export const emptyBilling = (): Billing => ({
   estado: null, modalidad: 'presencial', clases_sem: null, ciclo_sem: 4, pago_modo: 'clases', cuota: null,
   historial_cuota: [], cuenta_desde: null, saldo_inicial: 0, vence: null, telefono: null, enfoque: null,
-  rehab: false, prog_enviada: null, prog_pendiente: false,
+  rehab: false, prog_enviada: null, prog_pendiente: false, moneda: 'USD', pago_link: null, pago_avisado: null,
 });
+/** Sólo links https de Mercado Pago (el servidor vuelve a validar). */
+export function isMercadoPago(url: string): boolean {
+  try {
+    const u = new URL(url.trim());
+    const h = u.hostname.toLowerCase();
+    return u.protocol === 'https:' && ['mercadopago.com.ar', 'mercadopago.com', 'mpago.la', 'mpago.li'].some((d) => h === d || h.endsWith(`.${d}`));
+  } catch { return false; }
+}
 export interface Payment {
   id: string; student_id: string; paid_on: string; amount: number;
   classes: number | null; period: string | null; note: string | null; created_at: string;
@@ -259,6 +276,100 @@ export interface ActivityItem {
   notes: Array<{ item: string; note: string }>; seen: boolean;
 }
 
+// ── lo realizado y monitoreo de carga ───────────────────────────────────────
+
+export type Tracking = 'dinamica' | 'isometrica' | 'movilidad' | 'pliometria' | 'aerobica' | 'control_motor';
+export const TRACKINGS: Array<[Tracking, string]> = [
+  ['dinamica', 'Fuerza dinámica'], ['isometrica', 'Isométrico'], ['movilidad', 'Movilidad'],
+  ['pliometria', 'Pliometría'], ['aerobica', 'Aeróbico'], ['control_motor', 'Control motor'],
+];
+export type LoadConfig = 'barra' | 'mancuerna' | 'dos_mancuernas' | 'kettlebell' | 'maquina' | 'polea' | 'banda' | 'lastre'
+  | 'peso_corporal' | 'asistida' | 'otro';
+export const LOAD_CONFIGS: Array<[LoadConfig, string]> = [
+  ['peso_corporal', 'Peso corporal'], ['mancuerna', 'Una mancuerna'], ['dos_mancuernas', 'Dos mancuernas'], ['kettlebell', 'Kettlebell'],
+  ['barra', 'Barra'], ['maquina', 'Máquina'], ['polea', 'Polea'], ['banda', 'Banda'], ['lastre', 'Lastre'], ['asistida', 'Con asistencia'], ['otro', 'Otro'],
+];
+export interface ExecSet {
+  n: number; side: 'L' | 'R' | null; reps: number | null; load: number | null; unit: 'kg' | 'lb'; secs: number | null;
+  dist_m: number | null; height_cm: number | null; velocity: number | null; power: number | null; hr: number | null;
+  rpe: number | null; rir: number | null; rest_s: number | null; rom: string | null; tempo: string | null; pain: number | null;
+  done: 'completa' | 'parcial' | 'no'; note: string | null;
+}
+export const emptySet = (n: number, side: 'L' | 'R' | null = null): ExecSet => ({
+  n, side, reps: null, load: null, unit: 'kg', secs: null, dist_m: null, height_cm: null, velocity: null, power: null, hr: null,
+  rpe: null, rir: null, rest_s: null, rom: null, tempo: null, pain: null, done: 'completa', note: null,
+});
+export interface ExecutionDraft {
+  item_id: string; tracking: Tracking; variant: string | null; load_config: LoadConfig | null; assistance: string | null;
+  body_mass_kg: number | null; sets: ExecSet[]; notes: string | null;
+}
+export interface Execution extends ExecutionDraft {
+  id: string; session_id: string; student_id: string; day: string; exercise_key: string; exercise_name: string;
+  prescribed: { text: string; name: string; dose: string; block: string; rounds: number | null; sets: number | null };
+  source: 'coach' | 'client'; data_quality: 'completo' | 'incompleto'; version: number; created_at: string; updated_at: string;
+}
+export interface ResponseDraft {
+  srpe: number | null; duration_min: number | null; status: 'completa' | 'parcial' | 'modificada' | null;
+  fatigue: number | null; soreness: number | null; pain: number | null; pain_area: string | null; recovery: number | null; note: string | null;
+}
+export const emptyResponse = (): ResponseDraft => ({
+  srpe: null, duration_min: null, status: null, fatigue: null, soreness: null, pain: null, pain_area: null, recovery: null, note: null,
+});
+export interface SessionResponse extends ResponseDraft { session_id: string; student_id: string; source: 'coach' | 'client'; version: number; updated_at: string }
+export interface ChangeEntry {
+  id: string; entity: 'execution' | 'response' | 'session'; action: 'create' | 'update' | 'delete'; actor: string;
+  reason: string | null; at: string; before: unknown; after: unknown;
+}
+export interface RecordData { executions: Execution[]; response: SessionResponse | null; changes?: ChangeEntry[]; skipped?: string[] }
+/** Escala CR-10 de esfuerzo percibido de la sesión (sRPE). */
+export const SRPE_LABEL = ['Reposo', 'Muy, muy fácil', 'Fácil', 'Moderado', 'Algo duro', 'Duro', '', 'Muy duro', '', '', 'Máximo'];
+export type ChangeCategory = 'progresar' | 'mantener' | 'reducir' | 'cambiar_ejercicios' | 'adaptar';
+export const CHANGE_CATEGORIES: Array<[ChangeCategory, string]> = [
+  ['progresar', 'Progresar'], ['mantener', 'Mantener'], ['reducir', 'Reducir'], ['cambiar_ejercicios', 'Cambiar ejercicios'], ['adaptar', 'Adaptar a síntomas o contexto'],
+];
+
+export type MetricId = 'load' | 'reps_set' | 'reps_total' | 'volume' | 'hold' | 'secs_total' | 'contacts' | 'height' | 'distance' | 'duration' | 'pace' | 'hr';
+export interface MetricChange {
+  id: MetricId; label: string; unit: string;
+  baseline: { value: number; day: string } | null; current: { value: number; day: string } | null; abs: number | null; pct: number | null;
+}
+export interface GroupRecord {
+  execution_id: string; session_id: string; day: string; source: 'coach' | 'client'; data_quality: 'completo' | 'incompleto';
+  values: Partial<Record<MetricId, number | null>>; rpe: number | null; rir: number | null; pain: number | null; rom: string | null;
+  sets: number; summary: string;
+}
+export interface CompareGroup {
+  key: string; label: string; tracking: Tracking; conditions: string[]; records: GroupRecord[]; changes: MetricChange[];
+  limited: boolean; reasons: string[]; interpretation: string[];
+}
+export interface ExerciseMonitoring {
+  key: string; name: string; tracking: Tracking; capacity: CapacityId | null; records: number; last_day: string;
+  groups: CompareGroup[]; transitions: Array<{ day: string; from: string; to: string }>;
+}
+export interface WindowSummary {
+  key: '7d' | '28d' | 'todo'; from: string; to: string; realized: number; scheduled: number; present: number; absent: number; sent: number;
+  partial: number; modified: number; assigned_not_done: number; prescription: { done: number; total: number; sessions: number };
+  per_week: number | null; minutes: number | null; minutes_sessions: number; srpe_load: number | null; srpe_sessions: number; missing_srpe: number;
+  exposure: Array<{ capacity: CapacityId; label: string; entries: number }>; entries_total: number; unclassified: number;
+  sets: { prescribed: number; performed: number; records: number };
+}
+export interface WeekRow {
+  week_start: string; sessions: number; days: string[]; minutes: number | null; srpe_load: number | null; srpe_sessions: number;
+  missing_srpe: number; exposure: Partial<Record<CapacityId, number>>; sets_prescribed: number; sets_performed: number;
+}
+export interface ReviewItem {
+  kind: 'descenso' | 'esfuerzo' | 'sintomas' | 'datos' | 'parciales' | 'asistencia';
+  title: string; detail: string; evidence: Array<{ day: string; text: string }>;
+}
+export interface Monitoring {
+  today: string; windows: WindowSummary[]; weeks: WeekRow[];
+  responses: Array<{ session_id: string; day: string; srpe: number | null; duration_min: number | null; load: number | null; status: string | null;
+    fatigue: number | null; soreness: number | null; pain: number | null; pain_area: string | null; recovery: number | null; note: string | null; source: string }>;
+  exercises: ExerciseMonitoring[]; review: ReviewItem[];
+  changes: Array<{ at: string; session_id: string | null; session_day: string | null; category: ChangeCategory | null; reason: string | null; lines: string[]; context: string | null }>;
+  coverage: { realized: number; with_srpe: number; with_duration: number; with_records: number };
+}
+
 /** `existing`: ya estaba cargada (mismo texto y fecha); al importar no se repite. */
 export type PreviewSession = Omit<Session, 'id' | 'completions'> & { existing: boolean };
 
@@ -283,7 +394,7 @@ export const coachApi = {
     req<{ sessions: Session[]; skipped: number; warnings: string[] }>('/training/sessions', json('POST', { text, student_ids, default_date })),
   createRoutine: (body: { date: string; title: string | null; status: 'planned' | 'done'; participant_ids: string[]; routine: Routine }) =>
     req<{ session: Session }>('/training/sessions/routine', json('POST', body)),
-  updateSession: (id: string, body: { date?: string; title?: string | null; status?: 'planned' | 'done'; participant_ids?: string[]; routine?: Routine }) =>
+  updateSession: (id: string, body: { date?: string; title?: string | null; status?: 'planned' | 'done'; participant_ids?: string[]; routine?: Routine; change_category?: ChangeCategory | null; change_reason?: string | null }) =>
     req<{ session: Session }>(`/training/sessions/${id}`, json('PATCH', body)),
   deleteSession: (id: string) => req<{ ok: true }>(`/training/sessions/${id}`, json('DELETE')),
   exercises: () => req<{ exercises: ExerciseEntry[] }>('/training/exercises'),
@@ -312,6 +423,12 @@ export const coachApi = {
   addQuality: (id: string, body: { exercise_name: string; day: string; score: number; aspects: QualityAspect[]; note: string | null }) =>
     req<{ entry: QualityEntry }>(`/training/students/${id}/quality`, json('POST', body)),
   deleteQuality: (id: string) => req<{ ok: true }>(`/training/quality/${id}`, json('DELETE')),
+  monitoring: (id: string) => req<{ monitoring: Monitoring }>(`/training/students/${id}/monitoring`),
+  record: (sessionId: string, studentId: string) => req<RecordData>(`/training/sessions/${sessionId}/record/${studentId}`),
+  saveRecord: (sessionId: string, studentId: string, body: { executions: ExecutionDraft[]; response?: ResponseDraft | null; reason?: string | null }) =>
+    req<RecordData>(`/training/sessions/${sessionId}/record/${studentId}`, json('PUT', body)),
+  planRecent: () => req<{ ids: string[] }>('/training/prefs/plan-recent'),
+  pushPlanRecent: (id: string) => req<{ ids: string[] }>('/training/prefs/plan-recent', json('PUT', { id })),
 };
 
 // ── comunidad, fotos y perfiles ─────────────────────────────────────────────
@@ -340,6 +457,11 @@ export const studentApi = {
   reportSeen: (id: string) => req<{ ok: true }>(`/me/reports/${id}/seen`, json('POST', {})),
   updateMe: (body: { name?: string; age?: number | null; phone?: string | null; about?: string | null }) =>
     req<{ student: Student; phone: string | null }>('/me', json('PATCH', body)),
+  record: (sessionId: string) => req<RecordData>(`/me/sessions/${sessionId}/record`),
+  saveRecord: (sessionId: string, body: { executions: ExecutionDraft[]; response?: ResponseDraft | null; reason?: string | null }) =>
+    req<RecordData>(`/me/sessions/${sessionId}/record`, json('PUT', body)),
+  plan: () => req<FinanceData>('/me/plan'),
+  payNotice: () => req<{ ok: true; pago_avisado: string }>('/me/plan/aviso', json('POST', {})),
 };
 
 // ── rutina: utilidades ──────────────────────────────────────────────────────
