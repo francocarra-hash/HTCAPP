@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  cap, CAP_LABEL, CapacityId, CHANGE_CATEGORIES, coachApi, CompareGroup, Monitoring, Profile, QualityEntry, shortDate, TRACKINGS,
-  WindowSummary,
+  cap, CAP_LABEL, CapacityId, CHANGE_CATEGORIES, coachApi, CompareGroup, Monitoring, MONTH_NAMES, Profile, QualityEntry, shortDate, TRACKINGS,
+  WindowSummary, WorkTotals,
 } from './data';
 import { ProgressView } from './ProgressView';
 import { LineChart, Seg, Skeleton } from './ui';
@@ -16,7 +16,7 @@ const CAT_LABEL = Object.fromEntries(CHANGE_CATEGORIES) as Record<string, string
 const n1 = (v: number) => Math.round(v * 10) / 10;
 const sgn = (v: number) => (v > 0 ? `+${n1(v)}` : `${n1(v)}`);
 
-/** Progreso del alumno para el profe: lo indicado, lo realizado, la respuesta y la adherencia, por separado. */
+/** Progreso del alumno para el profe. La carga y lo realizado salen de la planificación de las sesiones hechas. */
 export function CoachProgress({ profile, quality, onQualityChanged, toast, onOpenAssessment }: {
   profile: Profile; quality: QualityEntry[] | undefined; onQualityChanged: () => void; toast: (m: string) => void;
   onOpenAssessment: (assessmentId: string) => void;
@@ -77,18 +77,22 @@ function Overview({ w, onReview, pending }: { w: WindowSummary; onReview: () => 
       <dl className="dl">
         <dt>Asistencia</dt>
         <dd>{att ? `${w.present} presentes, ${w.absent} ausentes${w.sent ? `, ${w.sent} con ejercicios enviados` : ''}.` : 'Sin clases registradas en el período.'}</dd>
-        <dt>Lo indicado</dt>
+        <dt>Ejercicios</dt>
         <dd>{w.prescription.sessions
-          ? `En ${w.prescription.sessions} ${w.prescription.sessions === 1 ? 'sesión' : 'sesiones'} con registro hizo ${w.prescription.done} de ${w.prescription.total} ejercicios indicados.`
-          : 'Sin sesiones con registro de lo realizado.'}
+          ? `Hizo ${w.prescription.done} de ${w.prescription.total} ejercicios en ${w.prescription.sessions} ${w.prescription.sessions === 1 ? 'sesión' : 'sesiones'}.`
+          : 'Sin sesiones hechas en el período.'}
           {w.partial ? ` ${w.partial} parciales.` : ''}{w.modified ? ` ${w.modified} modificadas.` : ''}
           {w.assigned_not_done ? ` ${w.assigned_not_done} ${w.assigned_not_done === 1 ? 'rutina asignada quedó' : 'rutinas asignadas quedaron'} sin hacer.` : ''}
         </dd>
-        <dt>Carga interna</dt>
-        <dd>{w.srpe_load != null ? `${w.srpe_load} UA en ${w.srpe_sessions} ${w.srpe_sessions === 1 ? 'sesión' : 'sesiones'}` : 'Sin sRPE y duración registrados'}{w.missing_srpe && w.srpe_load != null ? ` · ${w.missing_srpe} sin dato` : ''}.</dd>
+        <dt>Carga</dt>
+        <dd>{w.work.sets ? <WorkLine w={w.work} /> : 'Sin sesiones hechas en el período'}.</dd>
+        {w.srpe_load != null && <>
+          <dt>Carga interna</dt>
+          <dd>{w.srpe_load} UA en {w.srpe_sessions} {w.srpe_sessions === 1 ? 'sesión' : 'sesiones'} (minutos × esfuerzo que respondió el alumno).</dd>
+        </>}
       </dl>
       <Exposure w={w} />
-      <p className="hint">La asistencia cuenta las clases; lo indicado cuenta los ejercicios hechos dentro de cada sesión. Son cosas distintas.</p>
+      <p className="hint">La carga sale de lo que cargaste en la planificación de cada sesión hecha. No hay que confirmar nada.</p>
       {pending > 0 && <button className="btn sm" onClick={onReview}>{pending} {pending === 1 ? 'punto' : 'puntos'} para revisar</button>}
     </>
   );
@@ -108,11 +112,11 @@ function Exposure({ w, cat }: { w: WindowSummary; cat?: CapacityId | null }) {
         {shown.map((e) => (
           <li key={e.capacity} style={{ ['--c' as string]: `var(--cap-${e.capacity})` }}>
             <i aria-hidden="true" />
-            <span><b>{e.label}</b> · {Math.round((e.entries / w.entries_total) * 100)}% de los ejercicios registrados ({e.entries} de {w.entries_total})</span>
+            <span><b>{e.label}</b> · {e.sets} {e.sets === 1 ? 'serie' : 'series'} · {Math.round((e.entries / w.entries_total) * 100)}% de los ejercicios ({e.entries} de {w.entries_total})</span>
           </li>
         ))}
       </ul>
-      <p className="hint" style={{ fontSize: 12 }}>Es la proporción de ejercicios anotados de cada capacidad, no del estímulo total de entrenamiento.</p>
+      <p className="hint" style={{ fontSize: 12 }}>Series y proporción de ejercicios de cada capacidad, según la planificación. No mide el estímulo total de entrenamiento.</p>
     </div>
   );
 }
@@ -160,7 +164,7 @@ function GroupCard({ g }: { g: CompareGroup }) {
         <summary>Registros ({g.records.length})</summary>
         <div className="tbl-wrap">
           <table className="tbl">
-            <thead><tr><th>Fecha</th><th>Series</th><th>Esfuerzo</th><th>Dolor</th><th>Datos</th></tr></thead>
+            <thead><tr><th>Fecha</th><th>Series</th><th>Esfuerzo</th><th>Dolor</th><th>Origen</th></tr></thead>
             <tbody>
               {[...g.records].reverse().map((r) => (
                 <tr key={r.execution_id}>
@@ -168,7 +172,7 @@ function GroupCard({ g }: { g: CompareGroup }) {
                   <td className="m">{r.summary}{r.rom ? ` · ROM ${r.rom}` : ''}</td>
                   <td className="nw">{[r.rpe != null ? `RPE ${r.rpe}` : null, r.rir != null ? `RIR ${r.rir}` : null].filter(Boolean).join(' · ') || '—'}</td>
                   <td className="nw">{r.pain != null ? `${r.pain}/10` : '—'}</td>
-                  <td className="nw">{r.data_quality === 'incompleto' ? 'Incompletos' : 'Completos'} · {r.source === 'coach' ? 'profe' : 'alumno'}</td>
+                  <td className="nw">{r.from_plan ? 'Planificación' : `${r.data_quality === 'incompleto' ? 'Incompletos' : 'Completos'} · corregido por ${r.source === 'coach' ? 'el profe' : 'el alumno'}`}</td>
                 </tr>
               ))}
             </tbody>
@@ -188,8 +192,8 @@ function ExerciseView({ mon }: { mon: Monitoring }) {
   if (!mon.exercises.length) {
     return (
       <section className="card">
-        <h2>Todavía no hay registros por serie</h2>
-        <p className="hint">Cuando registres lo que hizo en una sesión (Historial → Registrar lo realizado) o lo anote el alumno en su rutina, acá se ve la evolución de cada ejercicio comparando sólo registros en las mismas condiciones.</p>
+        <h2>Todavía no hay sesiones hechas</h2>
+        <p className="hint">Cuando guardes una sesión como hecha, acá se ve la evolución de cada ejercicio con lo que cargaste en la planificación, comparando sólo en las mismas condiciones.</p>
       </section>
     );
   }
@@ -223,45 +227,72 @@ function ExerciseView({ mon }: { mon: Monitoring }) {
 
 // ── carga ──
 
+const mins = (s: number): string => (s >= 60 ? `${Math.round(s / 60)} min` : s ? `${s} s` : '—');
+const kilos = (k: number): string => (k ? `${Math.round(k).toLocaleString('es-AR')} kg` : '—');
+
+/** Lo que dice la planificación de las sesiones hechas, sumado: series, repeticiones, sostén y kilos. */
+function WorkLine({ w }: { w: WorkTotals }) {
+  const bits = [
+    `${w.sets} ${w.sets === 1 ? 'serie' : 'series'}`,
+    w.reps ? `${w.reps.toLocaleString('es-AR')} repeticiones` : null,
+    w.hold_s ? `${mins(w.hold_s)} de sostén` : null,
+    w.aerobic_s ? `${mins(w.aerobic_s)} aeróbicos` : null,
+    w.volume_kg ? `${kilos(w.volume_kg)} movidos` : null,
+  ].filter(Boolean);
+  return <>{bits.join(' · ')}</>;
+}
+
 function LoadView({ mon, win, setWin }: { mon: Monitoring; win: Win; setWin: (w: Win) => void }) {
   const w = mon.windows.find((x) => x.key === win)!;
   const [cat, setCat] = useState<CapacityId | null>(null);
-  const weeks = useMemo(() => mon.weeks.filter((x) => win === 'todo' || x.week_start >= weekStartOf(w.from)), [mon.weeks, w.from, win]);
-  const mx = Math.max(1, ...weeks.map((x) => x.srpe_load ?? 0));
+  const [by, setBy] = useState<'semana' | 'mes'>('semana');
+  const rows = useMemo(() => (by === 'semana'
+    ? mon.weeks.slice(-12).map((x) => ({ key: x.week_start, label: shortDate(x.week_start), sessions: x.sessions, work: x.work, srpe: x.srpe_load }))
+    : mon.months.map((x) => ({ key: x.month, label: `${cap(MONTH_NAMES[Number(x.month.slice(5, 7)) - 1]!)} ${x.month.slice(2, 4)}`, sessions: x.sessions, work: x.work, srpe: x.srpe_load }))
+  ), [mon.weeks, mon.months, by]);
+  const mx = Math.max(1, ...rows.map((x) => x.work.sets));
+  const anyKg = rows.some((x) => x.work.volume_kg > 0);
+  const anySrpe = rows.some((x) => x.srpe != null);
   const responses = mon.responses.filter((r) => r.day >= w.from);
   return (
     <>
       <section className="card">
-        <h2>Carga por semana</h2>
-        <div className="winsel"><Seg small value={win} onChange={setWin} options={(['7d', '28d', 'todo'] as Win[]).map((k) => [k, WIN_LABEL[k]])} /></div>
-        <p className="hint">Carga interna = minutos × esfuerzo de la sesión (sRPE), en unidades arbitrarias (UA). Es la carga percibida, no una medición fisiológica. No se suman ejercicios distintos en un número único.</p>
-        {weeks.length ? (
+        <div className="card-h">
+          <h2>Carga</h2>
+          <Seg small value={by} onChange={setBy} options={[['semana', 'Por semana'], ['mes', 'Por mes']]} />
+        </div>
+        <p className="hint">Sale de lo que cargaste en la planificación de cada sesión: no hay que confirmar nada. Si un día algo salió distinto, corregilo en esa sesión (Historial → Corregir lo realizado).</p>
+        {rows.length ? (
           <div className="tbl-wrap">
             <table className="tbl wk">
-              <thead><tr><th>Semana</th><th>Sesiones</th><th>Minutos</th><th>Carga interna</th><th>Series hechas / indicadas</th></tr></thead>
+              <thead><tr><th>{by === 'semana' ? 'Semana del' : 'Mes'}</th><th>Sesiones</th><th>Series</th><th>Reps</th><th>Sostén</th>{anyKg && <th>Kilos</th>}{anySrpe && <th>Carga interna</th>}</tr></thead>
               <tbody>
-                {[...weeks].reverse().map((x) => (
-                  <tr key={x.week_start}>
-                    <td className="nw">{shortDate(x.week_start)}</td>
-                    <td>{x.sessions}{x.days.length ? <small className="m"> · {x.days.map((d) => shortDate(d)).join(', ')}</small> : ''}</td>
-                    <td>{x.minutes ?? '—'}</td>
-                    <td>
-                      {x.srpe_load != null ? (
-                        <span className="ubar"><i style={{ width: `${(x.srpe_load / mx) * 100}%` }} /><b>{x.srpe_load} UA</b></span>
-                      ) : '—'}
-                      {x.missing_srpe > 0 && x.sessions > 0 && <small className="m"> {x.missing_srpe} sin dato</small>}
-                    </td>
-                    <td>{x.sets_performed || x.sets_prescribed ? `${x.sets_performed} / ${x.sets_prescribed || '—'}` : '—'}</td>
+                {[...rows].reverse().map((x) => (
+                  <tr key={x.key}>
+                    <td className="nw">{x.label}</td>
+                    <td>{x.sessions || '—'}</td>
+                    <td>{x.work.sets ? <span className="ubar"><i style={{ width: `${(x.work.sets / mx) * 100}%` }} /><b>{x.work.sets}</b></span> : '—'}</td>
+                    <td>{x.work.reps ? x.work.reps.toLocaleString('es-AR') : '—'}</td>
+                    <td className="nw">{mins(x.work.hold_s)}</td>
+                    {anyKg && <td className="nw">{kilos(x.work.volume_kg)}</td>}
+                    {anySrpe && <td className="nw">{x.srpe != null ? `${x.srpe} UA` : '—'}</td>}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        ) : <p className="hint">Sin sesiones en el período.</p>}
+        ) : <p className="hint">Todavía no hay sesiones hechas.</p>}
+        <p className="hint" style={{ fontSize: 12 }}>
+          Series: cada vuelta de cada ejercicio. Kilos movidos: kilos × repeticiones de los ejercicios con carga escrita.
+          {by === 'semana' ? ' Se muestran las últimas 12 semanas.' : ' Se muestran los últimos 12 meses con sesiones.'}
+          {anySrpe ? ' Carga interna: minutos × esfuerzo de la sesión, cuando el alumno lo respondió.' : ''}
+        </p>
       </section>
 
       <section className="card">
-        <h2>Exposición por capacidad</h2>
+        <h2>Series por capacidad</h2>
+        <div className="winsel"><Seg small value={win} onChange={setWin} options={(['7d', '28d', 'todo'] as Win[]).map((k) => [k, WIN_LABEL[k]])} /></div>
+        <p className="hint" style={{ marginTop: 8 }}>En este período: <WorkLine w={w.work} />.</p>
         <div className="filters" role="group" aria-label="Filtrar capacidad">
           <button className="tog" aria-pressed={!cat} onClick={() => setCat(null)}>Todas</button>
           {w.exposure.map((e) => (
@@ -270,13 +301,13 @@ function LoadView({ mon, win, setWin }: { mon: Monitoring; win: Win; setWin: (w:
           ))}
         </div>
         <Exposure w={w} cat={cat} />
-        {!w.entries_total && <p className="hint">Sin ejercicios registrados en el período.</p>}
+        {!w.entries_total && <p className="hint">Sin sesiones en el período.</p>}
       </section>
 
-      <section className="card">
-        <h2>Respuesta a cada sesión</h2>
-        <p className="hint">Lo que informó el alumno o registró el profe. Un solo dato subjetivo no mide la recuperación.</p>
-        {responses.length ? (
+      {responses.length > 0 && (
+        <section className="card">
+          <h2>Respuesta a cada sesión</h2>
+          <p className="hint">Lo que respondió el alumno al terminar su rutina. Un solo dato subjetivo no mide la recuperación.</p>
           <div className="tbl-wrap">
             <table className="tbl">
               <thead><tr><th>Fecha</th><th>sRPE</th><th>Min</th><th>UA</th><th>Fatiga</th><th>D. muscular</th><th>Dolor</th><th>Recup.</th></tr></thead>
@@ -293,17 +324,11 @@ function LoadView({ mon, win, setWin }: { mon: Monitoring; win: Win; setWin: (w:
               </tbody>
             </table>
           </div>
-        ) : <p className="hint">Todavía no hay respuestas registradas en el período.</p>}
-      </section>
+        </section>
+      )}
     </>
   );
 }
-
-const weekStartOf = (d: string): string => {
-  const t = new Date(`${d}T12:00:00Z`);
-  t.setUTCDate(t.getUTCDate() - ((t.getUTCDay() + 6) % 7));
-  return t.toISOString().slice(0, 10);
-};
 
 // ── evaluaciones formales (aparte) ──
 
@@ -354,7 +379,7 @@ function ReviewView({ mon }: { mon: Monitoring }) {
           </div>
         ) : <p className="hint">Nada para revisar en las últimas 4 semanas con los datos que hay.</p>}
         <p className="hint" style={{ fontSize: 12 }}>
-          Datos disponibles: de {c.realized} sesiones hechas, {c.with_srpe} con sRPE, {c.with_duration} con duración y {c.with_records} con registro por serie.
+          Datos: {c.realized} sesiones hechas, tomadas de la planificación{c.with_records ? ` (${c.with_records} con correcciones a mano)` : ''}{c.with_srpe ? `; ${c.with_srpe} con el esfuerzo que respondió el alumno` : ''}.
         </p>
       </section>
       <section className="card">

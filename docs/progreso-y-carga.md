@@ -127,3 +127,43 @@ carga, RIR 3→1 con mismo trabajo, Copenhagen sin tocar evaluaciones, integrida
 histórica al editar la rutina, unilateral por lado) más duplicados, correcciones
 versionadas, permisos del alumno, "Mi plan y pagos" sin datos internos, link sólo
 de Mercado Pago y recientes de Planificar.
+
+## 6. Cambio de criterio (noviembre 2026): la carga sale de la planificación
+
+Pedido de Nico: cuando carga una planificación es porque la acaba de hacer con
+el alumno, así que reconfirmar ejercicio por ejercicio es redundante. Y el
+Progreso del alumno tiene que ser un lugar motivacional, centrado en sus logros.
+
+### Carga sin reconfirmar
+
+- Una sesión **guardada como hecha por el profe** cuenta entera: lo que dice la
+  rutina es lo que se hizo. Una rutina **asignada y terminada por el alumno**
+  cuenta con los ejercicios que marcó (todos, si no marcó ninguno).
+- `src/training/derive.ts` lee la dosis como está escrita ("12", "10 - 10 - 12",
+  "20/25/30", "30s+10r", "1:30m", "3x8 20kg", "+5kg 10r +10s") y arma las series
+  con repeticiones, tiempo y kilos. Sin dosis, cuenta la serie sin números.
+- El registro manual sigue existiendo como **corrección opcional** ("Corregir lo
+  realizado"): lo que se anota ahí reemplaza a lo planificado sólo en ese
+  ejercicio. Esto reemplaza la regla anterior de "nunca completar con lo
+  indicado".
+- **Carga por semana y por mes**: sesiones, series, repeticiones, tiempo de
+  sostén y kilos movidos (kilos × repeticiones, donde hay carga escrita), más
+  series por capacidad. La carga interna (minutos × esfuerzo) se muestra sólo
+  cuando el alumno respondió el esfuerzo al terminar su rutina.
+- "Para revisar" ya no pide datos que el profe no carga (esfuerzo, duración,
+  registros incompletos de la planificación).
+
+### Progreso del alumno
+
+Pantalla de logros: cuántos ejercicios mejoró, sesiones, semanas seguidas y
+niveles subidos; marcas nuevas de las últimas 4 semanas; todos sus logros (de la
+primera vez a la última); variantes más difíciles a las que pasó; lo que anotó
+el profe sobre cómo se mueve; mejoras por capacidad y constancia. Las tablas y
+las aclaraciones técnicas quedan sólo en la vista del profe.
+
+### Pendiente de definir con Nico
+
+- Qué ejercicio es **más importante** para ordenar los logros (hoy: mayor
+  porcentaje de mejora; primero lo que subió por serie, después el volumen).
+- Si quiere cargar el esfuerzo de la sesión en las clases presenciales para
+  tener también la carga interna.

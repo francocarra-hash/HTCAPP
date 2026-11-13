@@ -348,7 +348,7 @@ export interface MetricChange {
   baseline: { value: number; day: string } | null; current: { value: number; day: string } | null; abs: number | null; pct: number | null;
 }
 export interface GroupRecord {
-  execution_id: string; session_id: string; day: string; source: 'coach' | 'client'; data_quality: 'completo' | 'incompleto';
+  execution_id: string; session_id: string; day: string; source: 'coach' | 'client'; from_plan?: boolean; data_quality: 'completo' | 'incompleto';
   values: Partial<Record<MetricId, number | null>>; rpe: number | null; rir: number | null; pain: number | null; rom: string | null;
   sets: number; summary: string;
 }
@@ -364,24 +364,29 @@ export interface WindowSummary {
   key: '7d' | '28d' | 'todo'; from: string; to: string; realized: number; scheduled: number; present: number; absent: number; sent: number;
   partial: number; modified: number; assigned_not_done: number; prescription: { done: number; total: number; sessions: number };
   per_week: number | null; minutes: number | null; minutes_sessions: number; srpe_load: number | null; srpe_sessions: number; missing_srpe: number;
-  exposure: Array<{ capacity: CapacityId; label: string; entries: number }>; entries_total: number; unclassified: number;
+  exposure: Array<{ capacity: CapacityId; label: string; entries: number; sets: number }>; entries_total: number; unclassified: number;
   sets: { prescribed: number; performed: number; records: number };
+  work: WorkTotals;
 }
+/** Trabajo hecho según la planificación: series, repeticiones, segundos de sostén y aeróbicos, y kilos × repeticiones. */
+export interface WorkTotals { sets: number; reps: number; hold_s: number; aerobic_s: number; volume_kg: number }
+export interface MonthRow { month: string; sessions: number; work: WorkTotals; sets_by_capacity: Partial<Record<CapacityId, number>>; srpe_load: number | null }
 export interface WeekRow {
   week_start: string; sessions: number; days: string[]; minutes: number | null; srpe_load: number | null; srpe_sessions: number;
   missing_srpe: number; exposure: Partial<Record<CapacityId, number>>; sets_prescribed: number; sets_performed: number;
+  work: WorkTotals;
 }
 export interface ReviewItem {
   kind: 'descenso' | 'esfuerzo' | 'sintomas' | 'datos' | 'parciales' | 'asistencia';
   title: string; detail: string; evidence: Array<{ day: string; text: string }>;
 }
 export interface Monitoring {
-  today: string; windows: WindowSummary[]; weeks: WeekRow[];
+  today: string; windows: WindowSummary[]; weeks: WeekRow[]; months: MonthRow[];
   responses: Array<{ session_id: string; day: string; srpe: number | null; duration_min: number | null; load: number | null; status: string | null;
     fatigue: number | null; soreness: number | null; pain: number | null; pain_area: string | null; recovery: number | null; note: string | null; source: string }>;
   exercises: ExerciseMonitoring[]; review: ReviewItem[];
   changes: Array<{ at: string; session_id: string | null; session_day: string | null; category: ChangeCategory | null; reason: string | null; lines: string[]; context: string | null }>;
-  coverage: { realized: number; with_srpe: number; with_duration: number; with_records: number };
+  coverage: { realized: number; with_srpe: number; with_duration: number; with_records: number; from_plan: number };
 }
 
 /** `existing`: ya estaba cargada (mismo texto y fecha); al importar no se repite. */

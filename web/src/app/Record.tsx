@@ -319,8 +319,9 @@ export function RecordSheet({ session, studentId, studentName, mode, onClose, on
   return (
     <Sheet title={only ? 'Anotar lo que hiciste' : mode === 'coach' ? `Lo realizado · ${firstName(studentName)}` : 'Lo que hiciste'} onClose={onClose}>
       <p className="hint" style={{ margin: 0 }}>
-        {shortDate(session.date)}{session.title ? ` · ${session.title}` : ''}. Anotá lo que {mode === 'coach' ? 'hizo' : 'hiciste'} de verdad:
-        lo que no se completa queda vacío, no en cero.
+        {shortDate(session.date)}{session.title ? ` · ${session.title}` : ''}. {mode === 'coach'
+          ? 'No hace falta completar esto: la carga ya se toma de la planificación. Usalo sólo si algo salió distinto; lo que anotes acá reemplaza a lo planificado en ese ejercicio.'
+          : 'Anotá lo que hiciste de verdad: lo que no se completa queda vacío, no en cero.'}
       </p>
       {!data && !err ? <Skeleton /> : (
         <>

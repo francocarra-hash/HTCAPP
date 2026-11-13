@@ -10,7 +10,8 @@
  * decisiones son del profe. No se calcula ACWR ni riesgo de lesión.
  */
 import { CAPACITIES, CapacityId } from './capacities';
-import { compareExercise, ExerciseComparison, Execution, SessionResponse } from './execution';
+import { compareExercise, ExecSet, ExerciseComparison, Execution, SessionResponse } from './execution';
+import { planExecutions } from './derive';
 import { firstName } from './parser';
 import { ExerciseInfo, itemKey, ownItems } from './progress';
 import { Routine, RoutineItem } from './routine';
@@ -40,9 +41,23 @@ export interface ChangeEntry {
   at: string;
 }
 
+/** Trabajo hecho, sumado: series, repeticiones, tiempo de sostén, tiempo aeróbico y kilos movidos. */
+export interface WorkTotals {
+  sets: number;
+  reps: number;
+  /** Segundos de sostén (isométricos, movilidad, control). */
+  hold_s: number;
+  /** Segundos de trabajo aeróbico. */
+  aerobic_s: number;
+  /** Σ kilos × repeticiones de las series con carga externa. */
+  volume_kg: number;
+}
+
 export interface MonitoringInput {
   today: string;
   studentName: string;
+  /** Para armar lo realizado a partir de la planificación. */
+  studentId?: string;
   sessions: MonitoringSession[];
   executions: Execution[];
   responses: SessionResponse[];
@@ -76,10 +91,11 @@ export interface WindowSummary {
   srpe_load: number | null;
   srpe_sessions: number;
   missing_srpe: number;
-  exposure: Array<{ capacity: CapacityId; label: string; entries: number }>;
+  exposure: Array<{ capacity: CapacityId; label: string; entries: number; sets: number }>;
   entries_total: number;
   unclassified: number;
   sets: { prescribed: number; performed: number; records: number };
+  work: WorkTotals;
 }
 
 export interface WeekRow {
@@ -93,6 +109,16 @@ export interface WeekRow {
   exposure: Partial<Record<CapacityId, number>>;
   sets_prescribed: number;
   sets_performed: number;
+  work: WorkTotals;
+}
+
+export interface MonthRow {
+  month: string;
+  sessions: number;
+  work: WorkTotals;
+  /** Series por capacidad. */
+  sets_by_capacity: Partial<Record<CapacityId, number>>;
+  srpe_load: number | null;
 }
 
 export interface ResponseRow {
@@ -133,11 +159,33 @@ export interface Monitoring {
   today: string;
   windows: WindowSummary[];
   weeks: WeekRow[];
+  months: MonthRow[];
   responses: ResponseRow[];
   exercises: Array<ExerciseComparison & { capacity: CapacityId | null; records: number; last_day: string }>;
   review: ReviewItem[];
   changes: ChangeRow[];
-  coverage: { realized: number; with_srpe: number; with_duration: number; with_records: number };
+  /** with_records: sesiones con algún registro manual. from_plan: sesiones tomadas de la planificación. */
+  coverage: { realized: number; with_srpe: number; with_duration: number; with_records: number; from_plan: number };
+}
+
+const NO_WORK: WorkTotals = { sets: 0, reps: 0, hold_s: 0, aerobic_s: 0, volume_kg: 0 };
+const addWork = (a: WorkTotals, b: WorkTotals): WorkTotals => ({
+  sets: a.sets + b.sets, reps: a.reps + b.reps, hold_s: a.hold_s + b.hold_s, aerobic_s: a.aerobic_s + b.aerobic_s,
+  volume_kg: Math.round((a.volume_kg + b.volume_kg) * 10) / 10,
+});
+const doneSets = (e: Execution): ExecSet[] => e.sets.filter((x) => x.done !== 'no');
+/** Una serie unilateral (izquierda y derecha) cuenta una vez, como en lo indicado. */
+const setCount = (e: Execution): number => new Set(doneSets(e).map((x) => x.n)).size;
+function workOf(e: Execution): WorkTotals {
+  const sets = doneSets(e);
+  const secs = sets.reduce((a, x) => a + (x.secs ?? 0), 0);
+  return {
+    sets: setCount(e),
+    reps: sets.reduce((a, x) => a + (x.reps ?? 0), 0),
+    hold_s: e.tracking === 'aerobica' ? 0 : secs,
+    aerobic_s: e.tracking === 'aerobica' ? secs : 0,
+    volume_kg: Math.round(sets.reduce((a, x) => a + (x.load != null && x.reps != null ? x.load * (x.unit === 'lb' ? 0.4536 : 1) * x.reps : 0), 0) * 10) / 10,
+  };
 }
 
 const DAY = 86_400_000;
@@ -159,8 +207,15 @@ export function buildMonitoring(input: MonitoringInput): Monitoring {
   const who = firstName(input.studentName);
   const sessions = [...input.sessions].sort((a, b) => a.date.localeCompare(b.date));
   const respBy = new Map(input.responses.map((r) => [r.session_id, r]));
+  // Lo realizado: los registros manuales y, para el resto, lo que dice la planificación de las
+  // sesiones hechas (el profe la cargó porque la hizo con el alumno: no se vuelve a confirmar).
+  const manual = input.executions.filter((e) => e.origin !== 'plan');
+  const executions = [
+    ...manual,
+    ...planExecutions({ sessions, studentId: input.studentId ?? manual[0]?.student_id ?? '', studentName: input.studentName, info: input.info, stored: manual }),
+  ];
   const execBySession = new Map<string, Execution[]>();
-  for (const e of input.executions) execBySession.set(e.session_id, [...(execBySession.get(e.session_id) ?? []), e]);
+  for (const e of executions) execBySession.set(e.session_id, [...(execBySession.get(e.session_id) ?? []), e]);
   // Realizada: la marcó el profe, la terminó el alumno o hay series hechas registradas.
   const performed = (id: string) => (execBySession.get(id) ?? []).some((e) => e.sets.some((x) => x.done !== 'no'));
   const realized = sessions.filter((s) => s.status === 'done' || s.completed_at || performed(s.id));
@@ -183,6 +238,12 @@ export function buildMonitoring(input: MonitoringInput): Monitoring {
       ...execs.filter((e) => e.sets.some((x) => x.done !== 'no')).map((e) => e.item_id),
     ]);
     const withRecord = Boolean(s.completed_at) || execs.length > 0;
+    const capOfItem = new Map(items.map((it, i) => [it.id, caps[i] ?? null]));
+    const setsByCap: Partial<Record<CapacityId, number>> = {};
+    for (const e of execs) {
+      const c = capOfItem.get(e.item_id);
+      if (c) setsByCap[c] = (setsByCap[c] ?? 0) + setCount(e);
+    }
     // Terminada por el alumno: cuenta toda la rutina. Sólo con registros del profe: cuentan los ejercicios registrados
     // (que no esté registrado no quiere decir que no lo hizo).
     const counted = s.completed_at ? items : items.filter((it) => execs.some((e) => e.item_id === it.id));
@@ -196,8 +257,11 @@ export function buildMonitoring(input: MonitoringInput): Monitoring {
       modified: resp?.status === 'modificada',
       load: resp?.srpe != null && resp?.duration_min != null ? resp.srpe * resp.duration_min : null,
       setsPrescribed: execs.reduce((a, e) => a + (e.prescribed.sets ?? 0), 0),
-      // Una serie unilateral (izquierda y derecha) cuenta una vez, como en lo indicado.
-      setsPerformed: execs.reduce((a, e) => a + new Set(e.sets.filter((x) => x.done !== 'no').map((x) => x.n)).size, 0),
+      setsPerformed: execs.reduce((a, e) => a + setCount(e), 0),
+      work: execs.reduce((a, e) => addWork(a, workOf(e)), NO_WORK),
+      setsByCap,
+      manualRecords: execs.filter((e) => e.origin !== 'plan').length,
+      fromPlan: execs.some((e) => e.origin === 'plan'),
     };
   });
 
@@ -220,6 +284,7 @@ export function buildMonitoring(input: MonitoringInput): Monitoring {
     const withMin = ps.filter((p) => p.resp?.duration_min != null);
     const withLoad = ps.filter((p) => p.load != null);
     const exposure = new Map<CapacityId, number>();
+    const capSets = new Map<CapacityId, number>();
     let entries = 0; let unclassified = 0;
     for (const p of ps) {
       for (const c of p.caps) {
@@ -227,6 +292,7 @@ export function buildMonitoring(input: MonitoringInput): Monitoring {
         if (c) exposure.set(c, (exposure.get(c) ?? 0) + 1);
         else unclassified++;
       }
+      for (const [c, n] of Object.entries(p.setsByCap) as Array<[CapacityId, number]>) capSets.set(c, (capSets.get(c) ?? 0) + n);
     }
     const recorded = ps.filter((p) => p.withRecord);
     return {
@@ -248,14 +314,15 @@ export function buildMonitoring(input: MonitoringInput): Monitoring {
       srpe_load: withLoad.length ? withLoad.reduce((a, p) => a + p.load!, 0) : null,
       srpe_sessions: withLoad.length,
       missing_srpe: ps.length - withLoad.length,
-      exposure: CAPACITIES.filter((c) => exposure.has(c.id)).map((c) => ({ capacity: c.id, label: c.label, entries: exposure.get(c.id)! })),
+      exposure: CAPACITIES.filter((c) => exposure.has(c.id)).map((c) => ({ capacity: c.id, label: c.label, entries: exposure.get(c.id)!, sets: capSets.get(c.id) ?? 0 })),
       entries_total: entries,
       unclassified,
       sets: {
         prescribed: ps.reduce((a, p) => a + p.setsPrescribed, 0),
         performed: ps.reduce((a, p) => a + p.setsPerformed, 0),
-        records: ps.reduce((a, p) => a + p.execs.length, 0),
+        records: ps.reduce((a, p) => a + p.manualRecords, 0),
       },
+      work: ps.reduce((a, p) => addWork(a, p.work), NO_WORK),
     };
   };
 
@@ -282,9 +349,23 @@ export function buildMonitoring(input: MonitoringInput): Monitoring {
         exposure,
         sets_prescribed: ps.reduce((a, p) => a + p.setsPrescribed, 0),
         sets_performed: ps.reduce((a, p) => a + p.setsPerformed, 0),
+        work: ps.reduce((a, p) => addWork(a, p.work), NO_WORK),
       });
     }
   }
+
+  // Meses calendario (los últimos 12 con sesiones).
+  const byMonth = new Map<string, typeof perSession>();
+  for (const p of perSession) byMonth.set(p.s.date.slice(0, 7), [...(byMonth.get(p.s.date.slice(0, 7)) ?? []), p]);
+  const months: MonthRow[] = [...byMonth.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-12).map(([month, ps]) => {
+    const sets_by_capacity: MonthRow['sets_by_capacity'] = {};
+    for (const p of ps) for (const [c, n] of Object.entries(p.setsByCap) as Array<[CapacityId, number]>) sets_by_capacity[c] = (sets_by_capacity[c] ?? 0) + n;
+    const withLoad = ps.filter((p) => p.load != null);
+    return {
+      month, sessions: ps.length, work: ps.reduce((a, p) => addWork(a, p.work), NO_WORK), sets_by_capacity,
+      srpe_load: withLoad.length ? withLoad.reduce((a, p) => a + p.load!, 0) : null,
+    };
+  });
 
   const dayOf = new Map(sessions.map((s) => [s.id, s.date]));
   const responses: ResponseRow[] = input.responses
@@ -298,13 +379,17 @@ export function buildMonitoring(input: MonitoringInput): Monitoring {
 
   // Progreso por ejercicio con lo realizado.
   const byKey = new Map<string, Execution[]>();
-  for (const e of input.executions) byKey.set(e.exercise_key, [...(byKey.get(e.exercise_key) ?? []), e]);
+  for (const e of executions) byKey.set(e.exercise_key, [...(byKey.get(e.exercise_key) ?? []), e]);
   const exercises = [...byKey.entries()].flatMap(([key, list]) => {
     const cmp = compareExercise(list);
     if (!cmp) return [];
     const lastDay = list.map((e) => e.day).sort().pop()!;
     return [{ ...cmp, capacity: input.info(key, cmp.name).capacity, records: list.length, last_day: lastDay }];
-  }).sort((a, b) => b.last_day.localeCompare(a.last_day) || b.records - a.records);
+  });
+  // Primero los que hizo en las últimas 4 semanas; dentro de eso, los más repetidos.
+  const recentFrom = addDays(today, -27);
+  const isRecent = (d: string): number => Number(d >= recentFrom);
+  exercises.sort((a, b) => isRecent(b.last_day) - isRecent(a.last_day) || b.records - a.records || b.last_day.localeCompare(a.last_day));
 
   // ── para revisar (sin umbrales: patrones descriptivos con su respaldo) ──
   const review: ReviewItem[] = [];
@@ -349,7 +434,7 @@ export function buildMonitoring(input: MonitoringInput): Monitoring {
     if (r.day < since) continue;
     if ((r.pain != null && r.pain > 0) || r.pain_area) symptoms.push({ day: r.day, pain: r.pain, text: `Dolor ${r.pain ?? '—'}/10${r.pain_area ? ` · ${r.pain_area}` : ''}` });
   }
-  for (const e of input.executions) {
+  for (const e of manual) {
     if (e.day < since) continue;
     const p = Math.max(-1, ...e.sets.map((s) => s.pain ?? -1));
     if (p > 0) symptoms.push({ day: e.day, pain: p, text: `${e.exercise_name}: dolor ${p}/10 en alguna serie` });
@@ -363,13 +448,16 @@ export function buildMonitoring(input: MonitoringInput): Monitoring {
     review.push({ kind: 'sintomas', title: 'Síntomas informados', detail: `En las últimas 4 semanas.${consecutive}${trend}`, evidence: symptoms.map(({ day, text }) => ({ day, text })) });
   }
   const recent = perSession.filter((p) => p.s.date >= since);
-  const noLoad = recent.filter((p) => p.load == null);
-  const incomplete = input.executions.filter((e) => e.day >= since && e.data_quality === 'incompleto');
+  // El esfuerzo de la sesión se le pregunta al alumno cuando termina su rutina: sólo ahí puede faltar.
+  // En las sesiones que carga el profe no se pide nada más.
+  const asked = recent.filter((p) => p.s.completed_at || p.resp);
+  const noLoad = asked.filter((p) => p.load == null);
+  const incomplete = manual.filter((e) => e.day >= since && e.data_quality === 'incompleto');
   if (noLoad.length || incomplete.length) {
     review.push({
       kind: 'datos', title: 'Faltan datos de monitoreo',
       detail: [
-        noLoad.length ? `${noLoad.length} de ${recent.length} sesiones sin esfuerzo (sRPE) o duración.` : '',
+        noLoad.length ? `${noLoad.length} de ${asked.length} sesiones terminadas por el alumno sin esfuerzo (sRPE) o duración.` : '',
         incomplete.length ? `${incomplete.length} registros de ejercicios con datos incompletos.` : '',
       ].filter(Boolean).join(' '),
       evidence: [
@@ -420,6 +508,7 @@ export function buildMonitoring(input: MonitoringInput): Monitoring {
     today,
     windows: [windowOf('7d'), windowOf('28d'), windowOf('todo')],
     weeks,
+    months,
     responses,
     exercises,
     review,
@@ -428,7 +517,8 @@ export function buildMonitoring(input: MonitoringInput): Monitoring {
       realized: perSession.length,
       with_srpe: perSession.filter((p) => p.resp?.srpe != null).length,
       with_duration: perSession.filter((p) => p.resp?.duration_min != null).length,
-      with_records: perSession.filter((p) => p.execs.length > 0).length,
+      with_records: perSession.filter((p) => p.manualRecords > 0).length,
+      from_plan: perSession.filter((p) => p.fromPlan).length,
     },
   };
 }

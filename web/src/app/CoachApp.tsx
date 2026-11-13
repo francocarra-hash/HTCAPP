@@ -682,7 +682,7 @@ function StudentDetail({ id, initialTab, fin, reloadFin, all, right, toast, onBa
                     ))}
                     {last.date_note && <div className="phase warn"><span className="ph-tag">Fecha</span><div>{last.date_note}</div></div>}
                     <div className="actions" style={{ marginTop: 8 }}>
-                      <button className="btn sm" onClick={() => setRecording(last)}>{Icon.note} Registrar lo realizado</button>
+                      <button className="btn sm" onClick={() => setRecording(last)}>{Icon.note} Corregir lo realizado</button>
                     </div>
                     <RoutineBlocks routine={last.routine} viewer={undefined} completions={last.completions} names={names} />
                   </>

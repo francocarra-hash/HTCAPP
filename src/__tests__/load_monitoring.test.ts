@@ -155,9 +155,12 @@ describe('monitoreo — carga interna y adherencia', () => {
     expect(w.srpe_sessions).toBe(1);
     expect(w.missing_srpe).toBe(1);
     expect(w).toMatchObject({ present: 2, absent: 1, assigned_not_done: 1, partial: 1 });
-    expect(w.prescription).toEqual({ done: 1, total: 2, sessions: 1 });
-    expect(w.exposure).toEqual([{ capacity: 'fuerza', label: 'Fuerza', entries: 2 }, { capacity: 'movilidad', label: 'Movilidad', entries: 2 }]);
+    // La sesión que cargó el profe cuenta entera (2 de 2); en la que terminó el alumno, lo que marcó (1 de 2).
+    expect(w.prescription).toEqual({ done: 3, total: 4, sessions: 2 });
+    expect(w.exposure).toEqual([{ capacity: 'fuerza', label: 'Fuerza', entries: 2, sets: 2 }, { capacity: 'movilidad', label: 'Movilidad', entries: 2, sets: 1 }]);
+    // Falta el esfuerzo de la sesión que terminó el alumno (a él se le pregunta); a la del profe no se le pide nada.
     expect(m.review.map((r) => r.kind).sort()).toEqual(['asistencia', 'datos', 'sintomas']);
+    expect(m.review.find((r) => r.kind === 'datos')!.evidence.map((e) => e.day)).toEqual(['2026-10-08']);
   });
 });
 

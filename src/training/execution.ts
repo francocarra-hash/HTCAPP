@@ -126,6 +126,8 @@ export interface Execution {
   version: number;
   created_at: string;
   updated_at: string;
+  /** 'plan' = tomado de la planificación (no hay un registro manual de ese ejercicio). */
+  origin?: 'plan';
 }
 
 export interface SessionResponse extends ResponseDraft {
@@ -287,6 +289,8 @@ export interface GroupRecord {
   session_id: string;
   day: string;
   source: Source;
+  /** Tomado de la planificación (sin registro manual). */
+  from_plan: boolean;
   data_quality: DataQuality;
   values: Partial<Record<MetricId, number | null>>;
   /** Esfuerzo de la serie más pesada / más larga (para interpretar, no para medir progreso). */
@@ -404,7 +408,7 @@ export function compareExercise(execs: Execution[]): ExerciseComparison | null {
       const pains = sets.map((s) => s.pain).filter((x): x is number => x != null);
       const roms = [...new Set(sets.map((s) => s.rom).filter((x): x is string => Boolean(x)))];
       return {
-        execution_id: e.id, session_id: e.session_id, day: e.day, source: e.source, data_quality: e.data_quality, values,
+        execution_id: e.id, session_id: e.session_id, day: e.day, source: e.source, from_plan: e.origin === 'plan', data_quality: e.data_quality, values,
         rpe: eff.rpe, rir: eff.rir, pain: pains.length ? Math.max(...pains) : null, rom: roms.join(', ') || null,
         sets: sets.length, summary: summarize(sets),
       };
@@ -428,8 +432,11 @@ export function compareExercise(execs: Execution[]): ExerciseComparison | null {
     const reasons: string[] = [];
     const conditions: string[] = ['Mismo ejercicio', `Tipo de registro: ${TRACKING_LABEL[g.tracking].toLowerCase()}`];
     const cfgs = new Set(g.rows.map((r) => r.e.load_config));
-    if (cfgs.has(null)) reasons.push('No se registró el equipamiento en todos los registros.');
-    else conditions.push(`Mismo equipamiento: ${CONFIG_LABEL[[...cfgs][0]!]}`);
+    // Lo que sale de la planificación no trae equipamiento: no por eso la comparación es limitada.
+    const manualNoCfg = g.rows.some((r) => r.e.load_config == null && r.e.origin !== 'plan');
+    if (manualNoCfg) reasons.push('No se registró el equipamiento en todos los registros.');
+    else if (cfgs.size === 1 && !cfgs.has(null)) conditions.push(`Mismo equipamiento: ${CONFIG_LABEL[[...cfgs][0]!]}`);
+    if (g.rows.some((r) => r.e.origin === 'plan')) conditions.push('Según la planificación');
     if (g.rows[0]!.e.variant) conditions.push(`Misma variante: ${g.rows[0]!.e.variant}`);
     if (key.endsWith('|L') || key.endsWith('|R')) conditions.push(`Mismo lado: ${sideLabel(key.slice(-1))}`);
     if (records.length > 1) {

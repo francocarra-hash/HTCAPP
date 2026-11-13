@@ -299,6 +299,7 @@ async function monitoringFor(repo: TrainingRepository, student: Student) {
   return buildMonitoring({
     today: localNow().date,
     studentName: student.name,
+    studentId: student.id,
     sessions: sessions.map((x) => {
       const c = x.completions.find((y) => y.student_id === student.id);
       return { id: x.id, date: x.date, status: x.status, routine: x.routine, checks: c ? c.checks : null, completed_at: c?.completed_at ?? null };

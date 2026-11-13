@@ -372,7 +372,7 @@ export function HistoryList({ sessions, viewer, studentId, names, onEdit, onDele
                 ))}
                 {(onEdit || onDelete || onRecord) && (
                   <div className="actions" style={{ marginTop: 0 }}>
-                    {onRecord && <button className="btn" onClick={() => onRecord(s)}>{Icon.note} Registrar lo realizado</button>}
+                    {onRecord && <button className="btn" onClick={() => onRecord(s)}>{Icon.note} {viewer ? 'Anotar lo que hice' : 'Corregir lo realizado'}</button>}
                     {onEdit && <button className="btn" onClick={() => onEdit(s)}>{Icon.edit} Editar</button>}
                     {onDelete && <button className="btn danger" onClick={() => onDelete(s)}>{Icon.trash} Borrar</button>}
                   </div>

@@ -29,7 +29,203 @@ export function WinCard({ h, i = 0 }: { h: Highlight; i?: number }) {
   );
 }
 
-export function ProgressView({ progress, you, quality = [], studentId, onQualityChanged, toast }: {
+/** Vista del profe: todo lo anotado. Vista del alumno: sus logros. */
+export function ProgressView(props: {
+  progress: Progress; you: boolean; quality?: QualityEntry[];
+  /** Vista del profe: puede registrar la calidad del movimiento. */
+  studentId?: string; onQualityChanged?: () => void; toast?: (m: string) => void;
+}) {
+  return props.you ? <StudentProgress progress={props.progress} quality={props.quality ?? []} /> : <FullProgress {...props} />;
+}
+
+// ── Progreso del alumno: el resultado de su esfuerzo ────────────────────────
+
+const MILESTONES = [10, 25, 50, 75, 100, 150, 200, 250, 300, 400, 500, 750, 1000];
+const gainOf = (h: Highlight): number => (h.from > 0 ? (h.to - h.from) / h.from : 0);
+const daysAgo = (n: number): string => {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+/**
+ * Lo que ve el alumno en Progreso: primero sus logros (en qué mejoró y cuánto),
+ * sus marcas nuevas y los niveles que subió; después la constancia. Sin tablas
+ * ni aclaraciones técnicas: eso queda en la vista del profe.
+ */
+function StudentProgress({ progress, quality }: { progress: Progress; quality: QualityEntry[] }) {
+  const { stats, exercises, months, capacities } = progress;
+  const [capSel, setCapSel] = useState<CapacityId | null>(null);
+  const [more, setMore] = useState(false);
+  const [sel, setSel] = useState<string | null>(null);
+
+  // Todos los ejercicios en los que mejoró, de la primera vez a la última.
+  const wins = useMemo<Highlight[]>(() => {
+    const byDose = exercises.filter((e) => e.first > 0 && e.last > e.first).map((e): Highlight => ({
+      key: e.key, name: e.name, capacity: e.capacity, unit: e.unit, from: e.first, to: e.last,
+      first_date: e.points[0]!.date, last_date: e.points[e.points.length - 1]!.date,
+    }));
+    const byVolume = progress.highlights.filter((h) => h.kind === 'volumen' && !byDose.some((x) => x.key === h.key));
+    // Primero lo que subió en cada serie; después lo que subió sólo en volumen total.
+    return [...byDose.sort((a, b) => gainOf(b) - gainOf(a)), ...byVolume];
+  }, [exercises, progress.highlights]);
+
+  // Marcas nuevas: la última vez superó todo lo anterior, en las últimas 4 semanas.
+  const records = useMemo(() => {
+    const since = daysAgo(28);
+    return exercises.flatMap((e) => {
+      const last = e.points[e.points.length - 1]!;
+      const before = Math.max(...e.points.slice(0, -1).map((p) => p.value));
+      return last.date >= since && e.points.length > 1 && last.value > before
+        ? [{ key: e.key, name: e.name, capacity: e.capacity, unit: e.unit, value: last.value, before, date: last.date }] : [];
+    }).sort((a, b) => b.date.localeCompare(a.date));
+  }, [exercises]);
+
+  if (!stats.sessions) return <p className="empty">Cuando completes tus primeras sesiones, acá vas a ver cómo vas mejorando.</p>;
+
+  const inCap = <T extends { capacity: CapacityId | null }>(x: T) => !capSel || x.capacity === capSel;
+  const shownWins = wins.filter(inCap);
+  const visibleWins = more ? shownWins : shownWins.slice(0, 5);
+  const shownRecords = records.filter(inCap);
+  const variants = (progress.variants ?? []).filter(inCap);
+  const shownEx = exercises.filter(inCap);
+  const current = shownEx.find((e) => e.key === sel) ?? shownEx.find((e) => e.key === shownWins[0]?.key) ?? shownEx[0];
+  const reached = [...MILESTONES].reverse().find((m) => m <= stats.sessions);
+  const next = MILESTONES.find((m) => m > stats.sessions);
+  const pick = (c: CapacityId | null) => { setCapSel(c); setSel(null); setMore(false); };
+
+  return (
+    <>
+      <section className="ach" aria-label="Tu progreso">
+        <div className="ach-k">Semana {stats.process_week} de tu proceso</div>
+        {wins.length > 0 ? (
+          <div className="ach-big"><b><CountUp to={wins.length} /></b><span>{wins.length === 1 ? 'ejercicio en el que mejoraste' : 'ejercicios en los que mejoraste'}</span></div>
+        ) : (
+          <div className="ach-big"><b><CountUp to={stats.sessions} /></b><span>{stats.sessions === 1 ? 'sesión hecha' : 'sesiones hechas'}</span></div>
+        )}
+        <div className="ach-stats">
+          <div><b><CountUp to={stats.sessions} /></b><span>Sesiones</span></div>
+          <div><b><CountUp to={stats.streak_weeks} /></b><span>{stats.streak_weeks === 1 ? 'Semana seguida' : 'Semanas seguidas'}</span></div>
+          <div><b><CountUp to={(progress.variants ?? []).length} /></b><span>{(progress.variants ?? []).length === 1 ? 'Nivel subido' : 'Niveles subidos'}</span></div>
+        </div>
+        {stats.first_date && <p>Entrenás desde el {longDate(stats.first_date)}.{next ? ` Te ${next - stats.sessions === 1 ? 'falta 1 sesión' : `faltan ${next - stats.sessions} sesiones`} para las ${next}.` : ''}</p>}
+      </section>
+
+      {capacities.length > 1 && (
+        <div className="filters" role="group" aria-label="Ver por capacidad">
+          <button className="tog" aria-pressed={!capSel} onClick={() => pick(null)}>Todo</button>
+          {capacities.map((c) => (
+            <button key={c.id} className="tog" aria-pressed={capSel === c.id} style={{ ['--c' as string]: `var(--cap-${c.id})` }} onClick={() => pick(capSel === c.id ? null : c.id)}>
+              <i aria-hidden="true" />{c.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {shownRecords.length > 0 && (
+        <section className="card">
+          <div className="card-h"><h2>Marcas nuevas</h2><span className="mini">últimas 4 semanas</span></div>
+          <div className="rows">
+            {shownRecords.slice(0, 6).map((r) => (
+              <div key={r.key} className="recrow" style={{ ['--c' as string]: r.capacity ? `var(--cap-${r.capacity})` : 'var(--accent)' }}>
+                <span className="fw"><b>{r.name}</b><small>{shortDate(r.date)} · antes {fmtValue(r.before, r.unit)}</small></span>
+                <span className="rec-v">{fmtValue(r.value, r.unit)}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="card">
+        <div className="card-h"><h2>Tus logros</h2>{shownWins.length > 0 && <span className="mini">{shownWins.length}</span>}</div>
+        {shownWins.length ? (
+          <>
+            <div className="hint">De tu primera vez a la última.</div>
+            <div className="wins">{visibleWins.map((h, i) => <WinCard key={h.key + (h.kind ?? '')} h={h} i={i < 5 ? i : 0} />)}</div>
+            {shownWins.length > 5 && (
+              <button className="btn wide" style={{ marginTop: 12 }} onClick={() => setMore(!more)}>{more ? 'Ver menos' : `Ver los ${shownWins.length} logros`}</button>
+            )}
+          </>
+        ) : (
+          <p className="hint">{capSel ? 'Todavía no hay logros en esta capacidad. Seguí así: aparecen cuando un ejercicio se repite y sube.' : 'Con algunas sesiones más vas a ver acá en qué ejercicios mejoraste.'}</p>
+        )}
+      </section>
+
+      {variants.length > 0 && (
+        <section className="card">
+          <div className="card-h"><h2>Subiste de nivel</h2><span className="mini">{variants.length}</span></div>
+          <p className="hint" style={{ margin: '4px 0 8px' }}>Pasaste a una versión más difícil del mismo movimiento.</p>
+          <div className="rows">
+            {variants.map((v) => (
+              <div key={v.to + v.date} className="vstep" style={{ ['--c' as string]: v.capacity ? `var(--cap-${v.capacity})` : 'var(--accent)' }}>
+                <span className="vs-from">{v.from}</span>
+                <span className="vs-ar" aria-hidden="true">→</span>
+                <b>{v.to}</b>
+                <small>desde el {shortDate(v.date)}{v.date.slice(0, 4) !== String(new Date().getFullYear()) ? ` de ${v.date.slice(0, 4)}` : ''}</small>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <QualitySection progress={progress} quality={quality} capSel={capSel} you onlyRated />
+
+      {!capSel && capacities.length > 0 && (
+        <section className="card">
+          <h2>Por capacidad</h2>
+          <div className="hint">En cuántos ejercicios mejoraste de cada una. Tocá una para ver sus logros.</div>
+          <div className="capgrid">
+            {capacities.map((c) => (
+              <button key={c.id} className="capcard" style={{ ['--c' as string]: `var(--cap-${c.id})` }} onClick={() => { pick(c.id); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+                <CapTag id={c.id} label={c.label} lg />
+                <span className="big">{c.improved}<small>{c.improved === 1 ? 'mejoró' : 'mejoraron'}</small></span>
+                {c.top
+                  ? <span className="top">{c.top.name}: <span>{fmtValue(c.top.from, c.top.unit)} → {fmtValue(c.top.to, c.top.unit)}</span></span>
+                  : <span className="top"><span>{c.sessions} {c.sessions === 1 ? 'sesión' : 'sesiones'}</span></span>}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {!capSel && months.length > 1 && (
+        <section className="card">
+          <h2>Tu constancia</h2>
+          <div className="hint">
+            {reached ? `Ya pasaste las ${reached} sesiones.` : 'Sesiones por mes.'}
+            {stats.this_month ? ` Este mes llevás ${stats.this_month}.` : ''}
+          </div>
+          <MonthBars months={months} />
+        </section>
+      )}
+
+      {current && (
+        <details className="older achdet">
+          <summary><span>Ver cada ejercicio</span><span className="chev" aria-hidden="true">⌄</span></summary>
+          <select className="full" value={current.key} onChange={(e) => setSel(e.target.value)} aria-label="Ejercicio" style={{ marginTop: 10 }}>
+            {shownEx.map((e) => <option key={e.key} value={e.key}>{e.name}</option>)}
+          </select>
+          <section className="card" key={current.key}>
+            <div className="card-h">
+              <div className="label">{current.name} · {unitLabel(current.unit)}</div>
+              {current.capacity && <CapTag id={current.capacity} label={CAP_LABEL[current.capacity]} />}
+            </div>
+            <LineChart points={current.points} unit={current.unit} />
+            <div className="stats" style={{ marginTop: 10 }}>
+              <div className="stat"><div className="v">{fmtValue(current.best, current.unit)}</div><div className="l">Tu mejor marca</div></div>
+              <div className="stat"><div className="v">{current.points.length}</div><div className="l">Sesiones</div></div>
+              {current.last > current.first && (
+                <div className="stat"><div className="v">+{fmtValue(current.last - current.first, current.unit)}</div><div className="l">Desde {shortDate(current.points[0]!.date)}</div></div>
+              )}
+            </div>
+          </section>
+        </details>
+      )}
+    </>
+  );
+}
+
+function FullProgress({ progress, you, quality = [], studentId, onQualityChanged, toast }: {
   progress: Progress; you: boolean; quality?: QualityEntry[];
   /** Vista del profe: puede registrar la calidad del movimiento. */
   studentId?: string; onQualityChanged?: () => void; toast?: (m: string) => void;
@@ -215,9 +411,11 @@ function Dots({ n }: { n: number }) {
  * (cómo organiza el cuerpo, transfiere el peso, siente el movimiento) aunque los
  * números no cambien. El profe registra cómo lo ejecuta, del 1 al 5.
  */
-function QualitySection({ progress, quality, capSel, you, studentId, onChanged, toast }: {
+function QualitySection({ progress, quality, capSel, you, studentId, onChanged, toast, onlyRated }: {
   progress: Progress; quality: QualityEntry[]; capSel: CapacityId | null; you: boolean;
   studentId?: string; onChanged?: () => void; toast?: (m: string) => void;
+  /** Sólo los ejercicios que el profe ya evaluó (vista de logros del alumno). */
+  onlyRated?: boolean;
 }) {
   const [adding, setAdding] = useState<string | null | 'new'>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -225,8 +423,8 @@ function QualitySection({ progress, quality, capSel, you, studentId, onChanged, 
   const practice = (progress.practice ?? []).filter((p) => !capSel || p.capacity === capSel);
   const byKey = new Map<string, QualityEntry[]>();
   for (const q of quality) byKey.set(q.exercise_key, [...(byKey.get(q.exercise_key) ?? []), q]);
-  const keys = [...new Set([...byKey.keys(), ...practice.map((p) => p.key)])]
-    .filter((k) => !capSel || practice.some((p) => p.key === k) || byKey.has(k));
+  const keys = [...new Set([...byKey.keys(), ...(onlyRated ? [] : practice.map((p) => p.key))])]
+    .filter((k) => !capSel || practice.some((p) => p.key === k) || (byKey.has(k) && !onlyRated));
   if (!keys.length && !coach) return null;
   const rows = keys.map((k) => {
     const list = (byKey.get(k) ?? []).sort((a, b) => a.day.localeCompare(b.day) || a.created_at.localeCompare(b.created_at));
@@ -242,11 +440,13 @@ function QualitySection({ progress, quality, capSel, you, studentId, onChanged, 
   return (
     <section className="card">
       <div className="card-h">
-        <h2>Calidad del movimiento</h2>
+        <h2>{onlyRated ? 'Cómo te movés' : 'Calidad del movimiento'}</h2>
         {coach && <button className="btn sm" onClick={() => setAdding('new')}>{Icon.plus} Registrar</button>}
       </div>
       <div className="hint">
-        {you
+        {onlyRated
+          ? 'Lo que anotó tu profe sobre cómo ejecutás estos ejercicios. Ahí el avance no siempre está en los números.'
+          : you
           ? 'Hay ejercicios que sostenés en el tiempo para hacerlos cada vez mejor: cómo organizás el cuerpo, cómo transferís el peso, cuánto sentís el movimiento. Ahí el avance no siempre está en los números.'
           : 'Ejercicios que sostiene en el tiempo: el avance está en la ejecución, aunque los números no cambien. Registrá cómo lo hace del 1 al 5 y en qué mejoró.'}
       </div>
