@@ -19,8 +19,11 @@ import { ProcessSchema } from '../training/process';
 import { buildProgress, ExerciseInfo, exerciseKey, itemKey } from '../training/progress';
 import { exerciseGroups, itemText, Routine, routineFromParsed, RoutineItem, RoutineSchema } from '../training/routine';
 import { localNow, nextSessions, ScheduleSchema } from '../training/schedule';
-import { Completion, NewSession, StoredSession, Student, TrainingRepository } from '../training/repository';
-import { AttendanceInput, BillingSchema, PaymentInput } from '../training/billing';
+import { Charge, Completion, NewSession, StoredSession, Student, TrainingRepository } from '../training/repository';
+import { AttendanceInput, BillingSchema } from '../training/billing';
+import {
+  ChargeInput, chargeLabel, ChargeUpdate, existingPeriod, PaymentInput, periodKey, ResolveInput, reviewLegacy, ReviewStudent,
+} from '../training/charges';
 import {
   dataQuality, Execution, prescribedOf, RecordInput, SessionResponse, Source,
 } from '../training/execution';
@@ -777,8 +780,9 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
   // ── finanzas y asistencia ──
   /** Todo lo que necesita el panel de pagos y asistencia, en una sola llamada. */
   router.get('/finance', handle(async (_req, res) => {
-    const [students, sessions, completions, payments, attendance, reports] = await Promise.all([
+    const [students, sessions, completions, payments, attendance, reports, charges] = await Promise.all([
       repo.listStudents(), repo.listSessions(), repo.listCompletions({}), repo.listPayments(), repo.listAttendance(), repo.listReports(),
+      repo.listCharges(),
     ]);
     const completedBy = new Map<string, Set<string>>();
     for (const c of completions) if (c.completed_at) completedBy.set(c.session_id, (completedBy.get(c.session_id) ?? new Set()).add(c.student_id));
@@ -798,28 +802,185 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
         };
       }),
       payments,
+      charges,
       attendance,
     });
   }));
 
+  // ── períodos (lo que se cobra) ──
+  /** Crear un período (paquete, mes o programación) es aparte del pago. Si ya existe, no se duplica. */
+  router.post('/charges', handle(async (req, res) => {
+    const c = ChargeInput.parse(req.body);
+    if (!(await repo.getStudent(c.student_id))) {
+      fail(res, 404, 'NOT_FOUND', 'Alumno inexistente.');
+      return;
+    }
+    if (c.kind === 'paquete' && !c.sessions) {
+      fail(res, 400, 'INVALID_INPUT', 'Indicá cuántas clases incluye el paquete.');
+      return;
+    }
+    const startsOn = c.kind === 'mes' ? `${c.starts_on.slice(0, 7)}-01` : c.starts_on;
+    const mine = await repo.listCharges(c.student_id);
+    const dup = existingPeriod(c.kind, startsOn, mine);
+    if (dup) {
+      res.status(409).json({ error: 'PERIOD_EXISTS', message: `Ese período ya existe (${chargeLabel(dup)}). Asigná el pago a ese período.`, charge: dup });
+      return;
+    }
+    const charge = await repo.createCharge({
+      student_id: c.student_id, kind: c.kind, period_key: periodKey(c.kind, startsOn, mine), starts_on: startsOn,
+      sessions: c.kind === 'paquete' ? c.sessions! : null, amount: c.amount, note: c.note || null,
+    });
+    if (!charge) {
+      fail(res, 409, 'PERIOD_EXISTS', 'Ese período ya existe.');
+      return;
+    }
+    await repo.addChange({
+      entity: 'charge', entity_id: charge.id, student_id: charge.student_id, session_id: null, action: 'create', actor: 'coach',
+      category: null, reason: null, before: null, after: charge,
+    });
+    res.status(201).json({ charge });
+  }));
+
+  /** Cambios explícitos a un período (por ejemplo, incorporar clases adicionales), con motivo. */
+  router.patch('/charges/:id', handle(async (req, res) => {
+    const u = ChargeUpdate.parse(req.body);
+    const prev = await repo.getCharge(req.params.id!);
+    if (!prev) {
+      fail(res, 404, 'NOT_FOUND', 'Período inexistente.');
+      return;
+    }
+    if (u.sessions !== undefined && prev.kind !== 'paquete') {
+      fail(res, 400, 'INVALID_INPUT', 'Sólo los paquetes tienen clases incluidas.');
+      return;
+    }
+    if (u.starts_on !== undefined && prev.kind === 'mes') {
+      fail(res, 400, 'INVALID_INPUT', 'Para otro mes, creá ese período.');
+      return;
+    }
+    if (u.starts_on !== undefined && u.starts_on !== prev.starts_on) {
+      const dup = existingPeriod(prev.kind, u.starts_on, (await repo.listCharges(prev.student_id)).filter((c) => c.id !== prev.id));
+      if (dup) {
+        fail(res, 409, 'PERIOD_EXISTS', `Ya hay un período que empieza ese día (${chargeLabel(dup)}).`);
+        return;
+      }
+    }
+    const charge = await repo.updateCharge(prev.id, {
+      sessions: u.sessions, amount: u.amount, starts_on: u.starts_on, note: u.note === undefined ? undefined : u.note || null,
+    });
+    await repo.addChange({
+      entity: 'charge', entity_id: prev.id, student_id: prev.student_id, session_id: null, action: 'update', actor: 'coach',
+      category: null, reason: u.reason || null, before: prev, after: charge,
+    });
+    res.json({ charge });
+  }));
+
+  router.delete('/charges/:id', handle(async (req, res) => {
+    const prev = await repo.getCharge(req.params.id!);
+    if (!prev) {
+      fail(res, 404, 'NOT_FOUND', 'Período inexistente.');
+      return;
+    }
+    if ((await repo.listPayments(prev.student_id)).some((p) => p.charge_id === prev.id)) {
+      fail(res, 409, 'HAS_PAYMENTS', 'El período tiene pagos asignados: no se puede borrar.');
+      return;
+    }
+    await repo.deleteCharge(prev.id);
+    await repo.addChange({
+      entity: 'charge', entity_id: prev.id, student_id: prev.student_id, session_id: null, action: 'delete', actor: 'coach',
+      category: null, reason: null, before: prev, after: null,
+    });
+    res.json({ ok: true });
+  }));
+
+  /** Registros viejos con sesiones posiblemente duplicadas por el pago. No corrige nada. */
+  router.get('/charges/review', handle(async (_req, res) => {
+    const [students, sessions, completions, payments, attendance, charges] = await Promise.all([
+      repo.listStudents(), repo.listSessions(), repo.listCompletions({}), repo.listPayments(), repo.listAttendance(), repo.listCharges(),
+    ]);
+    const completedBy = new Map<string, Set<string>>();
+    for (const c of completions) if (c.completed_at) completedBy.set(c.session_id, (completedBy.get(c.session_id) ?? new Set()).add(c.student_id));
+    const review: ReviewStudent[] = students.map((st) => {
+      const days = new Set(sessions
+        .filter((x) => x.participant_ids.includes(st.id) && (x.status === 'done' || completedBy.get(x.id)?.has(st.id)))
+        .map((x) => x.date));
+      for (const a of attendance) if (a.student_id === st.id) days.add(a.day);
+      return { id: st.id, name: st.name, billing: st.billing, weekly: st.schedule?.weekly.length ?? 0, marks: [...days].sort() };
+    });
+    res.json({ items: reviewLegacy({ today: localNow().date, students: review, charges, payments }) });
+  }));
+
+  /** Corrige (o da por bueno) un período señalado en la revisión. Asistencias y pagos no se borran. */
+  router.post('/charges/:id/resolve', handle(async (req, res) => {
+    const r = ResolveInput.parse(req.body);
+    const charge = await repo.getCharge(req.params.id!);
+    if (!charge) {
+      fail(res, 404, 'NOT_FOUND', 'Período inexistente.');
+      return;
+    }
+    const now = new Date().toISOString();
+    if (r.action === 'merge') {
+      const into = await repo.getCharge(r.into);
+      if (!into || into.id === charge.id || into.student_id !== charge.student_id || into.kind !== charge.kind) {
+        fail(res, 400, 'INVALID_INPUT', 'El período destino tiene que ser otro período del mismo alumno.');
+        return;
+      }
+      const moved = await repo.movePayments(charge.id, into.id);
+      await repo.deleteCharge(charge.id);
+      await repo.addChange({
+        entity: 'charge', entity_id: charge.id, student_id: charge.student_id, session_id: null, action: 'delete', actor: 'coach',
+        category: null, reason: `Sesiones duplicadas por el pago: se unió con ${chargeLabel(into)} (${moved} pago${moved === 1 ? '' : 's'} reasignado${moved === 1 ? '' : 's'}).`,
+        before: charge, after: { merged_into: into.id },
+      });
+      res.json({ ok: true, charge: await repo.getCharge(into.id) });
+      return;
+    }
+    const patch = r.action === 'opening' ? { in_opening: true, reviewed_at: now } : { reviewed_at: now };
+    const updated = await repo.updateCharge(charge.id, patch);
+    await repo.addChange({
+      entity: 'charge', entity_id: charge.id, student_id: charge.student_id, session_id: null, action: 'update', actor: 'coach',
+      category: null,
+      reason: r.action === 'opening'
+        ? 'Sesiones duplicadas por el pago: el paquete ya estaba contado en el saldo inicial.'
+        : 'Revisado: está bien así.',
+      before: charge, after: updated,
+    });
+    res.json({ ok: true, charge: updated });
+  }));
+
+  // ── pagos ──
+  /** Registra un pago de un período. No crea ni modifica sesiones: sólo cambia lo abonado y el saldo del período. */
   router.post('/payments', handle(async (req, res) => {
     const p = PaymentInput.parse(req.body);
     if (!(await repo.getStudent(p.student_id))) {
       fail(res, 404, 'NOT_FOUND', 'Alumno inexistente.');
       return;
     }
+    const charge = await repo.getCharge(p.charge_id);
+    if (!charge || charge.student_id !== p.student_id) {
+      fail(res, 400, 'INVALID_INPUT', 'Ese período no es de este alumno.');
+      return;
+    }
     const payment = await repo.createPayment({
-      student_id: p.student_id, paid_on: p.paid_on, amount: p.amount,
-      classes: p.classes ?? null, period: p.period ?? null, note: p.note || null,
+      student_id: p.student_id, charge_id: charge.id, paid_on: p.paid_on, amount: p.amount,
+      classes: null, period: charge.kind === 'mes' ? charge.period_key : null, note: p.note || null,
+    });
+    await repo.addChange({
+      entity: 'payment', entity_id: payment.id, student_id: payment.student_id, session_id: null, action: 'create', actor: 'coach',
+      category: null, reason: null, before: null, after: payment,
     });
     res.status(201).json({ payment });
   }));
 
   router.delete('/payments/:id', handle(async (req, res) => {
-    if (!(await repo.deletePayment(req.params.id!))) {
+    const prev = await repo.getPayment(req.params.id!);
+    if (!prev || !(await repo.deletePayment(prev.id))) {
       fail(res, 404, 'NOT_FOUND', 'Pago inexistente.');
       return;
     }
+    await repo.addChange({
+      entity: 'payment', entity_id: prev.id, student_id: prev.student_id, session_id: null, action: 'delete', actor: 'coach',
+      category: null, reason: null, before: prev, after: null,
+    });
     res.json({ ok: true });
   }));
 
@@ -1078,8 +1239,9 @@ export function createStudentRouter(repo: TrainingRepository): Router {
   router.get('/plan', handle(async (_req, res) => {
     const student = await me(res);
     if (!student) return;
-    const [sessions, completions, payments, attendance] = await Promise.all([
+    const [sessions, completions, payments, attendance, charges] = await Promise.all([
       repo.listSessions(student.id), repo.listCompletions({ studentId: student.id }), repo.listPayments(student.id), repo.listAttendance(student.id),
+      repo.listCharges(student.id),
     ]);
     const done = new Set(completions.filter((c) => c.completed_at).map((c) => c.session_id));
     const realized = sessions.filter((x) => x.status === 'done' || done.has(x.id));
@@ -1100,6 +1262,7 @@ export function createStudentRouter(repo: TrainingRepository): Router {
         last_report_start: null,
       }],
       payments: payments.map((p) => ({ ...p, note: null })),
+      charges: charges.map((c): Charge => ({ ...c, note: null, migrated_from: null })),
       attendance,
     });
   }));

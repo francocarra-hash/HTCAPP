@@ -54,15 +54,6 @@ export const BillingSchema = z.object({
 });
 export type Billing = z.infer<typeof BillingSchema>;
 
-export const PaymentInput = z.object({
-  student_id: z.string().uuid(),
-  paid_on: DATE,
-  amount: z.number().min(0).max(1_000_000),
-  classes: z.number().int().min(1).max(500).nullable().optional(),
-  period: z.string().regex(/^\d{4}-\d{2}$/).nullable().optional(),
-  note: z.string().trim().max(300).nullable().optional(),
-});
-
 export const AttendanceInput = z.object({
   student_ids: z.array(z.string().uuid()).min(1).max(100),
   day: DATE,

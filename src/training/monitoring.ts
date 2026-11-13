@@ -27,7 +27,7 @@ export interface MonitoringSession {
 
 export interface ChangeEntry {
   id: string;
-  entity: 'execution' | 'response' | 'session';
+  entity: 'execution' | 'response' | 'session' | 'charge' | 'payment';
   entity_id: string;
   student_id: string | null;
   session_id: string | null;

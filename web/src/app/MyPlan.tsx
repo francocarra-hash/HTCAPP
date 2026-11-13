@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError } from '../api';
 import { addDays, FinanceData, isMercadoPago, occurrences, shortDate, studentApi, WEEKDAYS } from './data';
-import { fmtLong, makeFin, money, MOD_LABEL, queCubre, shiftYM, ym } from './billing';
+import { fmtLong, makeFin, money, MOD_LABEL, shiftYM, ym } from './billing';
 import { Icon, Skeleton } from './ui';
 
 /**
@@ -45,7 +45,7 @@ export function MyPlan({ toast }: { toast: (m: string) => void }) {
   // Clases del período vigente.
   let clases: { contratadas: number | null; hechas: number; quedan: number | null; txt: string } | null = null;
   if (modo === 'clases' && sd) {
-    const N = fin.clasesPaquete(s) || pays.find((p) => p.classes)?.classes || null;
+    const N = fin.clasesPaquete(s) || [...fin.cargosDe(s.id)].reverse().find((c) => c.sessions)?.sessions || null;
     const quedan = sd.restan;
     // Hechas del paquete vigente: si ya arrancó el nuevo, el anterior quedó completo.
     const hechas = N != null ? (quedan < 0 ? N : Math.max(0, N - quedan)) : Math.max(0, sd.tomadas);
@@ -120,7 +120,7 @@ export function MyPlan({ toast }: { toast: (m: string) => void }) {
           <div className="rows">
             {shown.map((p) => (
               <div key={p.id} className="frow">
-                <span className="fw"><b>{queCubre(p)}</b><small>Pagado el {shortDate(p.paid_on)} {p.paid_on.slice(0, 4)}</small></span>
+                <span className="fw"><b>{fin.queCubre(p)}</b><small>Pagado el {shortDate(p.paid_on)} {p.paid_on.slice(0, 4)}</small></span>
                 <span className="amt">{money(p.amount, mon)}</span>
               </div>
             ))}

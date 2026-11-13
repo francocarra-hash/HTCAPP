@@ -253,11 +253,13 @@ describe('API — registro de lo realizado, cambios, plan y pagos', () => {
       billing: { cuota: 100, enfoque: 'Rodilla', rehab: true, pago_link: { url: 'https://mpago.la/abc123', monto: 100, moneda: 'USD', creado: new Date().toISOString() } },
     });
     expect(ok.status).toBe(200);
-    await request(a).post('/api/training/payments').set('Authorization', auth).send({ student_id: id, paid_on: '2026-09-01', amount: 100, classes: 8, note: 'interno' });
+    const per = await request(a).post('/api/training/charges').set('Authorization', auth).send({ student_id: id, kind: 'paquete', starts_on: '2026-09-01', sessions: 8, amount: 100, note: 'interno' });
+    await request(a).post('/api/training/payments').set('Authorization', auth).send({ student_id: id, charge_id: per.body.charge.id, paid_on: '2026-09-01', amount: 100, note: 'interno' });
     let plan = await request(a).get('/api/me/plan').set('Authorization', tok);
     expect(plan.status).toBe(200);
     expect(plan.body.students[0].billing).toMatchObject({ enfoque: null, rehab: false });
     expect(plan.body.payments[0].note).toBeNull();
+    expect(plan.body.charges[0]).toMatchObject({ sessions: 8, note: null });
     // El link se cargó antes del último pago: ya no corresponde.
     expect(plan.body.students[0].billing.pago_link).toBeNull();
     await request(a).patch(`/api/training/students/${id}`).set('Authorization', auth).send({

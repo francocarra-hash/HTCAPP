@@ -502,15 +502,19 @@ describe('API — alumnos, sesiones y permisos', () => {
     expect(p.body.student.billing).toMatchObject({ cuota: 120, estado: null, rehab: false });
     expect((await request(a).patch(`/api/training/students/${id}`).set('Authorization', auth).send({ billing: { cuota: -1 } })).status).toBe(400);
 
+    const per = await request(a).post('/api/training/charges').set('Authorization', auth)
+      .send({ student_id: id, kind: 'paquete', starts_on: '2026-09-30', sessions: 8, amount: 120 });
+    expect(per.status).toBe(201);
     const pay = await request(a).post('/api/training/payments').set('Authorization', auth)
-      .send({ student_id: id, paid_on: '2026-10-01', amount: 120, classes: 8 });
+      .send({ student_id: id, charge_id: per.body.charge.id, paid_on: '2026-10-01', amount: 120 });
     expect(pay.status).toBe(201);
     await request(a).put('/api/training/attendance').set('Authorization', auth).send({ student_ids: [id], day: '2026-10-02', mark: 'p' });
     await request(a).put('/api/training/attendance').set('Authorization', auth).send({ student_ids: [id], day: '2026-10-05', mark: 'e' });
     await request(a).put('/api/training/attendance').set('Authorization', auth).send({ student_ids: [id], day: '2026-10-05', mark: null });
     const fin = await request(a).get('/api/training/finance').set('Authorization', auth);
     expect(fin.body.payments).toHaveLength(1);
-    expect(fin.body.payments[0]).toMatchObject({ amount: 120, classes: 8, paid_on: '2026-10-01' });
+    expect(fin.body.payments[0]).toMatchObject({ amount: 120, classes: null, charge_id: per.body.charge.id, paid_on: '2026-10-01' });
+    expect(fin.body.charges).toEqual([expect.objectContaining({ sessions: 8, amount: 120, period_key: 'paq-1' })]);
     expect(fin.body.attendance).toEqual([{ student_id: id, day: '2026-10-02', mark: 'p' }]);
     expect(fin.body.students[0]).toMatchObject({ name: 'Ana', billing: { cuota: 120 } });
 

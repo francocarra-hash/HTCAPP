@@ -5,7 +5,7 @@
  * una sesión cargada cuenta como presente si ese día no tiene otra marca.
  */
 import {
-  addDays, AttendanceRow, Billing, emptyBilling, Estado, FinanceData, FinanceStudent, Mark, Moneda, occurrences, parse, Payment,
+  addDays, AttendanceRow, Billing, Charge, ChargeKind, emptyBilling, Estado, FinanceData, FinanceStudent, Mark, Moneda, occurrences, parse, Payment,
   shortDate, longDate, MONTH_NAMES, firstName,
 } from './data';
 
@@ -44,6 +44,27 @@ export interface Fin {
   today: string;
   students: FinanceStudent[];
   payments: Payment[];
+  charges: Charge[];
+  /** Períodos del alumno, del más viejo al más nuevo. */
+  cargosDe(id: string): Charge[];
+  cargo(id: string | null): Charge | null;
+  pagosDeCargo(c: Charge): Payment[];
+  pagadoDe(c: Charge): number;
+  /** Lo que falta pagar del período (negativo = pagado de más). */
+  saldoDe(c: Charge): number;
+  /** Períodos con saldo pendiente, el más viejo primero (el primero es el sugerido). */
+  pendientes(s: FinanceStudent): Charge[];
+  /** Las clases de este período se suman al saldo del paquete. */
+  cuenta(s: FinanceStudent, c: Charge): boolean;
+  cargoTxt(c: Charge): string;
+  /** Mes del período, para confirmar la asignación. */
+  cargoMes(c: Charge): string;
+  /** Qué cubre un pago (el período al que se asignó). */
+  queCubre(p: Payment): string;
+  /** Datos sugeridos para crear el período que sigue. */
+  sugerirPeriodo(s: FinanceStudent): { kind: ChargeKind; starts_on: string; sessions: number | null; amount: number };
+  /** Ya existe un período igual (mismo mes, o paquete/programación que arranca ese día). */
+  periodoExistente(s: FinanceStudent, kind: ChargeKind, startsOn: string): Charge | null;
   billing(s: FinanceStudent): Billing;
   moneda(s: FinanceStudent | string): Moneda;
   /** Total de pagos o montos, separado por moneda si hay más de una. */
@@ -98,6 +119,32 @@ export function makeFin(d: FinanceData): Fin {
   }
   const marksCache = new Map<string, Array<[string, Mark]>>();
   const payCache = new Map<string, Payment[]>();
+  const charges = d.charges ?? [];
+  const chargeById = new Map(charges.map((c) => [c.id, c]));
+  const cargosCache = new Map<string, Charge[]>();
+  const cargosDe = (id: string): Charge[] => {
+    if (!cargosCache.has(id)) {
+      cargosCache.set(id, charges.filter((c) => c.student_id === id)
+        .sort((x, y) => x.starts_on.localeCompare(y.starts_on) || x.created_at.localeCompare(y.created_at)));
+    }
+    return cargosCache.get(id)!;
+  };
+  const cargo = (id: string | null) => (id ? chargeById.get(id) ?? null : null);
+  const pagosDeCargo = (c: Charge) => d.payments.filter((p) => p.charge_id === c.id)
+    .sort((x, y) => x.paid_on.localeCompare(y.paid_on) || x.created_at.localeCompare(y.created_at));
+  const round = (n: number) => Math.round(n * 100) / 100;
+  const pagadoDe = (c: Charge) => round(pagosDeCargo(c).reduce((a, p) => a + p.amount, 0));
+  const saldoDe = (c: Charge) => round(c.amount - pagadoDe(c));
+  const pendientes = (s: FinanceStudent) => cargosDe(s.id).filter((c) => saldoDe(c) > 0);
+  const cargoMes = (c: Charge) => {
+    const m = c.kind === 'mes' ? c.period_key : ym(c.starts_on);
+    return `${monthName(m)} ${m.slice(0, 4)}`;
+  };
+  const cargoTxt = (c: Charge) => (c.kind === 'mes'
+    ? `Mes de ${cargoMes(c)}`
+    : c.kind === 'programacion'
+      ? `Programación del ${shortDate(c.starts_on)}`
+      : `Paquete de ${c.sessions ?? '—'} clases · desde el ${shortDate(c.starts_on)}`);
 
   const billing = (s: FinanceStudent): Billing => ({ ...emptyBilling(), ...(s.billing ?? {}) });
   const moneda = (s: FinanceStudent | string): Moneda => {
@@ -169,18 +216,41 @@ export function makeFin(d: FinanceData): Fin {
     return cands[0] ?? ini;
   };
 
+  /** Desde cuándo se cuenta el saldo del paquete. */
+  const desdeDe = (s: FinanceStudent) => billing(s).cuenta_desde || cargosDe(s.id).find((c) => c.kind === 'paquete')?.starts_on || null;
+  /** Las clases de un período se suman si es un paquete desde que se cuenta el saldo y no estaba ya en el saldo inicial. */
+  const cuenta = (s: FinanceStudent, c: Charge) => {
+    const desde = desdeDe(s);
+    return Boolean(desde) && c.kind === 'paquete' && !c.in_opening && c.starts_on >= desde!;
+  };
+  const contados = (s: FinanceStudent) => cargosDe(s.id).filter((c) => cuenta(s, c));
+  /** Saldo del paquete: saldo inicial + clases de los períodos − clases tomadas. Los pagos no suman clases. */
   const saldo = (s: FinanceStudent) => {
     if (modo(s) !== 'clases') return null;
     const b = billing(s);
-    const desde = b.cuenta_desde || pagosDe(s.id)[0]?.paid_on;
+    const desde = desdeDe(s);
     if (!desde) return null;
-    const pagadas = pagosDe(s.id).filter((p) => p.paid_on >= desde).reduce((a, p) => a + (p.classes ?? 0), 0);
+    const incluidas = contados(s).reduce((a, c) => a + (c.sessions ?? 0), 0);
     const tomadas = marcasDe(s.id).filter(([f]) => f >= desde && f <= today).length;
-    return { restan: (b.saldo_inicial || 0) + pagadas - tomadas, tomadas, desde };
+    return { restan: (b.saldo_inicial || 0) + incluidas - tomadas, tomadas, desde };
   };
 
+  /** Período que se cobra cuando ya pasó su primera clase (o el 1° del mes, o la fecha de la programación). */
+  const venceCargo = (s: FinanceStudent, c: Charge) => (c.kind === 'mes' ? primeraDelMes(s, c.period_key) : c.starts_on);
+
   const estadoPago = (s: FinanceStudent): PayState => {
-    const monto = cuotaEn(s, today);
+    // Períodos ya empezados con saldo pendiente (incluye pagos parciales).
+    const deuda = pendientes(s).filter((c) => venceCargo(s, c) <= today);
+    if (deuda.length) {
+      const c0 = deuda[0]!;
+      const due = venceCargo(s, c0);
+      const tot = round(deuda.reduce((a, c) => a + saldoDe(c), 0));
+      const parcial = pagadoDe(c0) > 0;
+      const txt = `${parcial ? 'Saldo pendiente' : 'Debe'} ${c0.kind === 'mes' ? `de ${cargoMes(c0)}` : `del ${cargoTxt(c0).charAt(0).toLowerCase()}${cargoTxt(c0).slice(1)}`}${deuda.length > 1 ? ` y ${deuda.length - 1} más` : ''}`;
+      return { k: daysBetween(due, today) > 7 ? 'debe' : 'pagar', t: txt, cls: 'bad', due, monto: tot, moneda: moneda(s), restan: saldo(s)?.restan };
+    }
+    const prox = pendientes(s)[0];
+    const monto = prox ? saldoDe(prox) : cuotaEn(s, today);
     const m = modo(s);
     if (m === 'clases') {
       const sd = saldo(s);
@@ -206,7 +276,7 @@ export function makeFin(d: FinanceData): Fin {
     }
     let due: string | null = null;
     if (m === 'mensual') {
-      const ult = pagosDe(s.id).map((p) => p.period ?? '').filter(Boolean).sort().pop();
+      const ult = cargosDe(s.id).filter((c) => c.kind === 'mes' && saldoDe(c) <= 0).map((c) => c.period_key).sort().pop();
       const mes = ult ? shiftYM(ult, 1) : billing(s).vence ? ym(billing(s).vence!) : null;
       due = mes ? primeraDelMes(s, mes) : null;
       if (due) {
@@ -282,16 +352,18 @@ export function makeFin(d: FinanceData): Fin {
       if (i < 0) return null;
       n = ms.filter(([x]) => x <= today).length + i + 1;
     } else return null;
+    const cs = contados(s);
     const bounds = [b.saldo_inicial || 0];
-    for (const p of pagosDe(s.id).filter((p) => p.paid_on >= b.cuenta_desde!)) bounds.push(bounds[bounds.length - 1]! + (p.classes ?? 0));
-    const pagado = bounds[bounds.length - 1]!;
+    for (const c of cs) bounds.push(bounds[bounds.length - 1]! + (c.sessions ?? 0));
     const paq = clasesPaquete(s) || 4;
     while (bounds[bounds.length - 1]! < n) bounds.push(bounds[bounds.length - 1]! + paq);
     const k = bounds.findIndex((x) => x >= n);
     const ini = k > 0 ? bounds[k - 1]! : 0;
     const fin = bounds[k]!;
     if (k === 0) return { i: paq - (fin - n), N: paq, primera: false, ultima: n === fin, pagado: true };
-    return { i: n - ini, N: fin - ini, primera: n === ini + 1, ultima: n === fin, pagado: n <= pagado };
+    // Paquetes más allá de los períodos creados todavía no existen: no están pagados.
+    const c = cs[k - 1];
+    return { i: n - ini, N: fin - ini, primera: n === ini + 1, ultima: n === fin, pagado: Boolean(c && saldoDe(c) <= 0) };
   };
   const etiquetaPaquete = (s: FinanceStudent, f: string) => {
     const p = posPaquete(s, f);
@@ -338,15 +410,18 @@ export function makeFin(d: FinanceData): Fin {
     if (modo(s) === 'clases' && b.cuenta_desde) {
       const M = marcasDe(s.id).filter(([x]) => x >= b.cuenta_desde!).map(([x]) => x);
       let k = b.saldo_inicial || 0;
-      for (const p of pagosDe(s.id).filter((p) => p.paid_on >= b.cuenta_desde!)) {
-        const clase = M[k];
-        k += p.classes ?? 0;
-        if (p.paid_on < ini) continue;
-        out.push({ atraso: clase ? Math.max(0, daysBetween(clase, p.paid_on)) : 0 });
+      for (const c of contados(s)) {
+        const clase = M[Math.max(0, k)];
+        k += c.sessions ?? 0;
+        const first = pagosDeCargo(c)[0]?.paid_on;
+        if (!first || first < ini) continue;
+        out.push({ atraso: clase ? Math.max(0, daysBetween(clase, first)) : 0 });
       }
     } else if (modo(s) === 'mensual') {
-      for (const p of pagosDe(s.id).filter((p) => p.period && p.paid_on >= ini)) {
-        out.push({ atraso: Math.max(0, daysBetween(primeraDelMes(s, p.period!), p.paid_on)) });
+      for (const c of cargosDe(s.id).filter((c) => c.kind === 'mes')) {
+        const first = pagosDeCargo(c)[0]?.paid_on;
+        if (!first || first < ini) continue;
+        out.push({ atraso: Math.max(0, daysBetween(primeraDelMes(s, c.period_key), first)) });
       }
     }
     return out;
@@ -399,7 +474,44 @@ export function makeFin(d: FinanceData): Fin {
     return [];
   });
 
+  const queCubreP = (p: Payment) => {
+    const c = cargo(p.charge_id);
+    return c ? cargoTxt(c) : queCubre(p);
+  };
+
+  const periodoExistente = (s: FinanceStudent, kind: ChargeKind, startsOn: string) => {
+    const key = kind === 'mes' ? startsOn.slice(0, 7) : null;
+    return cargosDe(s.id).find((c) => c.kind === kind && (key ? c.period_key === key : c.starts_on === startsOn)) ?? null;
+  };
+
+  const sugerirPeriodo = (s: FinanceStudent) => {
+    const m = modo(s);
+    const amount = cuotaEn(s, today);
+    if (m === 'mensual') {
+      const last = cargosDe(s.id).filter((c) => c.kind === 'mes').map((c) => c.period_key).sort().pop();
+      const mes = last ? shiftYM(last, 1) : ym(today);
+      return { kind: 'mes' as const, starts_on: `${mes}-01`, sessions: null, amount };
+    }
+    if (m === 'prog') return { kind: 'programacion' as const, starts_on: today, sessions: null, amount };
+    const N = clasesPaquete(s) || 4;
+    const desde = desdeDe(s);
+    let start = today;
+    if (desde) {
+      // El paquete nuevo arranca en la primera clase que no cubre ningún período.
+      const total = (billing(s).saldo_inicial || 0) + contados(s).reduce((a, c) => a + (c.sessions ?? 0), 0);
+      const M = marcasDe(s.id).filter(([f]) => f >= desde && f <= today).map(([f]) => f);
+      if (total < M.length) start = M[Math.max(0, total)]!;
+      else {
+        const quedan = total - M.length;
+        start = proximasClases(s, quedan + 1)[quedan] ?? today;
+      }
+    }
+    return { kind: 'paquete' as const, starts_on: start, sessions: N, amount };
+  };
+
   return {
+    charges, cargosDe, cargo, pagosDeCargo, pagadoDe, saldoDe, pendientes, cuenta, cargoTxt, cargoMes, queCubre: queCubreP,
+    sugerirPeriodo, periodoExistente,
     primeraDelMes, avisosCiclo, moneda, totalTxt,
     today, students: d.students, payments: d.payments, billing, estado, activos, isAsinc, modo, modoTxt, clasesSem, clasesPaquete,
     cuotaEn, pagosDe, marca, marcaExplicita, marcasDe, proximasClases, saldo, estadoPago, cobradoEn, proximos30, estadoProg, racha,
@@ -407,6 +519,7 @@ export function makeFin(d: FinanceData): Fin {
   };
 }
 
+/** Para pagos sin período (no debería quedar ninguno después de la migración 010). Usar fin.queCubre. */
 export const queCubre = (p: Payment): string =>
   p.classes ? `${p.classes} clases` : p.period ? `Mes de ${monthName(p.period)}` : 'Programación';
 export const fmtLong = (f: string | null): string => (f ? longDate(f) : '—');

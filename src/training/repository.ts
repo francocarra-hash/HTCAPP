@@ -86,10 +86,35 @@ export interface Payment {
   classes: number | null;
   /** Mes que paga (pago mensual), "YYYY-MM". */
   period: string | null;
+  /** Período (cargo) al que se asigna. Nunca cambia las sesiones del período. */
+  charge_id: string | null;
   note: string | null;
+  /** Fecha de registro (cuándo se cargó). paid_on es la fecha efectiva. */
   created_at: string;
 }
 export type NewPayment = Omit<Payment, 'id' | 'created_at'>;
+
+export type ChargeKind = 'paquete' | 'mes' | 'programacion';
+/** Período que se cobra: un paquete de clases, un mes o una programación. */
+export interface Charge {
+  id: string;
+  student_id: string;
+  kind: ChargeKind;
+  /** paq-N, YYYY-MM o prog-N: no se repite dentro del alumno. */
+  period_key: string;
+  starts_on: string;
+  /** Sesiones incluidas (paquetes). */
+  sessions: number | null;
+  amount: number;
+  /** Sus sesiones ya estaban contadas en el saldo inicial: no se suman. */
+  in_opening: boolean;
+  migrated_from: string | null;
+  reviewed_at: string | null;
+  note: string | null;
+  created_at: string;
+}
+export type NewCharge = Pick<Charge, 'student_id' | 'kind' | 'period_key' | 'starts_on' | 'sessions' | 'amount' | 'note'>;
+export type ChargePatch = Partial<Pick<Charge, 'sessions' | 'amount' | 'starts_on' | 'note' | 'in_opening' | 'reviewed_at'>>;
 
 export type AttendanceMark = 'p' | 'a' | 'e';
 export interface Attendance { student_id: string; day: string; mark: AttendanceMark }
@@ -178,8 +203,18 @@ export interface TrainingRepository {
   markActivitySeen(): Promise<void>;
 
   listPayments(studentId?: string): Promise<Payment[]>;
+  getPayment(id: string): Promise<Payment | null>;
   createPayment(p: NewPayment): Promise<Payment>;
   deletePayment(id: string): Promise<boolean>;
+  /** Pasa los pagos de un período a otro (no toca fechas, montos ni sesiones). */
+  movePayments(fromChargeId: string, toChargeId: string): Promise<number>;
+
+  listCharges(studentId?: string): Promise<Charge[]>;
+  getCharge(id: string): Promise<Charge | null>;
+  /** null si el alumno ya tiene ese período (no se duplica). */
+  createCharge(c: NewCharge): Promise<Charge | null>;
+  updateCharge(id: string, patch: ChargePatch): Promise<Charge | null>;
+  deleteCharge(id: string): Promise<boolean>;
 
   listAttendance(studentId?: string): Promise<Attendance[]>;
   /** mark null = borra la marca de ese día. */
@@ -236,6 +271,7 @@ export class InMemoryTrainingRepository implements TrainingRepository {
   private exercises = new Map<string, ExerciseMeta>();
   private completions = new Map<string, Completion>();
   private payments = new Map<string, Payment>();
+  private charges = new Map<string, Charge>();
   private attendance = new Map<string, Attendance>();
   private reports = new Map<string, StoredReport>();
   private avatars = new Map<string, Avatar>();
@@ -292,6 +328,7 @@ export class InMemoryTrainingRepository implements TrainingRepository {
     this.links.delete(id);
     for (const [k, c] of this.completions) if (c.student_id === id) this.completions.delete(k);
     for (const [k, p] of this.payments) if (p.student_id === id) this.payments.delete(k);
+    for (const [k, c] of this.charges) if (c.student_id === id) this.charges.delete(k);
     for (const [k, a] of this.attendance) if (a.student_id === id) this.attendance.delete(k);
     for (const [k, r] of this.reports) if (r.student_id === id) this.reports.delete(k);
     for (const [k, q] of this.quality) if (q.student_id === id) this.quality.delete(k);
@@ -410,6 +447,49 @@ export class InMemoryTrainingRepository implements TrainingRepository {
   }
   async deletePayment(id: string): Promise<boolean> {
     return this.payments.delete(id);
+  }
+  async getPayment(id: string): Promise<Payment | null> {
+    return clone(this.payments.get(id) ?? null);
+  }
+  async movePayments(fromChargeId: string, toChargeId: string): Promise<number> {
+    let n = 0;
+    for (const p of this.payments.values()) if (p.charge_id === fromChargeId) { p.charge_id = toChargeId; n++; }
+    return n;
+  }
+
+  async listCharges(studentId?: string): Promise<Charge[]> {
+    return [...this.charges.values()]
+      .filter((c) => !studentId || c.student_id === studentId)
+      .sort((a, b) => a.starts_on.localeCompare(b.starts_on) || a.created_at.localeCompare(b.created_at))
+      .map((c) => clone(c));
+  }
+  async getCharge(id: string): Promise<Charge | null> {
+    return clone(this.charges.get(id) ?? null);
+  }
+  async createCharge(c: NewCharge): Promise<Charge | null> {
+    if ([...this.charges.values()].some((x) => x.student_id === c.student_id && x.period_key === c.period_key)) return null;
+    const full: Charge = {
+      ...clone(c), id: randomUUID(), in_opening: false, migrated_from: null, reviewed_at: null, created_at: new Date().toISOString(),
+    };
+    this.charges.set(full.id, full);
+    return clone(full);
+  }
+  /** Sólo para tests: un período como los que crea la migración 010 desde un pago viejo. */
+  seedCharge(c: Charge): void {
+    this.charges.set(c.id, clone(c));
+  }
+  /** Sólo para tests: un pago viejo con su fecha de registro. */
+  seedPayment(p: Payment): void {
+    this.payments.set(p.id, clone(p));
+  }
+  async updateCharge(id: string, patch: ChargePatch): Promise<Charge | null> {
+    const c = this.charges.get(id);
+    if (!c) return null;
+    for (const [k, v] of Object.entries(patch)) if (v !== undefined) (c as unknown as Record<string, unknown>)[k] = v;
+    return clone(c);
+  }
+  async deleteCharge(id: string): Promise<boolean> {
+    return this.charges.delete(id);
   }
 
   async listAttendance(studentId?: string): Promise<Attendance[]> {
@@ -596,6 +676,7 @@ const toPayment = (r: any): Payment => ({
   amount: Number(r.amount),
   classes: r.classes ?? null,
   period: r.period ?? null,
+  charge_id: r.charge_id ?? null,
   note: r.note ?? null,
   created_at: ts(r.created_at)!,
 });
@@ -642,7 +723,14 @@ const STUDENT_COLS = 'id, name, username, age, sex, goal, notes, schedule, proce
 const QUALITY_COLS = `id::text AS id, student_id::text AS student_id, exercise_key, exercise_name,
   to_char(day, 'YYYY-MM-DD') AS day, score, aspects, note, created_at`;
 const PAYMENT_COLS = `id::text AS id, student_id::text AS student_id, to_char(paid_on, 'YYYY-MM-DD') AS paid_on,
-  amount, classes, period, note, created_at`;
+  amount, classes, period, charge_id::text AS charge_id, note, created_at`;
+const CHARGE_COLS = `id::text AS id, student_id::text AS student_id, kind, period_key, to_char(starts_on, 'YYYY-MM-DD') AS starts_on,
+  sessions, amount, in_opening, migrated_from::text AS migrated_from, reviewed_at, note, created_at`;
+const toCharge = (r: any): Charge => ({
+  id: r.id, student_id: r.student_id, kind: r.kind, period_key: r.period_key, starts_on: r.starts_on,
+  sessions: r.sessions ?? null, amount: Number(r.amount), in_opening: Boolean(r.in_opening), migrated_from: r.migrated_from ?? null,
+  reviewed_at: ts(r.reviewed_at), note: r.note ?? null, created_at: ts(r.created_at)!,
+});
 const REPORT_COLS = `id::text AS id, student_id::text AS student_id, to_char(period_start, 'YYYY-MM-DD') AS period_start,
   to_char(period_end, 'YYYY-MM-DD') AS period_end, data, message, next_goal, published_at, seen_at`;
 const SESSION_SELECT = `
@@ -928,14 +1016,55 @@ export class PgTrainingRepository implements TrainingRepository {
   }
   async createPayment(p: NewPayment): Promise<Payment> {
     const r = await this.pool.query(
-      `INSERT INTO training_payments (id, student_id, paid_on, amount, classes, period, note)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING ${PAYMENT_COLS}`,
-      [randomUUID(), p.student_id, p.paid_on, p.amount, p.classes, p.period, p.note],
+      `INSERT INTO training_payments (id, student_id, paid_on, amount, classes, period, charge_id, note)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING ${PAYMENT_COLS}`,
+      [randomUUID(), p.student_id, p.paid_on, p.amount, p.classes, p.period, p.charge_id, p.note],
     );
     return toPayment(r.rows[0]);
   }
   async deletePayment(id: string): Promise<boolean> {
     const r = await this.pool.query('DELETE FROM training_payments WHERE id = $1 RETURNING id', [id]);
+    return r.rows.length > 0;
+  }
+  async getPayment(id: string): Promise<Payment | null> {
+    const r = await this.pool.query(`SELECT ${PAYMENT_COLS} FROM training_payments WHERE id = $1`, [id]);
+    return r.rows[0] ? toPayment(r.rows[0]) : null;
+  }
+  async movePayments(fromChargeId: string, toChargeId: string): Promise<number> {
+    const r = await this.pool.query('UPDATE training_payments SET charge_id = $2 WHERE charge_id = $1', [fromChargeId, toChargeId]);
+    return r.rowCount ?? 0;
+  }
+
+  async listCharges(studentId?: string): Promise<Charge[]> {
+    const r = await this.pool.query(
+      `SELECT ${CHARGE_COLS} FROM training_charges ${studentId ? 'WHERE student_id = $1' : ''} ORDER BY starts_on, created_at`,
+      studentId ? [studentId] : [],
+    );
+    return r.rows.map(toCharge);
+  }
+  async getCharge(id: string): Promise<Charge | null> {
+    const r = await this.pool.query(`SELECT ${CHARGE_COLS} FROM training_charges WHERE id = $1`, [id]);
+    return r.rows[0] ? toCharge(r.rows[0]) : null;
+  }
+  async createCharge(c: NewCharge): Promise<Charge | null> {
+    const r = await this.pool.query(
+      `INSERT INTO training_charges (id, student_id, kind, period_key, starts_on, sessions, amount, note)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (student_id, period_key) DO NOTHING RETURNING ${CHARGE_COLS}`,
+      [randomUUID(), c.student_id, c.kind, c.period_key, c.starts_on, c.sessions, c.amount, c.note],
+    );
+    return r.rows[0] ? toCharge(r.rows[0]) : null;
+  }
+  async updateCharge(id: string, patch: ChargePatch): Promise<Charge | null> {
+    const cols = (['sessions', 'amount', 'starts_on', 'note', 'in_opening', 'reviewed_at'] as const).filter((k) => patch[k] !== undefined);
+    if (!cols.length) return this.getCharge(id);
+    const r = await this.pool.query(
+      `UPDATE training_charges SET ${cols.map((k, i) => `${k} = $${i + 2}`).join(', ')} WHERE id = $1 RETURNING ${CHARGE_COLS}`,
+      [id, ...cols.map((k) => patch[k])],
+    );
+    return r.rows[0] ? toCharge(r.rows[0]) : null;
+  }
+  async deleteCharge(id: string): Promise<boolean> {
+    const r = await this.pool.query('DELETE FROM training_charges WHERE id = $1 RETURNING id', [id]);
     return r.rows.length > 0;
   }
 

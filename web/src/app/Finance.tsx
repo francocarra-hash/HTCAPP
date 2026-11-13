@@ -1,11 +1,11 @@
 import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../api';
 import {
-  addDays, Billing, cap, coachApi, emptyBilling, Estado, FinanceStudent, longDate, Mark, parse, Schedule, shortDate,
+  addDays, Billing, cap, Charge, ChargeReviewItem, coachApi, emptyBilling, Estado, FinanceStudent, localDateOf, longDate, Mark, parse, Schedule, shortDate,
   WEEKDAYS, firstName, emptySchedule, Modalidad, Payment, Moneda, PayLink, isMercadoPago,
 } from './data';
 import {
-  ESTADO_LABEL, Fin, MARKS, MOD_LABEL, money, monthName, queCubre, shiftYM, StudentReport, urgente, weekOf, ym,
+  ESTADO_LABEL, Fin, MARKS, MOD_LABEL, money, monthName, shiftYM, StudentReport, urgente, weekOf, ym,
   fmtLong, PayState,
 } from './billing';
 import { DateInput, Enter, Icon, Seg, Sheet, Skeleton, TopHeader } from './ui';
@@ -325,6 +325,8 @@ export function FinanzasView({ fin, right, onOpen, reload, toast, onBack }: { fi
               <button className="btn primary wide" onClick={() => setPaying('new')}>{Icon.plus} Registrar pago</button>
             </div>
 
+            <RevisionPeriodos fin={fin} onOpen={onOpen} reload={reload} toast={toast} />
+
             <Facturado fin={fin} onPay={setPaying} onRemind={setReminding} onOpen={onOpen} reload={reload} toast={toast} />
 
             <section className="card">
@@ -380,7 +382,7 @@ export function FinanzasView({ fin, right, onOpen, reload, toast, onBack }: { fi
         )}
       </Enter>
       {paying && <PaymentSheet fin={fin} studentId={paying === 'new' ? null : paying} onClose={() => setPaying(null)}
-        onSaved={() => { setPaying(null); reload(); toast('Pago registrado'); }} toast={toast} />}
+        onSaved={() => { setPaying(null); reload(); toast('Pago registrado'); }} onChanged={reload} toast={toast} />}
       {reminding && <ReminderSheet fin={fin} studentId={reminding} onClose={() => setReminding(null)} toast={toast} />}
     </>
   );
@@ -513,7 +515,7 @@ function Ledger({ fin, id, confirm, setConfirm, onDelete, onPay, onRemind, onOpe
             {ps.map((p) => (
               <div key={p.id} className="lpay">
                 <span className="ld">{shortDate(p.paid_on)}</span>
-                <span className="lc">{queCubre(p)}{p.note ? `, ${p.note}` : ''}</span>
+                <span className="lc">{fin.queCubre(p)}{p.note ? `, ${p.note}` : ''}{localDateOf(p.created_at) !== p.paid_on ? ` · registrado el ${registrado(p.created_at)}` : ''}</span>
                 <span className="amt">{money(p.amount, fin.moneda(id))}</span>
                 {confirm === p.id
                   ? <span className="lconf"><button className="btn sm danger" onClick={() => onDelete(p.id)}>Borrar</button><button className="btn sm" onClick={() => setConfirm(null)}>No</button></span>
@@ -587,43 +589,65 @@ function Reportes({ fin, rango, setRango, onOpen }: { fin: Fin; rango: string; s
 
 // ── hojas ───────────────────────────────────────────────────────────────────
 
-export function PaymentSheet({ fin, studentId, onClose, onSaved, toast }: {
-  fin: Fin; studentId: string | null; onClose: () => void; onSaved: () => void; toast: Toast;
+/** Fecha y hora de registro (cuándo se cargó el pago en la plataforma). */
+const registrado = (at: string): string => {
+  const d = new Date(at);
+  return `${shortDate(localDateOf(d))} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
+/**
+ * Registrar un pago: se asigna a un período del alumno y sólo cambia lo
+ * abonado y el saldo de ese período. Nunca crea ni cambia clases. Crear un
+ * período nuevo es aparte (botón "Crear período nuevo").
+ */
+export function PaymentSheet({ fin, studentId, chargeId, onClose, onSaved, onChanged, toast }: {
+  fin: Fin; studentId: string | null; chargeId?: string | null; onClose: () => void; onSaved: () => void; onChanged: () => void; toast: Toast;
 }) {
   const options = fin.students.filter((s) => fin.estado(s).estado !== 'baja' || s.id === studentId).sort((a, b) => a.name.localeCompare(b.name));
   const [sid, setSid] = useState(studentId ?? options[0]?.id ?? '');
   const s = fin.students.find((x) => x.id === sid);
+  // Período recién creado, mientras se recargan los datos.
+  const [nuevo, setNuevo] = useState<Charge | null>(null);
+  const cargos = s ? [...fin.cargosDe(s.id), ...(nuevo && nuevo.student_id === s.id && !fin.cargo(nuevo.id) ? [nuevo] : [])] : [];
+  const pend = cargos.filter((c) => fin.saldoDe(c) > 0);
+  const otros = cargos.filter((c) => fin.saldoDe(c) <= 0).reverse();
+  const sugerido = pend[0] ?? null;
+  const [cid, setCid] = useState('');
   const [fecha, setFecha] = useState(fin.today);
   const [monto, setMonto] = useState('');
-  const [clases, setClases] = useState('');
-  const [periodo, setPeriodo] = useState('');
   const [nota, setNota] = useState('');
+  const [creating, setCreating] = useState(false);
   const [progPend, setProgPend] = useState(true);
   const [busy, setBusy] = useState(false);
   const m = s ? fin.modo(s) : 'clases';
   useEffect(() => {
     if (!s) return;
-    setMonto(String(fin.cuotaEn(s, fin.today) || ''));
-    setClases(String(fin.clasesPaquete(s) || 4));
-    const c = fin.estadoPago(s);
-    setPeriodo((c.due ?? fin.today).slice(0, 7));
+    const pre = chargeId && fin.cargo(chargeId)?.student_id === s.id ? chargeId : fin.pendientes(s)[0]?.id ?? '';
+    setCid(pre);
+    setCreating(!fin.cargosDe(s.id).length);
   }, [sid]); // eslint-disable-line react-hooks/exhaustive-deps
-  const sd = s ? fin.saldo(s) : null;
+  const c = cargos.find((x) => x.id === cid) ?? null;
+  useEffect(() => {
+    if (c) setMonto(fin.saldoDe(c) > 0 ? String(fin.saldoDe(c)) : '');
+  }, [cid]); // eslint-disable-line react-hooks/exhaustive-deps
+  const mon = s ? fin.moneda(s) : 'USD';
+  const saldo = c ? fin.saldoDe(c) : 0;
+  const n = Number(monto) || 0;
 
   const save = async () => {
-    if (!s) return;
+    if (!s || !c) return;
     setBusy(true);
     try {
+      await coachApi.addPayment({ student_id: s.id, charge_id: c.id, paid_on: fecha, amount: n, note: nota.trim() || null });
       const b = fin.billing(s);
-      if (m === 'clases' && !b.cuenta_desde) await coachApi.updateStudent(s.id, { billing: { ...b, cuenta_desde: fecha, saldo_inicial: 0 } });
-      await coachApi.addPayment({
-        student_id: s.id, paid_on: fecha, amount: Number(monto) || 0,
-        classes: m === 'clases' ? Math.max(1, Number(clases) || 1) : null,
-        period: m === 'mensual' ? periodo : null, note: nota.trim() || null,
-      });
       if (m === 'prog' && progPend !== b.prog_pendiente) await coachApi.updateStudent(s.id, { billing: { ...b, prog_pendiente: progPend } });
       onSaved();
     } catch (e) { toast((e as ApiError).message); } finally { setBusy(false); }
+  };
+
+  const opt = (x: Charge) => {
+    const sx = fin.saldoDe(x);
+    return `${cap(fin.cargoMes(x))} · ${fin.cargoTxt(x)} · ${money(x.amount, mon)} · ${sx > 0 ? `saldo ${money(sx, mon)}` : sx < 0 ? 'pagado de más' : 'pagado'}`;
   };
 
   return (
@@ -631,25 +655,233 @@ export function PaymentSheet({ fin, studentId, onClose, onSaved, toast }: {
       <div className="fields" style={{ marginTop: 0 }}>
         <div className="field full">
           <label htmlFor="pg-al">Alumno</label>
-          <select id="pg-al" value={sid} onChange={(e) => setSid(e.target.value)}>
+          <select id="pg-al" value={sid} onChange={(e) => { setSid(e.target.value); setNuevo(null); }}>
             {options.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
           </select>
         </div>
-        <div className="field"><label htmlFor="pg-f">Fecha de pago</label><DateInput id="pg-f" value={fecha} onChange={(e) => setFecha(e.target.value)} /></div>
-        <div className="field"><label htmlFor="pg-m">Monto (US$)</label><input id="pg-m" type="number" inputMode="decimal" min={0} step="any" value={monto} onChange={(e) => setMonto(e.target.value)} /></div>
-        {m === 'clases' && <div className="field"><label htmlFor="pg-c">Clases que paga</label><input id="pg-c" type="number" inputMode="numeric" min={1} value={clases} onChange={(e) => setClases(e.target.value)} /></div>}
-        {m === 'mensual' && <div className="field"><label htmlFor="pg-p">Mes que paga</label><DateInput id="pg-p" type="month" value={periodo} onChange={(e) => setPeriodo(e.target.value)} /></div>}
-        {m === 'prog' && (
-          <label className="field full checkline"><input type="checkbox" checked={progPend} onChange={(e) => setProgPend(e.target.checked)} /> Falta mandarle la programación nueva</label>
-        )}
-        <div className="field full"><label htmlFor="pg-n">Nota</label><input id="pg-n" value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Opcional (transferencia, efectivo…)" /></div>
+        <div className="field full">
+          <label htmlFor="pg-per">Período que se paga</label>
+          <select id="pg-per" value={cid} onChange={(e) => setCid(e.target.value)} disabled={!cargos.length}>
+            <option value="">{cargos.length ? 'Elegí el período…' : 'No tiene períodos: crealo abajo'}</option>
+            {pend.length > 0 && <optgroup label="Pendientes de pago">{pend.map((x) => <option key={x.id} value={x.id}>{opt(x)}</option>)}</optgroup>}
+            {otros.length > 0 && <optgroup label="Ya pagados (pagos de períodos anteriores)">{otros.map((x) => <option key={x.id} value={x.id}>{opt(x)}</option>)}</optgroup>}
+          </select>
+        </div>
       </div>
-      <p className="hint" style={{ margin: 0 }}>
-        {m === 'clases' ? (sd ? `Antes de este pago ${sd.restan < 0 ? `debe ${-sd.restan} ${sd.restan === -1 ? 'clase' : 'clases'}` : sd.restan === 1 ? 'le queda 1 clase' : `le quedan ${sd.restan} clases`}.` : 'Con este pago arranca la cuenta de su paquete.')
-          : m === 'prog' ? 'La próxima programación queda para dentro de 4 semanas desde hoy.' : ''}
-      </p>
-      <button className="btn primary wide" disabled={busy || !s || !fecha || monto === ''} onClick={save}>{busy ? 'Guardando…' : 'Guardar pago'}</button>
+      {c && (
+        <div className="phase" style={{ marginTop: 10 }}>
+          <span className="ph-tag">{c.id === sugerido?.id ? 'Sugerido' : 'Elegido'}</span>
+          <div>
+            <b>{cap(fin.cargoMes(c))}</b> · {fin.cargoTxt(c)}
+            <br />Importe {money(c.amount, mon)} · pagado {money(fin.pagadoDe(c), mon)} · {saldo > 0 ? <>saldo <b>{money(saldo, mon)}</b></> : saldo < 0 ? `pagado de más ${money(-saldo, mon)}` : 'sin saldo'}
+            {c.id === sugerido?.id && pend.length > 1 && <><br /><small>Es el período pendiente más antiguo. Tiene {pend.length - 1} más pendiente{pend.length > 2 ? 's' : ''}.</small></>}
+          </div>
+        </div>
+      )}
+      {s && !creating && (
+        <>
+          {!pend.length && <p className="hint" style={{ margin: '8px 0 0' }}>No tiene períodos pendientes de pago. Si empezó uno nuevo, crealo primero; si es el pago de un período anterior, elegilo en la lista.</p>}
+          <div className="actions" style={{ marginTop: 8 }}><button className="btn sm" onClick={() => setCreating(true)}>{Icon.plus} Crear período nuevo</button></div>
+        </>
+      )}
+      {s && creating && (
+        <PeriodForm fin={fin} s={s} toast={toast}
+          onCancel={cargos.length ? () => setCreating(false) : undefined}
+          onDone={(ch, created) => { setNuevo(ch); setCid(ch.id); setCreating(false); if (created) { toast('Período creado'); onChanged(); } }} />
+      )}
+      {c && (
+        <>
+          <div className="fields">
+            <div className="field"><label htmlFor="pg-f">Fecha en que recibiste el pago</label><DateInput id="pg-f" value={fecha} onChange={(e) => setFecha(e.target.value)} /></div>
+            <div className="field"><label htmlFor="pg-m">Monto ({mon === 'ARS' ? '$' : 'US$'})</label><input id="pg-m" type="number" inputMode="decimal" min={0} step="any" value={monto} onChange={(e) => setMonto(e.target.value)} /></div>
+            {m === 'prog' && (
+              <label className="field full checkline"><input type="checkbox" checked={progPend} onChange={(e) => setProgPend(e.target.checked)} /> Falta mandarle la programación nueva</label>
+            )}
+            <div className="field full"><label htmlFor="pg-n">Nota</label><input id="pg-n" value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Opcional (transferencia, efectivo…)" /></div>
+          </div>
+          <p className="hint" style={{ margin: 0 }}>
+            Fecha de registro: se guarda sola al registrar (hoy, {registrado(new Date().toISOString())}).
+            {fecha > fin.today ? ' Ojo: la fecha en que lo recibiste es posterior a hoy.' : ''}
+          </p>
+          <p className="hint" style={{ margin: '4px 0 0' }}>
+            {n > 0 && saldo > 0 && n < saldo ? `Pago parcial: queda un saldo de ${money(saldo - n, mon)}. ` : ''}
+            {n > 0 && n > Math.max(0, saldo) ? `Queda pagado de más ${money(n - Math.max(0, saldo), mon)}. ` : ''}
+            {c.kind === 'paquete' ? `Registrar el pago no cambia las clases del período (${c.sessions ?? '—'} incluidas).` : 'Registrar el pago no cambia el período.'}
+          </p>
+          <button className="btn primary wide" disabled={busy || !s || !fecha || !(n > 0)} onClick={save}>{busy ? 'Guardando…' : 'Guardar pago'}</button>
+        </>
+      )}
     </Sheet>
+  );
+}
+
+/** Crear un período (paquete, mes o programación). Aparte del pago; si ya existe, no se duplica. */
+function PeriodForm({ fin, s, onDone, onCancel, toast }: {
+  fin: Fin; s: FinanceStudent; onDone: (c: Charge, created: boolean) => void; onCancel?: () => void; toast: Toast;
+}) {
+  const sug = useMemo(() => fin.sugerirPeriodo(s), [s.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [inicio, setInicio] = useState(sug.kind === 'mes' ? sug.starts_on.slice(0, 7) : sug.starts_on);
+  const [ses, setSes] = useState(sug.sessions != null ? String(sug.sessions) : '');
+  const [imp, setImp] = useState(sug.amount ? String(sug.amount) : '');
+  const [nota, setNota] = useState('');
+  const [busy, setBusy] = useState(false);
+  const mon = fin.moneda(s);
+  const startsOn = sug.kind === 'mes' ? `${inicio}-01` : inicio;
+  const dup = inicio ? fin.periodoExistente(s, sug.kind, startsOn) : null;
+  const valid = Boolean(inicio) && imp !== '' && Number(imp) >= 0 && (sug.kind !== 'paquete' || Number(ses) >= 1);
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      const b = fin.billing(s);
+      if (sug.kind === 'paquete' && !b.cuenta_desde) await coachApi.updateStudent(s.id, { billing: { ...b, cuenta_desde: startsOn, saldo_inicial: 0 } });
+      const r = await coachApi.addCharge({
+        student_id: s.id, kind: sug.kind, starts_on: startsOn, sessions: sug.kind === 'paquete' ? Number(ses) : null,
+        amount: Number(imp), note: nota.trim() || null,
+      });
+      onDone(r.charge, true);
+    } catch (e) { toast((e as ApiError).message); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="ledger" style={{ marginTop: 12 }}>
+      <div className="lm-h"><span>Nuevo período</span></div>
+      <p className="hint" style={{ margin: '4px 0 0' }}>Es aparte del pago: crea el período con sus clases. Después le asignás el pago.</p>
+      <div className="fields">
+        {sug.kind === 'mes'
+          ? <div className="field"><label htmlFor="np-i">Mes</label><DateInput id="np-i" type="month" value={inicio} onChange={(e) => setInicio(e.target.value)} /></div>
+          : <div className="field"><label htmlFor="np-i">{sug.kind === 'paquete' ? 'Primera clase del paquete' : 'Fecha de la programación'}</label><DateInput id="np-i" value={inicio} onChange={(e) => setInicio(e.target.value)} /></div>}
+        {sug.kind === 'paquete' && <div className="field"><label htmlFor="np-s">Clases incluidas</label><input id="np-s" type="number" inputMode="numeric" min={1} value={ses} onChange={(e) => setSes(e.target.value)} /></div>}
+        <div className="field"><label htmlFor="np-a">Importe ({mon === 'ARS' ? '$' : 'US$'})</label><input id="np-a" type="number" inputMode="decimal" min={0} step="any" value={imp} onChange={(e) => setImp(e.target.value)} /></div>
+        <div className="field full"><label htmlFor="np-n">Nota</label><input id="np-n" value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Opcional" /></div>
+      </div>
+      {dup ? (
+        <div className="phase warn" style={{ marginTop: 8 }}>
+          <span className="ph-tag">Ya existe</span>
+          <div>Ese período ya está creado ({fin.cargoTxt(dup)}). No se crea otro. <button className="linkbtn" onClick={() => onDone(dup, false)}>Usar ese período</button></div>
+        </div>
+      ) : null}
+      <div className="actions">
+        <button className="btn primary" disabled={busy || !valid || Boolean(dup)} onClick={save}>{busy ? 'Creando…' : 'Crear período'}</button>
+        {onCancel && <button className="btn ghost" onClick={onCancel}>Cancelar</button>}
+      </div>
+    </div>
+  );
+}
+
+function PeriodSheet({ fin, s, onClose, onSaved, toast }: { fin: Fin; s: FinanceStudent; onClose: () => void; onSaved: () => void; toast: Toast }) {
+  return (
+    <Sheet title={`Nuevo período · ${firstName(s.name)}`} onClose={onClose}>
+      <PeriodForm fin={fin} s={s} toast={toast} onCancel={onClose} onDone={(_c, created) => { if (created) onSaved(); else onClose(); }} />
+    </Sheet>
+  );
+}
+
+/** Cambiar un período ya creado (sumar clases, corregir el importe) es explícito y pide el motivo. */
+function ChargeEditSheet({ fin, c, onClose, onSaved, toast }: { fin: Fin; c: Charge; onClose: () => void; onSaved: () => void; toast: Toast }) {
+  const [ses, setSes] = useState(c.sessions != null ? String(c.sessions) : '');
+  const [imp, setImp] = useState(String(c.amount));
+  const [motivo, setMotivo] = useState('');
+  const [busy, setBusy] = useState(false);
+  const mon = fin.moneda(c.student_id);
+  const changedSes = c.kind === 'paquete' && ses !== '' && Number(ses) !== c.sessions;
+  const changedImp = imp !== '' && Number(imp) !== c.amount;
+  const save = async () => {
+    setBusy(true);
+    try {
+      await coachApi.updateCharge(c.id, {
+        ...(changedSes ? { sessions: Number(ses) } : {}), ...(changedImp ? { amount: Number(imp) } : {}), reason: motivo.trim() || null,
+      });
+      onSaved();
+    } catch (e) { toast((e as ApiError).message); } finally { setBusy(false); }
+  };
+  return (
+    <Sheet title="Cambiar período" onClose={onClose}>
+      <p className="hint" style={{ marginTop: 0 }}>{cap(fin.cargoMes(c))} · {fin.cargoTxt(c)}</p>
+      <div className="fields" style={{ marginTop: 0 }}>
+        {c.kind === 'paquete' && <div className="field"><label htmlFor="ce-s">Clases incluidas</label><input id="ce-s" type="number" inputMode="numeric" min={0} value={ses} onChange={(e) => setSes(e.target.value)} /></div>}
+        <div className="field"><label htmlFor="ce-a">Importe ({mon === 'ARS' ? '$' : 'US$'})</label><input id="ce-a" type="number" inputMode="decimal" min={0} step="any" value={imp} onChange={(e) => setImp(e.target.value)} /></div>
+        <div className="field full"><label htmlFor="ce-m">Motivo</label><input id="ce-m" value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ej.: 2 clases extra de recuperación" /></div>
+      </div>
+      {changedSes && <p className="hint" style={{ margin: 0 }}>{Number(ses) > (c.sessions ?? 0) ? `Suma ${Number(ses) - (c.sessions ?? 0)} clases` : `Quita ${(c.sessions ?? 0) - Number(ses)} clases`} al saldo del paquete. Queda en el registro de cambios.</p>}
+      <button className="btn primary wide" disabled={busy || (!changedSes && !changedImp)} onClick={save}>{busy ? 'Guardando…' : 'Guardar cambios'}</button>
+    </Sheet>
+  );
+}
+
+/** Registros viejos con clases posiblemente duplicadas por un pago. Se muestran antes de corregir. */
+function RevisionPeriodos({ fin, onOpen, reload, toast }: { fin: Fin; onOpen: OpenStudent; reload: () => void; toast: Toast }) {
+  const [items, setItems] = useState<ChargeReviewItem[] | null>(null);
+  const [confirm, setConfirm] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const key = `${fin.payments.length}:${fin.charges.length}:${fin.charges.filter((c) => c.reviewed_at).length}`;
+  useEffect(() => {
+    let live = true;
+    coachApi.chargeReview().then((r) => { if (live) setItems(r.items); }).catch(() => { if (live) setItems([]); });
+    return () => { live = false; };
+  }, [key]);
+  if (!items?.length) return null;
+  const resolve = async (it: ChargeReviewItem, action: 'fix' | 'keep') => {
+    setBusy(true);
+    try {
+      const body = action === 'keep' ? { action: 'keep' as const }
+        : it.proposal.action === 'merge' ? { action: 'merge' as const, into: it.proposal.into.id } : { action: 'opening' as const };
+      await coachApi.resolveCharge(it.charge.id, body);
+      setConfirm(null);
+      toast(action === 'keep' ? 'Marcado como revisado' : 'Período corregido');
+      setItems((xs) => (xs ?? []).filter((x) => x.charge.id !== it.charge.id));
+      reload();
+    } catch (e) { toast((e as ApiError).message); } finally { setBusy(false); }
+  };
+  return (
+    <section className="card">
+      <div className="card-h"><h2>Revisar períodos</h2><span className="mini">{items.length}</span></div>
+      <div className="phase warn" style={{ marginTop: 0 }}>
+        <span className="ph-tag">Revisar</span>
+        <div>Antes, registrar un pago sumaba las clases del paquete aunque ese paquete ya estuviera contado. Estos períodos parecen repetidos. Revisalos: nada se corrige hasta que confirmes, y corregir no borra pagos ni asistencias.</div>
+      </div>
+      <div className="rows">
+        {items.map((it) => {
+          const mon = fin.moneda(it.student_id);
+          return (
+            <div key={it.charge.id} className="ledger" style={{ marginTop: 10 }}>
+              <div className="lm-h">
+                <button className="linkbtn" onClick={() => onOpen(it.student_id, 'pagos')}>{it.student_name}</button>
+                <span>{fin.cargoTxt(it.charge)}</span>
+              </div>
+              <p className="hint" style={{ margin: '6px 0' }}>{it.reason}</p>
+              {it.payments.map((p) => (
+                <div key={p.id} className="lpay">
+                  <span className="ld">{shortDate(p.paid_on)}</span>
+                  <span className="lc">Recibido el {shortDate(p.paid_on)} · registrado el {registrado(p.created_at)}</span>
+                  <span className="amt">{money(p.amount, mon)}</span>
+                </div>
+              ))}
+              <p style={{ margin: '8px 0 4px', fontSize: 14 }}>
+                Hoy le figuran <b>{it.restan_hoy}</b> clases; corregido quedarían <b>{it.restan_corregido}</b>.
+              </p>
+              <p className="hint" style={{ margin: 0 }}>Corrección: {it.proposal_text}</p>
+              {it.proposal.action === 'merge' && (
+                <p className="hint" style={{ margin: '4px 0 0' }}>Los pagos quedan registrados. Si al unir queda pagado de más, fijate si fue un pago cargado dos veces o un adelanto (en ese caso, “Está bien así”).</p>
+              )}
+              <div className="lacts">
+                {confirm === it.charge.id ? (
+                  <>
+                    <button className="btn sm danger" disabled={busy} onClick={() => resolve(it, 'fix')}>Confirmar corrección</button>
+                    <button className="btn sm" onClick={() => setConfirm(null)}>Cancelar</button>
+                  </>
+                ) : (
+                  <>
+                    <button className="btn sm primary" onClick={() => setConfirm(it.charge.id)}>Corregir</button>
+                    <button className="btn sm" disabled={busy} onClick={() => resolve(it, 'keep')}>Está bien así</button>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -728,9 +960,11 @@ export function StudentPayments({ fin, studentId, reload, toast, onAgenda }: {
   fin: Fin | null; studentId: string; reload: () => void; toast: Toast; onAgenda: () => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const [paying, setPaying] = useState(false);
+  const [paying, setPaying] = useState<{ charge: string | null } | null>(null);
   const [reminding, setReminding] = useState(false);
   const [moving, setMoving] = useState(false);
+  const [newPeriod, setNewPeriod] = useState(false);
+  const [editCharge, setEditCharge] = useState<Charge | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
   if (!fin) return <Skeleton />;
   const s = fin.students.find((x) => x.id === studentId);
@@ -759,6 +993,12 @@ export function StudentPayments({ fin, studentId, reload, toast, onAgenda }: {
   const del = async (id: string) => {
     try { await coachApi.deletePayment(id); setConfirm(null); toast('Pago borrado'); reload(); } catch (e) { toast((e as ApiError).message); }
   };
+  const delCharge = async (id: string) => {
+    try { await coachApi.deleteCharge(id); setConfirm(null); toast('Período borrado'); reload(); } catch (e) { toast((e as ApiError).message); }
+  };
+  const cargos = [...fin.cargosDe(s.id)].reverse();
+  const sueltos = ps.filter((p) => !fin.cargo(p.charge_id));
+  const mon = fin.moneda(s);
 
   if (editing) {
     return <BillingForm fin={fin} s={s} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); reload(); toast('Honorarios guardados'); }} toast={toast} />;
@@ -784,7 +1024,8 @@ export function StudentPayments({ fin, studentId, reload, toast, onAgenda }: {
           <dt>WhatsApp</dt><dd>{b.telefono || '—'}</dd>
         </dl>
         <div className="actions">
-          <button className="btn primary" onClick={() => setPaying(true)}>{Icon.plus} Registrar pago</button>
+          <button className="btn primary" onClick={() => setPaying({ charge: null })}>{Icon.plus} Registrar pago</button>
+          <button className="btn" onClick={() => setNewPeriod(true)}>{Icon.plus} Nuevo período</button>
           {c && (urgente(c) || c.k === 'pronto') && <button className="btn" onClick={() => setReminding(true)}>Recordar pago</button>}
           {!fin.isAsinc(s) && est.estado === 'activo' && <button className="btn" onClick={() => setMoving(true)}>Pasar una clase</button>}
           <button className="btn" onClick={() => setEditing(true)}>{Icon.edit} Honorarios y datos</button>
@@ -818,22 +1059,52 @@ export function StudentPayments({ fin, studentId, reload, toast, onAgenda }: {
       )}
 
       <section className="card">
-        <div className="card-h"><h2>Pagos</h2><span className="mini">Total {money(total, fin.moneda(s))}</span></div>
-        {ps.length ? (
-          <div className="rows">
-            {ps.map((p) => (
-              <div key={p.id} className="frow">
-                <span className="fw"><b>{queCubre(p)}</b><small>Pagó el {shortDate(p.paid_on)}{p.note ? ` · ${p.note}` : ''}</small></span>
-                <span className="fr-r">
-                  <span className="amt">{money(p.amount, fin.moneda(s))}</span>
+        <div className="card-h"><h2>Períodos y pagos</h2><span className="mini">Cobrado {money(total, mon)}</span></div>
+        {!cargos.length && !sueltos.length && <p className="hint">Todavía no tiene períodos. Creá el período (paquete, mes o programación) y después registrás su pago.</p>}
+        {cargos.map((c) => {
+          const pays = fin.pagosDeCargo(c);
+          const sal = fin.saldoDe(c);
+          const pill = sal <= 0 ? { t: sal < 0 ? 'Pagado de más' : 'Pagado', cls: 'ok' } : pays.length ? { t: 'Pago parcial', cls: 'low' } : { t: 'Pendiente', cls: c.starts_on <= fin.today ? 'bad' : 'low' };
+          return (
+            <div key={c.id} className="ledger" style={{ marginTop: 10 }}>
+              <div className="lm-h"><span>{fin.cargoTxt(c)}</span><Pill c={pill} /></div>
+              <p className="hint" style={{ margin: '4px 0 6px' }}>
+                {cap(fin.cargoMes(c))} · importe {money(c.amount, mon)} · pagado {money(fin.pagadoDe(c), mon)}
+                {sal > 0 ? ` · saldo ${money(sal, mon)}` : sal < 0 ? ` · ${money(-sal, mon)} de más` : ''}
+                {c.kind === 'paquete' && c.in_opening ? ' · sus clases ya estaban en el saldo inicial' : c.kind === 'paquete' && !fin.cuenta(s, c) ? ' · antes de la cuenta actual del paquete' : ''}
+              </p>
+              {pays.map((p) => (
+                <div key={p.id} className="lpay">
+                  <span className="ld">{shortDate(p.paid_on)}</span>
+                  <span className="lc">Recibido el {shortDate(p.paid_on)} · registrado el {registrado(p.created_at)}{p.note ? ` · ${p.note}` : ''}</span>
+                  <span className="amt">{money(p.amount, mon)}</span>
                   {confirm === p.id
-                    ? <span style={{ display: 'flex', gap: 4 }}><button className="btn sm danger" onClick={() => del(p.id)}>Borrar</button><button className="btn sm" onClick={() => setConfirm(null)}>No</button></span>
-                    : <button className="btn sm ghost" aria-label="Borrar pago" onClick={() => setConfirm(p.id)}>{Icon.trash}</button>}
-                </span>
+                    ? <span className="lconf"><button className="btn sm danger" onClick={() => del(p.id)}>Borrar</button><button className="btn sm" onClick={() => setConfirm(null)}>No</button></span>
+                    : <button className="btn sm ghost" aria-label={`Borrar el pago del ${shortDate(p.paid_on)}`} onClick={() => setConfirm(p.id)}>{Icon.trash}</button>}
+                </div>
+              ))}
+              <div className="lacts">
+                <button className="btn sm" onClick={() => setPaying({ charge: c.id })}>Registrar pago</button>
+                <button className="btn sm ghost" onClick={() => setEditCharge(c)}>{c.kind === 'paquete' ? 'Cambiar clases o importe' : 'Cambiar importe'}</button>
+                {!pays.length && (confirm === c.id
+                  ? <><button className="btn sm danger" onClick={() => delCharge(c.id)}>Borrar período</button><button className="btn sm" onClick={() => setConfirm(null)}>No</button></>
+                  : <button className="btn sm ghost" onClick={() => setConfirm(c.id)}>Borrar</button>)}
+              </div>
+            </div>
+          );
+        })}
+        {sueltos.length > 0 && (
+          <div className="ledger" style={{ marginTop: 10 }}>
+            <div className="lm-h"><span>Pagos sin período</span></div>
+            {sueltos.map((p) => (
+              <div key={p.id} className="lpay">
+                <span className="ld">{shortDate(p.paid_on)}</span>
+                <span className="lc">{fin.queCubre(p)} · registrado el {registrado(p.created_at)}</span>
+                <span className="amt">{money(p.amount, mon)}</span>
               </div>
             ))}
           </div>
-        ) : <p className="hint">Sin pagos registrados.</p>}
+        )}
       </section>
 
       {hc.length > 0 && (
@@ -855,7 +1126,9 @@ export function StudentPayments({ fin, studentId, reload, toast, onAgenda }: {
         </section>
       )}
 
-      {paying && <PaymentSheet fin={fin} studentId={s.id} onClose={() => setPaying(false)} onSaved={() => { setPaying(false); reload(); toast('Pago registrado'); }} toast={toast} />}
+      {paying && <PaymentSheet fin={fin} studentId={s.id} chargeId={paying.charge} onClose={() => setPaying(null)} onSaved={() => { setPaying(null); reload(); toast('Pago registrado'); }} onChanged={reload} toast={toast} />}
+      {newPeriod && <PeriodSheet fin={fin} s={s} onClose={() => setNewPeriod(false)} onSaved={() => { setNewPeriod(false); reload(); toast('Período creado'); }} toast={toast} />}
+      {editCharge && <ChargeEditSheet fin={fin} c={editCharge} onClose={() => setEditCharge(null)} onSaved={() => { setEditCharge(null); reload(); toast('Período actualizado'); }} toast={toast} />}
       {reminding && <ReminderSheet fin={fin} studentId={s.id} onClose={() => setReminding(false)} toast={toast} />}
       {moving && <MoveSheet fin={fin} studentId={s.id} onClose={() => setMoving(false)} onSaved={(m) => { setMoving(false); reload(); toast(m); }} />}
     </>

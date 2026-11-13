@@ -228,9 +228,23 @@ export function isMercadoPago(url: string): boolean {
     return u.protocol === 'https:' && ['mercadopago.com.ar', 'mercadopago.com', 'mpago.la', 'mpago.li'].some((d) => h === d || h.endsWith(`.${d}`));
   } catch { return false; }
 }
+/** paid_on = fecha efectiva (cuándo se recibió); created_at = fecha de registro (cuándo se cargó). */
 export interface Payment {
   id: string; student_id: string; paid_on: string; amount: number;
-  classes: number | null; period: string | null; note: string | null; created_at: string;
+  classes: number | null; period: string | null; charge_id: string | null; note: string | null; created_at: string;
+}
+export type ChargeKind = 'paquete' | 'mes' | 'programacion';
+/** Período que se cobra (paquete de clases, mes o programación). Los pagos se asignan a uno y no cambian sus clases. */
+export interface Charge {
+  id: string; student_id: string; kind: ChargeKind; period_key: string; starts_on: string;
+  sessions: number | null; amount: number; in_opening: boolean; migrated_from: string | null;
+  reviewed_at: string | null; note: string | null; created_at: string;
+}
+export interface ChargeReviewItem {
+  student_id: string; student_name: string; charge: Charge; payments: Payment[];
+  restan_antes: number; esperado_max: number; reason: string;
+  proposal: { action: 'merge'; into: Charge; into_label: string } | { action: 'opening' };
+  proposal_text: string; restan_hoy: number; restan_corregido: number;
 }
 export type Mark = 'p' | 'a' | 'e';
 export interface AttendanceRow { student_id: string; day: string; mark: Mark }
@@ -239,7 +253,7 @@ export interface FinanceStudent {
   first_date: string | null; last_date: string | null;
   session_days: string[]; planned_days: string[]; last_report_start: string | null;
 }
-export interface FinanceData { today: string; students: FinanceStudent[]; payments: Payment[]; attendance: AttendanceRow[] }
+export interface FinanceData { today: string; students: FinanceStudent[]; payments: Payment[]; charges?: Charge[]; attendance: AttendanceRow[] }
 
 // ── informe de 4 semanas ────────────────────────────────────────────────────
 
@@ -409,9 +423,18 @@ export const coachApi = {
   unlinkAssessment: (id: string, assessment_id: string) =>
     req<{ assessment_ids: string[] }>(`/training/students/${id}/assessments/${assessment_id}`, json('DELETE')),
   finance: () => req<FinanceData>('/training/finance'),
-  addPayment: (body: { student_id: string; paid_on: string; amount: number; classes?: number | null; period?: string | null; note?: string | null }) =>
+  /** Registra un pago de un período: no crea ni cambia clases. */
+  addPayment: (body: { student_id: string; charge_id: string; paid_on: string; amount: number; note?: string | null }) =>
     req<{ payment: Payment }>('/training/payments', json('POST', body)),
   deletePayment: (id: string) => req<{ ok: true }>(`/training/payments/${id}`, json('DELETE')),
+  addCharge: (body: { student_id: string; kind: ChargeKind; starts_on: string; sessions?: number | null; amount: number; note?: string | null }) =>
+    req<{ charge: Charge }>('/training/charges', json('POST', body)),
+  updateCharge: (id: string, body: { sessions?: number; amount?: number; starts_on?: string; note?: string | null; reason?: string | null }) =>
+    req<{ charge: Charge }>(`/training/charges/${id}`, json('PATCH', body)),
+  deleteCharge: (id: string) => req<{ ok: true }>(`/training/charges/${id}`, json('DELETE')),
+  chargeReview: () => req<{ items: ChargeReviewItem[] }>('/training/charges/review'),
+  resolveCharge: (id: string, body: { action: 'merge'; into: string } | { action: 'opening' } | { action: 'keep' }) =>
+    req<{ ok: true }>(`/training/charges/${id}/resolve`, json('POST', body)),
   setAttendance: (student_ids: string[], day: string, mark: Mark | null) =>
     req<{ ok: true }>('/training/attendance', json('PUT', { student_ids, day, mark })),
   reports: (id: string) =>
