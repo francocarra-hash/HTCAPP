@@ -210,6 +210,12 @@ async function studentProfile(repo: TrainingRepository, student: Student, onlyOw
 
 type RecordBody = ReturnType<typeof RecordInput.parse>;
 
+/** JSON con las claves ordenadas: Postgres (jsonb) devuelve los objetos con otro orden de claves. */
+const stableJson = (v: unknown): string => JSON.stringify(v, (_k, x) =>
+  x && typeof x === 'object' && !Array.isArray(x)
+    ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, (x as Record<string, unknown>)[k]]))
+    : x);
+
 /**
  * Guarda lo realizado por un alumno en una sesión. Cada ejercicio queda con la
  * foto de lo indicado en ese momento; corregir algo ya registrado sube la
@@ -259,7 +265,7 @@ async function saveRecord(
       prescribed: prev?.prescribed ?? prescribedOf(found.it, found.block),
       sets, notes: d.notes, source, data_quality: dataQuality(d.tracking, d.load_config, sets),
     };
-    if (prev && JSON.stringify({ ...prev, id: 0, version: 0, created_at: 0, updated_at: 0 }) === JSON.stringify({ ...prev, ...draft, id: 0, version: 0, created_at: 0, updated_at: 0 })) continue;
+    if (prev && stableJson({ ...prev, id: 0, version: 0, created_at: 0, updated_at: 0 }) === stableJson({ ...prev, ...draft, id: 0, version: 0, created_at: 0, updated_at: 0 })) continue;
     const { execution, before } = await repo.saveExecution(draft);
     await repo.addChange({
       entity: 'execution', entity_id: execution.id, student_id: student.id, session_id: session.id,

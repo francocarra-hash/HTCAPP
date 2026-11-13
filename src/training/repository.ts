@@ -683,8 +683,8 @@ const toChange = (r: any): ChangeEntry => ({
 });
 const filterSql = (f: RecordFilter, params: unknown[]): string => {
   const w: string[] = [];
-  if (f.studentId) { params.push(f.studentId); w.push(`student_id = ${params.length}`); }
-  if (f.sessionId) { params.push(f.sessionId); w.push(`session_id = ${params.length}`); }
+  if (f.studentId) { params.push(f.studentId); w.push(`student_id = $${params.length}`); }
+  if (f.sessionId) { params.push(f.sessionId); w.push(`session_id = $${params.length}`); }
   return w.length ? `WHERE ${w.join(' AND ')}` : '';
 };
 
