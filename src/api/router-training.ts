@@ -29,6 +29,8 @@ import {
 } from '../training/execution';
 import { buildMonitoring, responseContext, routineDiff } from '../training/monitoring';
 import { buildReport, cycleOf, CYCLE_DAYS, ReportInput } from '../training/report';
+import { calendarFeed } from './router-calendar';
+import { classMinutes } from '../training/calendar';
 
 export interface RoutineItemView extends RoutineItem { capacity: CapacityId | null; video: string | null }
 export interface SessionView extends Omit<StoredSession, 'routine'> {
@@ -1116,6 +1118,15 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
     const ids = [id, ...prev.filter((x) => x !== id)].slice(0, 12);
     await repo.setSetting('plan_recent', ids);
     res.json({ ids });
+  }));
+
+  /** Enlace para ver las clases en el calendario del teléfono (suscripción, un solo sentido). */
+  router.get('/calendar-link', handle(async (_req, res) => {
+    res.json({ ...(await calendarFeed(repo)), minutes: classMinutes() });
+  }));
+  /** Enlace nuevo: el anterior deja de funcionar. */
+  router.post('/calendar-link/reset', handle(async (_req, res) => {
+    res.json({ ...(await calendarFeed(repo, true)), minutes: classMinutes() });
   }));
 
   router.post('/activity/seen', handle(async (_req, res) => {

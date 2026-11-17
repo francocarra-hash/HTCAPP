@@ -10,6 +10,8 @@ import {
 } from './billing';
 import { DateInput, Enter, Icon, Seg, Sheet, Skeleton, TopHeader } from './ui';
 import { Avatar } from './social';
+import { CalendarSheet, ClassSheet } from './Agenda';
+import { dayState } from './agendaOps';
 
 export type OpenStudent = (id: string, tab?: 'rutina' | 'pagos' | 'informes' | 'agenda') => void;
 type Toast = (m: string) => void;
@@ -26,7 +28,8 @@ export function HoyView({ fin, right, onOpen, onAttendance, reload, toast }: {
   onAttendance: (ids: string[], day: string, mark: Mark | null) => void;
 }) {
   const [day, setDay] = useState<string | null>(null);
-  const [moving, setMoving] = useState<{ id: string; de?: string } | null>(null);
+  const [moving, setMoving] = useState<{ id: string; de: string } | null>(null);
+  const [cal, setCal] = useState(false);
   const today = fin?.today ?? '';
   const f = day ?? today;
 
@@ -62,7 +65,7 @@ export function HoyView({ fin, right, onOpen, onAttendance, reload, toast }: {
       <Enter>
         <Ahora fin={fin} onOpen={onOpen} onAttendance={onAttendance} />
 
-        <Attendance fin={fin} day={f} setDay={setDay} onOpen={onOpen} onAttendance={onAttendance} onMove={(id, de) => setMoving({ id, de })} reload={reload} toast={toast} />
+        <Attendance fin={fin} day={f} setDay={setDay} onOpen={onOpen} onAttendance={onAttendance} onMove={(id, de) => setMoving({ id, de })} onCalendar={() => setCal(true)} reload={reload} toast={toast} />
 
         {informes.length > 0 && (
           <section className="card">
@@ -110,7 +113,11 @@ export function HoyView({ fin, right, onOpen, onAttendance, reload, toast }: {
         )}
         <p className="hint" style={{ textAlign: 'center', marginTop: 16 }}>Los horarios salen de la Agenda de cada alumno. Pagos y cobros, en Finanzas.</p>
       </Enter>
-      {moving && <MoveSheet fin={fin} studentId={moving.id} de={moving.de} onClose={() => setMoving(null)} onSaved={(msg) => { setMoving(null); reload(); toast(msg); }} />}
+      {moving && fin.students.some((x) => x.id === moving.id) && (
+        <ClassSheet student={fin.students.find((x) => x.id === moving.id)!} date={moving.de}
+          onClose={() => setMoving(null)} onSaved={(msg) => { setMoving(null); reload(); toast(msg); }} />
+      )}
+      {cal && <CalendarSheet onClose={() => setCal(false)} toast={toast} />}
     </>
   );
 }
@@ -179,9 +186,10 @@ function PayRow({ fin, s, c, onClick }: { fin: Fin; s: FinanceStudent; c: PaySta
   );
 }
 
-function Attendance({ fin, day, setDay, onOpen, onAttendance, onMove, reload, toast }: {
+function Attendance({ fin, day, setDay, onOpen, onAttendance, onMove, onCalendar, reload, toast }: {
   fin: Fin; day: string; setDay: (d: string) => void; onOpen: OpenStudent; reload: () => void; toast: Toast;
   onAttendance: (ids: string[], day: string, mark: Mark | null) => void; onMove: (id: string, de: string) => void;
+  onCalendar: () => void;
 }) {
   const [extra, setExtra] = useState('');
   const week = weekOf(day);
@@ -264,7 +272,9 @@ function Attendance({ fin, day, setDay, onOpen, onAttendance, onMove, reload, to
                       onClick={() => onAttendance([r.s.id], day, exp === k ? null : k)}>{MARKS[k].label}</button>
                   ))}
                 </div>
-                {!mk && !r.extra && day >= fin.today && <button className="linkbtn mover" onClick={() => onMove(r.s.id, day)}>Pasar a otro día</button>}
+                {!mk && !r.extra && day >= fin.today && dayState(r.s.schedule ?? emptySchedule(), day).kind === 'class' && (
+                  <button className="linkbtn mover" onClick={() => onMove(r.s.id, day)}>Cambiar esta clase</button>
+                )}
               </div>
             </div>
           );
@@ -287,6 +297,7 @@ function Attendance({ fin, day, setDay, onOpen, onAttendance, onMove, reload, to
         </div>
       )}
       <p className="hint" style={{ fontSize: 12 }}>Ejercicios: faltó y le mandaste los ejercicios para que entrene solo; no cuenta como presente. Una sesión cargada ese día cuenta como presente.</p>
+      <button className="btn sm" style={{ marginTop: 10 }} onClick={onCalendar}>{Icon.calendar} Ver las clases en mi calendario</button>
     </section>
   );
 }
@@ -904,56 +915,6 @@ export function ReminderSheet({ fin, studentId, onClose, toast }: { fin: Fin; st
   );
 }
 
-export function MoveSheet({ fin, studentId, de, onClose, onSaved }: {
-  fin: Fin; studentId: string; de?: string; onClose: () => void; onSaved: (msg: string) => void;
-}) {
-  const s = fin.students.find((x) => x.id === studentId)!;
-  const prox = fin.proximasClases(s, 6);
-  const opts = [...new Set([...(de ? [de] : []), ...prox])];
-  const [from, setFrom] = useState(opts[0] ?? '');
-  const [to, setTo] = useState(opts[0] ? addDays(opts[0], 1) : fin.today);
-  const timeOf = (f: string) => (s.schedule ? (fin.programados(f).find((x) => x.s.id === s.id)?.time ?? '') : '');
-  const [time, setTime] = useState(timeOf(opts[0] ?? ''));
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-  const otherWeek = from && to && !weekOf(from).includes(to);
-
-  if (!opts.length) {
-    return <Sheet title="Pasar una clase" onClose={onClose}><p className="hint">{firstName(s.name)} no tiene clases próximas en su agenda.</p></Sheet>;
-  }
-  const save = async () => {
-    if (to === from) { setErr('Elegí un día distinto'); return; }
-    setBusy(true);
-    try {
-      const sc: Schedule = s.schedule ?? emptySchedule();
-      const fromOnce = sc.once.find((o) => o.date === from);
-      const entry = { date: to, time: time || null, note: `Pasada del ${shortDate(from)}`, from };
-      const next: Schedule = fromOnce
-        ? { ...sc, once: sc.once.map((o) => (o === fromOnce ? entry : o)) }
-        : { ...sc, skip: [...new Set([...sc.skip, from])], once: [...sc.once.filter((o) => o.from !== from), entry] };
-      await coachApi.updateStudent(s.id, { schedule: next });
-      onSaved(`Clase pasada al ${shortDate(to)}`);
-    } catch (e) { setErr((e as ApiError).message); } finally { setBusy(false); }
-  };
-  return (
-    <Sheet title={`Pasar una clase · ${firstName(s.name)}`} onClose={onClose}>
-      <div className="fields" style={{ marginTop: 0 }}>
-        <div className="field full">
-          <label htmlFor="mv-de">Clase que se pasa</label>
-          <select id="mv-de" value={from} onChange={(e) => { setFrom(e.target.value); setTime(timeOf(e.target.value)); }}>
-            {opts.map((f) => <option key={f} value={f}>{cap(longDate(f))}{timeOf(f) ? ` · ${timeOf(f)}` : ''}</option>)}
-          </select>
-        </div>
-        <div className="field"><label htmlFor="mv-a">Nuevo día</label><DateInput id="mv-a" value={to} onChange={(e) => setTo(e.target.value)} /></div>
-        <div className="field"><label htmlFor="mv-h">Hora</label><input id="mv-h" type="time" value={time} onChange={(e) => setTime(e.target.value)} /></div>
-      </div>
-      <p className="hint" style={{ margin: 0 }}>{otherWeek ? 'Ojo: el nuevo día es de otra semana.' : 'La clase se cuenta una sola vez: sale del día original y aparece en el nuevo para tomar asistencia.'}</p>
-      {err && <p className="err">{err}</p>}
-      <button className="btn primary wide" disabled={busy || !to} onClick={save}>{busy ? 'Guardando…' : 'Pasar clase'}</button>
-    </Sheet>
-  );
-}
-
 // ── pestaña Pagos del alumno ────────────────────────────────────────────────
 
 export function StudentPayments({ fin, studentId, reload, toast, onAgenda }: {
@@ -962,7 +923,6 @@ export function StudentPayments({ fin, studentId, reload, toast, onAgenda }: {
   const [editing, setEditing] = useState(false);
   const [paying, setPaying] = useState<{ charge: string | null } | null>(null);
   const [reminding, setReminding] = useState(false);
-  const [moving, setMoving] = useState(false);
   const [newPeriod, setNewPeriod] = useState(false);
   const [editCharge, setEditCharge] = useState<Charge | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
@@ -1027,7 +987,7 @@ export function StudentPayments({ fin, studentId, reload, toast, onAgenda }: {
           <button className="btn primary" onClick={() => setPaying({ charge: null })}>{Icon.plus} Registrar pago</button>
           <button className="btn" onClick={() => setNewPeriod(true)}>{Icon.plus} Nuevo período</button>
           {c && (urgente(c) || c.k === 'pronto') && <button className="btn" onClick={() => setReminding(true)}>Recordar pago</button>}
-          {!fin.isAsinc(s) && est.estado === 'activo' && <button className="btn" onClick={() => setMoving(true)}>Pasar una clase</button>}
+          {!fin.isAsinc(s) && est.estado === 'activo' && <button className="btn" onClick={onAgenda}>Cambiar una clase</button>}
           <button className="btn" onClick={() => setEditing(true)}>{Icon.edit} Honorarios y datos</button>
         </div>
         {aviso && (
@@ -1130,7 +1090,6 @@ export function StudentPayments({ fin, studentId, reload, toast, onAgenda }: {
       {newPeriod && <PeriodSheet fin={fin} s={s} onClose={() => setNewPeriod(false)} onSaved={() => { setNewPeriod(false); reload(); toast('Período creado'); }} toast={toast} />}
       {editCharge && <ChargeEditSheet fin={fin} c={editCharge} onClose={() => setEditCharge(null)} onSaved={() => { setEditCharge(null); reload(); toast('Período actualizado'); }} toast={toast} />}
       {reminding && <ReminderSheet fin={fin} studentId={s.id} onClose={() => setReminding(false)} toast={toast} />}
-      {moving && <MoveSheet fin={fin} studentId={s.id} onClose={() => setMoving(false)} onSaved={(m) => { setMoving(false); reload(); toast(m); }} />}
     </>
   );
 }
