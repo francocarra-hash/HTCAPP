@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  cap, CAP_LABEL, CapacityId, CHANGE_CATEGORIES, coachApi, CompareGroup, Monitoring, MONTH_NAMES, Profile, QualityEntry, shortDate, TRACKINGS,
+  addDays, cap, CAP_LABEL, CapacityId, CHANGE_CATEGORIES, coachApi, CompareGroup, dayLabel, Monitoring, MONTH_NAMES, Profile, QualityEntry, shortDate, TRACKINGS,
   WindowSummary, WorkTotals,
 } from './data';
 import { ProgressView } from './ProgressView';
@@ -242,13 +242,20 @@ function WorkLine({ w }: { w: WorkTotals }) {
   return <>{bits.join(' · ')}</>;
 }
 
+/** "16 al 22 nov" / "26 oct al 1 nov": la semana entera, de lunes a domingo. */
+function weekRange(monday: string): string {
+  const sunday = addDays(monday, 6);
+  return monday.slice(0, 7) === sunday.slice(0, 7) ? `${Number(monday.slice(8))} al ${shortDate(sunday)}` : `${shortDate(monday)} al ${shortDate(sunday)}`;
+}
+
 function LoadView({ mon, win, setWin }: { mon: Monitoring; win: Win; setWin: (w: Win) => void }) {
   const w = mon.windows.find((x) => x.key === win)!;
   const [cat, setCat] = useState<CapacityId | null>(null);
   const [by, setBy] = useState<'semana' | 'mes'>('semana');
   const rows = useMemo(() => (by === 'semana'
-    ? mon.weeks.slice(-12).map((x) => ({ key: x.week_start, label: shortDate(x.week_start), sessions: x.sessions, work: x.work, srpe: x.srpe_load }))
-    : mon.months.map((x) => ({ key: x.month, label: `${cap(MONTH_NAMES[Number(x.month.slice(5, 7)) - 1]!)} ${x.month.slice(2, 4)}`, sessions: x.sessions, work: x.work, srpe: x.srpe_load }))
+    // Por semana se muestran los días en que hubo clase (los mismos del Historial), no sólo cuántas.
+    ? mon.weeks.slice(-12).map((x) => ({ key: x.week_start, label: weekRange(x.week_start), days: [...x.days].sort().map(dayLabel).join(' · '), sessions: x.sessions, work: x.work, srpe: x.srpe_load }))
+    : mon.months.map((x) => ({ key: x.month, label: `${cap(MONTH_NAMES[Number(x.month.slice(5, 7)) - 1]!)} ${x.month.slice(2, 4)}`, days: '', sessions: x.sessions, work: x.work, srpe: x.srpe_load }))
   ), [mon.weeks, mon.months, by]);
   const mx = Math.max(1, ...rows.map((x) => x.work.sets));
   const anyKg = rows.some((x) => x.work.volume_kg > 0);
@@ -265,12 +272,12 @@ function LoadView({ mon, win, setWin }: { mon: Monitoring; win: Win; setWin: (w:
         {rows.length ? (
           <div className="tbl-wrap">
             <table className="tbl wk">
-              <thead><tr><th>{by === 'semana' ? 'Semana del' : 'Mes'}</th><th>Sesiones</th><th>Series</th><th>Reps</th><th>Sostén</th>{anyKg && <th>Kilos</th>}{anySrpe && <th>Carga interna</th>}</tr></thead>
+              <thead><tr><th>{by === 'semana' ? 'Semana' : 'Mes'}</th><th>{by === 'semana' ? 'Clases' : 'Sesiones'}</th><th>Series</th><th>Reps</th><th>Sostén</th>{anyKg && <th>Kilos</th>}{anySrpe && <th>Carga interna</th>}</tr></thead>
               <tbody>
                 {[...rows].reverse().map((x) => (
                   <tr key={x.key}>
                     <td className="nw">{x.label}</td>
-                    <td>{x.sessions || '—'}</td>
+                    <td className="nw">{by === 'semana' ? x.days || '—' : x.sessions || '—'}</td>
                     <td>{x.work.sets ? <span className="ubar"><i style={{ width: `${(x.work.sets / mx) * 100}%` }} /><b>{x.work.sets}</b></span> : '—'}</td>
                     <td>{x.work.reps ? x.work.reps.toLocaleString('es-AR') : '—'}</td>
                     <td className="nw">{mins(x.work.hold_s)}</td>
@@ -284,7 +291,7 @@ function LoadView({ mon, win, setWin }: { mon: Monitoring; win: Win; setWin: (w:
         ) : <p className="hint">Todavía no hay sesiones hechas.</p>}
         <p className="hint" style={{ fontSize: 12 }}>
           Series: cada vuelta de cada ejercicio. Kilos movidos: kilos × repeticiones de los ejercicios con carga escrita.
-          {by === 'semana' ? ' Se muestran las últimas 12 semanas.' : ' Se muestran los últimos 12 meses con sesiones.'}
+          {by === 'semana' ? ' Cada fila es una semana de lunes a domingo, con los días en que hubo clase. Se muestran las últimas 12.' : ' Se muestran los últimos 12 meses con sesiones.'}
           {anySrpe ? ' Carga interna: minutos × esfuerzo de la sesión, cuando el alumno lo respondió.' : ''}
         </p>
       </section>
