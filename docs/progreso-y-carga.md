@@ -167,3 +167,31 @@ las aclaraciones técnicas quedan sólo en la vista del profe.
   porcentaje de mejora; primero lo que subió por serie, después el volumen).
 - Si quiere cargar el esfuerzo de la sesión en las clases presenciales para
   tener también la carga interna.
+
+## 7. Progreso del alumno: versión simple
+
+Pedido de Nico: que el alumno entienda la pantalla de un vistazo y lo motive.
+Se sacaron los porcentajes, los filtros por capacidad y el bloque "Por
+capacidad". Quedan cuatro bloques, cada uno con un número grande:
+
+1. **Sesiones hechas**, con una barra hacia la próxima meta (50, 100, 150, 200…)
+   y tres datos: semanas seguidas, sesiones del mes y marcas nuevas. El tercero
+   nunca muestra un cero: si no hay marcas nuevas pasa a niveles subidos o a
+   ejercicios con marca.
+2. **Lo que más entrenás**: los cuatro ejercicios que más veces repitió (primero
+   aquellos en los que subió), con su mejor marca, cuánto subió desde la primera
+   vez y una línea de cómo fue subiendo esa marca.
+3. **Otros récords**: la mejor marca del resto, con la etiqueta "Nueva" si es de
+   las últimas 4 semanas. Se ordena por recientes o A–Z.
+4. **Subiste de nivel** y **sesiones por mes**.
+
+Al tocar un ejercicio se abre su detalle: mejor marca, las veces que la superó,
+la primera vez, la última y cuántas veces lo hizo.
+
+"Mejor marca" es el valor más alto registrado del ejercicio (segundos, kilos o
+repeticiones). Los ejercicios principales se eligen solos; queda pendiente, si
+Nico lo quiere, que él marque cuáles son los ejercicios clave de cada alumno.
+
+La vista del profe no cambió. Código: `StudentProgress` en
+`web/src/app/ProgressView.tsx`.
+

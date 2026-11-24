@@ -228,7 +228,10 @@ export function LineChart({ points, unit }: { points: Array<{ date: string; valu
   const tickLabel = (v: number) => (unit === 's' && v >= 60 ? fmtValue(v, 's').replace(' min', '′') : String(v));
   let maxI = 0;
   ys.forEach((v, i) => { if (v > ys[maxI]!) maxI = i; });
-  const idx = points.length > 2 ? [0, Math.floor((points.length - 1) / 2), points.length - 1] : points.map((_, i) => i);
+  // Fechas del eje: la primera, la última y la del medio sólo si no se pisa con ninguna de las dos.
+  const mid = Math.floor((points.length - 1) / 2);
+  const midFits = points.length > 2 && X(ts[mid]!) - X(ts[0]!) > 64 && X(ts[points.length - 1]!) - X(ts[mid]!) > 64;
+  const idx = points.length > 2 ? [0, ...(midFits ? [mid] : []), points.length - 1] : points.map((_, i) => i);
   return (
     <svg className="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Evolución en ${unit}`}>
       {tk.map((v) => (

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { ApiError } from '../api';
 import {
   ASPECT_LABEL, CAP_INFO, CAP_LABEL, CapacityId, coachApi, fmtValue, Highlight, longDate, pctGain, Progress, QUALITY_ASPECTS,
-  QUALITY_SCORE, QualityAspect, QualityEntry, shortDate, todayIso, unitLabel,
+  QUALITY_SCORE, QualityAspect, QualityEntry, relDays, shortDate, todayIso, Unit, unitLabel,
 } from './data';
 import { CapacityDefs } from './ExerciseLibrary';
 import { CapTag, CountUp, DateInput, Icon, LineChart, MonthBars, Sheet } from './ui';
@@ -38,126 +38,178 @@ export function ProgressView(props: {
   return props.you ? <StudentProgress progress={props.progress} quality={props.quality ?? []} /> : <FullProgress {...props} />;
 }
 
-// ── Progreso del alumno: el resultado de su esfuerzo ────────────────────────
+// ── Progreso del alumno: simple, con sus números ────────────────────────────
 
 const MILESTONES = [10, 25, 50, 75, 100, 150, 200, 250, 300, 400, 500, 750, 1000];
-const gainOf = (h: Highlight): number => (h.from > 0 ? (h.to - h.from) / h.from : 0);
 const daysAgo = (n: number): string => {
   const d = new Date();
   d.setDate(d.getDate() - n);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
+const round1 = (n: number): number => Math.round(n * 10) / 10;
+/** La marca tal como se dice: "1:45 min", "20 kg", "12 reps". */
+const mark = (v: number, unit: Unit): string => (unit === 'reps' ? `${v} reps` : fmtValue(v, unit));
+const gainTxt = (d: number, unit: Unit): string => (unit === 'reps' ? `${d} ${d === 1 ? 'repetición' : 'repeticiones'}` : fmtValue(d, unit));
+/** La mejor marca hasta cada fecha: una línea que sólo sube. */
+const runningBest = (values: number[]): number[] => {
+  let top = -Infinity;
+  return values.map((v) => (top = Math.max(top, v)));
+};
+
+/** Las veces que superó su marca (más el punto de hoy), para un gráfico que se lee de un vistazo. */
+function recordSteps(points: Array<{ date: string; value: number }>): Array<{ date: string; value: number }> {
+  const out: Array<{ date: string; value: number }> = [];
+  let top = -Infinity;
+  for (const p of points) if (p.value > top) { top = p.value; out.push({ date: p.date, value: p.value }); }
+  const last = points[points.length - 1]!;
+  if (out[out.length - 1]!.date !== last.date) out.push({ date: last.date, value: top });
+  return out;
+}
+
+type Ex = Progress['exercises'][number];
+interface Rec {
+  ex: Ex; best: number;
+  /** Cuándo llegó a su mejor marca. */
+  bestDate: string; firstDate: string;
+  /** Cuánto subió desde la primera vez. */
+  gain: number;
+  /** La mejor marca es de las últimas 4 semanas. */
+  fresh: boolean;
+}
+
+/** Línea simple de cómo fue subiendo la mejor marca; el último punto, resaltado. */
+function Spark({ values }: { values: number[] }) {
+  const W = 160, H = 48, P = 5;
+  if (values.length < 2) return <svg className="spark" viewBox={`0 0 ${W} ${H}`} aria-hidden="true" />;
+  const min = Math.min(...values), max = Math.max(...values);
+  const span = max - min || 1;
+  const pts = values.map((v, i) => [P + (i * (W - 2 * P)) / (values.length - 1), H - P - ((v - min) / span) * (H - 2 * P - 4)] as const);
+  const line = pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  const last = pts[pts.length - 1]!;
+  return (
+    <svg className="spark" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
+      <polygon className="sp-a" points={`${P},${H} ${line} ${W - P},${H}`} />
+      <polyline className="sp-l" points={line} />
+      <circle className="sp-d" cx={last[0]} cy={last[1]} r="3.5" />
+    </svg>
+  );
+}
 
 /**
- * Lo que ve el alumno en Progreso: primero sus logros (en qué mejoró y cuánto),
- * sus marcas nuevas y los niveles que subió; después la constancia. Sin tablas
- * ni aclaraciones técnicas: eso queda en la vista del profe.
+ * Lo que ve el alumno en Progreso, en cuatro bloques y sin porcentajes: cuánto
+ * viene entrenando, su mejor marca en lo que más entrena, el resto de sus
+ * récords y los niveles que subió. El detalle fino queda en la vista del profe.
  */
 function StudentProgress({ progress, quality }: { progress: Progress; quality: QualityEntry[] }) {
-  const { stats, exercises, months, capacities } = progress;
-  const [capSel, setCapSel] = useState<CapacityId | null>(null);
-  const [more, setMore] = useState(false);
-  const [sel, setSel] = useState<string | null>(null);
+  const { stats, exercises, months } = progress;
+  const [order, setOrder] = useState<'recientes' | 'az'>('recientes');
+  const [all, setAll] = useState(false);
+  const [allLevels, setAllLevels] = useState(false);
+  const [open, setOpen] = useState<Rec | null>(null);
 
-  // Todos los ejercicios en los que mejoró, de la primera vez a la última.
-  const wins = useMemo<Highlight[]>(() => {
-    const byDose = exercises.filter((e) => e.first > 0 && e.last > e.first).map((e): Highlight => ({
-      key: e.key, name: e.name, capacity: e.capacity, unit: e.unit, from: e.first, to: e.last,
-      first_date: e.points[0]!.date, last_date: e.points[e.points.length - 1]!.date,
-    }));
-    const byVolume = progress.highlights.filter((h) => h.kind === 'volumen' && !byDose.some((x) => x.key === h.key));
-    // Primero lo que subió en cada serie; después lo que subió sólo en volumen total.
-    return [...byDose.sort((a, b) => gainOf(b) - gainOf(a)), ...byVolume];
-  }, [exercises, progress.highlights]);
-
-  // Marcas nuevas: la última vez superó todo lo anterior, en las últimas 4 semanas.
-  const records = useMemo(() => {
+  const recs = useMemo<Rec[]>(() => {
     const since = daysAgo(28);
-    return exercises.flatMap((e) => {
-      const last = e.points[e.points.length - 1]!;
-      const before = Math.max(...e.points.slice(0, -1).map((p) => p.value));
-      return last.date >= since && e.points.length > 1 && last.value > before
-        ? [{ key: e.key, name: e.name, capacity: e.capacity, unit: e.unit, value: last.value, before, date: last.date }] : [];
-    }).sort((a, b) => b.date.localeCompare(a.date));
+    return exercises.filter((e) => e.points.length > 0).map((e) => {
+      const best = Math.max(...e.points.map((p) => p.value));
+      const at = e.points.findIndex((p) => p.value === best);
+      const bestDate = e.points[at]!.date;
+      return { ex: e, best, bestDate, firstDate: e.points[0]!.date, gain: round1(best - e.points[0]!.value), fresh: at > 0 && bestDate >= since };
+    });
   }, [exercises]);
+
+  // Lo que más entrena: los ejercicios que más veces repitió (primero, en los que subió).
+  const main = useMemo(() => {
+    const m = recs.filter((r) => r.ex.points.length >= 3)
+      .sort((a, b) => Number(b.gain > 0) - Number(a.gain > 0) || b.ex.points.length - a.ex.points.length).slice(0, 4);
+    return m.length >= 2 ? m : [];
+  }, [recs]);
+  const others = useMemo(() => recs.filter((r) => !main.includes(r))
+    .sort((a, b) => (order === 'az' ? a.ex.name.localeCompare(b.ex.name, 'es') : b.bestDate.localeCompare(a.bestDate) || a.ex.name.localeCompare(b.ex.name, 'es'))),
+  [recs, main, order]);
 
   if (!stats.sessions) return <p className="empty">Cuando completes tus primeras sesiones, acá vas a ver cómo vas mejorando.</p>;
 
-  const inCap = <T extends { capacity: CapacityId | null }>(x: T) => !capSel || x.capacity === capSel;
-  const shownWins = wins.filter(inCap);
-  const visibleWins = more ? shownWins : shownWins.slice(0, 5);
-  const shownRecords = records.filter(inCap);
-  const variants = (progress.variants ?? []).filter(inCap);
-  const shownEx = exercises.filter(inCap);
-  const current = shownEx.find((e) => e.key === sel) ?? shownEx.find((e) => e.key === shownWins[0]?.key) ?? shownEx[0];
-  const reached = [...MILESTONES].reverse().find((m) => m <= stats.sessions);
+  const fresh = recs.filter((r) => r.fresh).length;
   const next = MILESTONES.find((m) => m > stats.sessions);
-  const pick = (c: CapacityId | null) => { setCapSel(c); setSel(null); setMore(false); };
+  const left = next ? next - stats.sessions : 0;
+  const variants = progress.variants ?? [];
+  const shownOthers = all ? others : others.slice(0, 6);
+  const shownLevels = allLevels ? variants : variants.slice(0, 3);
 
   return (
     <>
-      <section className="ach" aria-label="Tu progreso">
+      <section className="ach" aria-label="Tu constancia">
         <div className="ach-k">Semana {stats.process_week} de tu proceso</div>
-        {wins.length > 0 ? (
-          <div className="ach-big"><b><CountUp to={wins.length} /></b><span>{wins.length === 1 ? 'ejercicio en el que mejoraste' : 'ejercicios en los que mejoraste'}</span></div>
-        ) : (
-          <div className="ach-big"><b><CountUp to={stats.sessions} /></b><span>{stats.sessions === 1 ? 'sesión hecha' : 'sesiones hechas'}</span></div>
+        <div className="ach-big"><b><CountUp to={stats.sessions} /></b><span>{stats.sessions === 1 ? 'sesión hecha' : 'sesiones hechas'}</span></div>
+        {next && (
+          <div className="ach-goal">
+            <div className="ach-bar" role="img" aria-label={`${stats.sessions} de ${next} sesiones`}><i style={{ width: `${Math.max(4, (stats.sessions / next) * 100)}%` }} /></div>
+            <p>{left === 1 ? 'Te falta 1 sesión' : `Te faltan ${left} sesiones`} para llegar a las <b>{next}</b>.</p>
+          </div>
         )}
         <div className="ach-stats">
-          <div><b><CountUp to={stats.sessions} /></b><span>Sesiones</span></div>
           <div><b><CountUp to={stats.streak_weeks} /></b><span>{stats.streak_weeks === 1 ? 'Semana seguida' : 'Semanas seguidas'}</span></div>
-          <div><b><CountUp to={(progress.variants ?? []).length} /></b><span>{(progress.variants ?? []).length === 1 ? 'Nivel subido' : 'Niveles subidos'}</span></div>
+          <div><b><CountUp to={stats.this_month} /></b><span>Este mes</span></div>
+          {/* El tercer número nunca es un cero: marcas nuevas, niveles subidos o ejercicios con marca. */}
+          {fresh > 0
+            ? <div><b><CountUp to={fresh} /></b><span>{fresh === 1 ? 'Marca nueva' : 'Marcas nuevas'}</span></div>
+            : variants.length > 0
+              ? <div><b><CountUp to={variants.length} /></b><span>{variants.length === 1 ? 'Nivel subido' : 'Niveles subidos'}</span></div>
+              : <div><b><CountUp to={recs.length} /></b><span>{recs.length === 1 ? 'Ejercicio con marca' : 'Ejercicios con marca'}</span></div>}
         </div>
-        {stats.first_date && <p>Entrenás desde el {longDate(stats.first_date)}.{next ? ` Te ${next - stats.sessions === 1 ? 'falta 1 sesión' : `faltan ${next - stats.sessions} sesiones`} para las ${next}.` : ''}</p>}
       </section>
 
-      {capacities.length > 1 && (
-        <div className="filters" role="group" aria-label="Ver por capacidad">
-          <button className="tog" aria-pressed={!capSel} onClick={() => pick(null)}>Todo</button>
-          {capacities.map((c) => (
-            <button key={c.id} className="tog" aria-pressed={capSel === c.id} style={{ ['--c' as string]: `var(--cap-${c.id})` }} onClick={() => pick(capSel === c.id ? null : c.id)}>
-              <i aria-hidden="true" />{c.label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {shownRecords.length > 0 && (
+      {main.length > 0 && (
         <section className="card">
-          <div className="card-h"><h2>Marcas nuevas</h2><span className="mini">últimas 4 semanas</span></div>
-          <div className="rows">
-            {shownRecords.slice(0, 6).map((r) => (
-              <div key={r.key} className="recrow" style={{ ['--c' as string]: r.capacity ? `var(--cap-${r.capacity})` : 'var(--accent)' }}>
-                <span className="fw"><b>{r.name}</b><small>{shortDate(r.date)} · antes {fmtValue(r.before, r.unit)}</small></span>
-                <span className="rec-v">{fmtValue(r.value, r.unit)}</span>
-              </div>
+          <h2>Lo que más entrenás</h2>
+          <div className="hint">Tu mejor marca en cada uno. Tocá para ver cómo fuiste subiendo.</div>
+          <div className="keygrid">
+            {main.map((r) => (
+              <button key={r.ex.key} className="keycard" onClick={() => setOpen(r)}>
+                <span className="kc-n">{r.ex.name}{r.fresh && <i className="pr">Nueva</i>}</span>
+                <span className="kc-v">{mark(r.best, r.ex.unit)}</span>
+                <span className={`kc-d${r.gain > 0 ? ' up' : ''}`}>{r.gain > 0 ? `▲ Subiste ${mark(r.gain, r.ex.unit)}` : `Desde el ${shortDate(r.firstDate)}`}</span>
+                <Spark values={runningBest(r.ex.points.map((p) => p.value))} />
+              </button>
             ))}
           </div>
         </section>
       )}
 
-      <section className="card">
-        <div className="card-h"><h2>Tus logros</h2>{shownWins.length > 0 && <span className="mini">{shownWins.length}</span>}</div>
-        {shownWins.length ? (
-          <>
-            <div className="hint">De tu primera vez a la última.</div>
-            <div className="wins">{visibleWins.map((h, i) => <WinCard key={h.key + (h.kind ?? '')} h={h} i={i < 5 ? i : 0} />)}</div>
-            {shownWins.length > 5 && (
-              <button className="btn wide" style={{ marginTop: 12 }} onClick={() => setMore(!more)}>{more ? 'Ver menos' : `Ver los ${shownWins.length} logros`}</button>
-            )}
-          </>
-        ) : (
-          <p className="hint">{capSel ? 'Todavía no hay logros en esta capacidad. Seguí así: aparecen cuando un ejercicio se repite y sube.' : 'Con algunas sesiones más vas a ver acá en qué ejercicios mejoraste.'}</p>
-        )}
-      </section>
+      {others.length > 0 && (
+        <section className="card">
+          <div className="card-h"><h2>{main.length ? 'Otros récords' : 'Tus récords'}</h2><span className="mini">{others.length} {others.length === 1 ? 'ejercicio' : 'ejercicios'}</span></div>
+          <div className="hint">Tu mejor marca en cada ejercicio. "Nueva" es una marca de las últimas 4 semanas.</div>
+          <div className="filters" role="group" aria-label="Ordenar">
+            <button className="tog" aria-pressed={order === 'recientes'} onClick={() => setOrder('recientes')}>Recientes</button>
+            <button className="tog" aria-pressed={order === 'az'} onClick={() => setOrder('az')}>A–Z</button>
+          </div>
+          <div className="recgrid">
+            {shownOthers.map((r) => (
+              <button key={r.ex.key} className="reccard" onClick={() => setOpen(r)}>
+                <span className="kc-n">{r.ex.name}{r.fresh && <i className="pr">Nueva</i>}</span>
+                <span className="rc-v">{mark(r.best, r.ex.unit)}</span>
+                <span className="rc-d">{relDays(r.bestDate)}</span>
+              </button>
+            ))}
+          </div>
+          {others.length > 6 && (
+            <button className="btn wide" style={{ marginTop: 12 }} onClick={() => setAll(!all)}>{all ? 'Ver menos' : `Ver los ${others.length}`}</button>
+          )}
+        </section>
+      )}
+
+      {!recs.length && (
+        <section className="card"><p className="hint" style={{ margin: 0 }}>Cuando repitas ejercicios, acá vas a ver tu mejor marca en cada uno.</p></section>
+      )}
 
       {variants.length > 0 && (
         <section className="card">
           <div className="card-h"><h2>Subiste de nivel</h2><span className="mini">{variants.length}</span></div>
           <p className="hint" style={{ margin: '4px 0 8px' }}>Pasaste a una versión más difícil del mismo movimiento.</p>
           <div className="rows">
-            {variants.map((v) => (
-              <div key={v.to + v.date} className="vstep" style={{ ['--c' as string]: v.capacity ? `var(--cap-${v.capacity})` : 'var(--accent)' }}>
+            {shownLevels.map((v) => (
+              <div key={v.to + v.date} className="vstep" style={{ ['--c' as string]: 'var(--accent)' }}>
                 <span className="vs-from">{v.from}</span>
                 <span className="vs-ar" aria-hidden="true">→</span>
                 <b>{v.to}</b>
@@ -165,61 +217,38 @@ function StudentProgress({ progress, quality }: { progress: Progress; quality: Q
               </div>
             ))}
           </div>
+          {variants.length > 3 && (
+            <button className="btn wide" style={{ marginTop: 12 }} onClick={() => setAllLevels(!allLevels)}>{allLevels ? 'Ver menos' : `Ver los ${variants.length}`}</button>
+          )}
         </section>
       )}
 
-      <QualitySection progress={progress} quality={quality} capSel={capSel} you onlyRated />
+      <QualitySection progress={progress} quality={quality} capSel={null} you onlyRated />
 
-      {!capSel && capacities.length > 0 && (
+      {months.length > 1 && (
         <section className="card">
-          <h2>Por capacidad</h2>
-          <div className="hint">En cuántos ejercicios mejoraste de cada una. Tocá una para ver sus logros.</div>
-          <div className="capgrid">
-            {capacities.map((c) => (
-              <button key={c.id} className="capcard" style={{ ['--c' as string]: `var(--cap-${c.id})` }} onClick={() => { pick(c.id); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
-                <CapTag id={c.id} label={c.label} lg />
-                <span className="big">{c.improved}<small>{c.improved === 1 ? 'mejoró' : 'mejoraron'}</small></span>
-                {c.top
-                  ? <span className="top">{c.top.name}: <span>{fmtValue(c.top.from, c.top.unit)} → {fmtValue(c.top.to, c.top.unit)}</span></span>
-                  : <span className="top"><span>{c.sessions} {c.sessions === 1 ? 'sesión' : 'sesiones'}</span></span>}
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {!capSel && months.length > 1 && (
-        <section className="card">
-          <h2>Tu constancia</h2>
-          <div className="hint">
-            {reached ? `Ya pasaste las ${reached} sesiones.` : 'Sesiones por mes.'}
-            {stats.this_month ? ` Este mes llevás ${stats.this_month}.` : ''}
-          </div>
+          <h2>Tus sesiones por mes</h2>
+          <div className="hint">{stats.this_month ? `Este mes llevás ${stats.this_month}.` : 'Cada barra es un mes.'}</div>
           <MonthBars months={months} />
         </section>
       )}
 
-      {current && (
-        <details className="older achdet">
-          <summary><span>Ver cada ejercicio</span><span className="chev" aria-hidden="true">⌄</span></summary>
-          <select className="full" value={current.key} onChange={(e) => setSel(e.target.value)} aria-label="Ejercicio" style={{ marginTop: 10 }}>
-            {shownEx.map((e) => <option key={e.key} value={e.key}>{e.name}</option>)}
-          </select>
-          <section className="card" key={current.key}>
-            <div className="card-h">
-              <div className="label">{current.name} · {unitLabel(current.unit)}</div>
-              {current.capacity && <CapTag id={current.capacity} label={CAP_LABEL[current.capacity]} />}
-            </div>
-            <LineChart points={current.points} unit={current.unit} />
-            <div className="stats" style={{ marginTop: 10 }}>
-              <div className="stat"><div className="v">{fmtValue(current.best, current.unit)}</div><div className="l">Tu mejor marca</div></div>
-              <div className="stat"><div className="v">{current.points.length}</div><div className="l">Sesiones</div></div>
-              {current.last > current.first && (
-                <div className="stat"><div className="v">+{fmtValue(current.last - current.first, current.unit)}</div><div className="l">Desde {shortDate(current.points[0]!.date)}</div></div>
-              )}
-            </div>
-          </section>
-        </details>
+      {open && (
+        <Sheet title={open.ex.name} onClose={() => setOpen(null)}>
+          <p className="cls-now"><b>{mark(open.best, open.ex.unit)}</b> · tu mejor marca, el {longDate(open.bestDate)}</p>
+          {open.ex.points.length > 1 && (
+            <>
+              <LineChart points={recordSteps(open.ex.points)} unit={open.ex.unit} />
+              <p className="hint" style={{ margin: 0, fontSize: 12 }}>Cada punto es una vez que superaste tu marca.</p>
+            </>
+          )}
+          <div className="stats">
+            <div className="stat"><div className="v">{mark(open.ex.points[0]!.value, open.ex.unit)}</div><div className="l">La primera vez · {shortDate(open.firstDate)}</div></div>
+            <div className="stat"><div className="v">{mark(open.ex.last, open.ex.unit)}</div><div className="l">La última vez</div></div>
+            <div className="stat"><div className="v">{open.ex.points.length}</div><div className="l">{open.ex.points.length === 1 ? 'Vez' : 'Veces'}</div></div>
+          </div>
+          {open.gain > 0 && <p className="hint" style={{ margin: 0 }}>Subiste {gainTxt(open.gain, open.ex.unit)} desde que empezaste con este ejercicio.</p>}
+        </Sheet>
       )}
     </>
   );

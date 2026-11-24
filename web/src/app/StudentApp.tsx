@@ -89,7 +89,7 @@ function StudentHome({ onLogout }: { onLogout: () => void }) {
       ? pending
         ? <><span>Para el <b>{longDate(pending.date)}</b></span>{prog && <span><b>{prog.done}</b> de {prog.total}</span>}</>
         : <span>Hola, {firstName(profile.student.name)} 👋</span>
-      : tab === 'progreso' ? <span>Tus avances, por capacidad</span>
+      : tab === 'progreso' ? <span>Tus marcas y tu constancia</span>
       : tab === 'historial' ? <span>{profile.sessions.length} sesiones</span>
       : tab === 'comunidad' ? <span>Tu profe y el grupo</span>
       : <span>Tu proceso de entrenamiento</span>;
