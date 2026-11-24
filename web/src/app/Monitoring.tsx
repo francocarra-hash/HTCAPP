@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  addDays, cap, CAP_LABEL, CapacityId, CHANGE_CATEGORIES, coachApi, CompareGroup, dayLabel, Monitoring, MONTH_NAMES, Profile, QualityEntry, shortDate, TRACKINGS,
+  addDays, cap, CAP_LABEL, CapacityId, CHANGE_CATEGORIES, coachApi, CompareGroup, dayLabel, firstName, Monitoring, MONTH_NAMES, Profile, QualityEntry, shortDate, TRACKINGS,
   WindowSummary, WorkTotals,
 } from './data';
-import { ProgressView } from './ProgressView';
+import { ProgressView, StudentProgress } from './ProgressView';
 import { LineChart, Seg, Skeleton } from './ui';
 import { api as v3api, DOMAIN_ES } from '../v3/shared';
 import { AssessmentSummary } from '../v3/types';
@@ -16,12 +16,17 @@ const CAT_LABEL = Object.fromEntries(CHANGE_CATEGORIES) as Record<string, string
 const n1 = (v: number) => Math.round(v * 10) / 10;
 const sgn = (v: number) => (v > 0 ? `+${n1(v)}` : `${n1(v)}`);
 
-/** Progreso del alumno para el profe. La carga y lo realizado salen de la planificación de las sesiones hechas. */
+/**
+ * Progreso del alumno para el profe. Abre en "Resumen": la misma pantalla simple
+ * que ve el alumno, más su asistencia del último mes. Todo lo fino (carga,
+ * comparaciones, evaluaciones, puntos para revisar) queda en "Detalle".
+ */
 export function CoachProgress({ profile, quality, onQualityChanged, toast, onOpenAssessment }: {
   profile: Profile; quality: QualityEntry[] | undefined; onQualityChanged: () => void; toast: (m: string) => void;
   onOpenAssessment: (assessmentId: string) => void;
 }) {
   const id = profile.student.id;
+  const [mode, setMode] = useState<'simple' | 'detalle'>('simple');
   const [view, setView] = useState<View>('resumen');
   const [mon, setMon] = useState<Monitoring | null>(null);
   const [err, setErr] = useState('');
@@ -30,11 +35,41 @@ export function CoachProgress({ profile, quality, onQualityChanged, toast, onOpe
     coachApi.monitoring(id).then((r) => setMon(r.monitoring)).catch((e: Error) => setErr(e.message));
   }, [id, profile]);
   const w = mon?.windows.find((x) => x.key === win);
+  const month = mon?.windows.find((x) => x.key === '28d');
+  const pending = mon?.review.length ?? 0;
+  const detail = (v: View) => { setView(v); setMode('detalle'); window.scrollTo({ top: 0 }); };
+
+  if (mode === 'simple') {
+    const att = month ? month.present + month.absent + month.sent : 0;
+    return (
+      <>
+        <div style={{ marginTop: 10 }}><Seg small value={mode} onChange={setMode} options={[['simple', 'Resumen'], ['detalle', 'Detalle']]} /></div>
+        <p className="hint" style={{ margin: '10px 0 0' }}>Así lo ve {firstName(profile.student.name)} en su app.</p>
+        <StudentProgress progress={profile.progress} quality={quality ?? []} />
+        <section className="card">
+          <div className="card-h"><h2>Para vos</h2><span className="mini">últimos 28 días</span></div>
+          {err ? <p className="err">No se pudo cargar: {err}</p> : !month ? <Skeleton /> : (
+            <div className="mstats three">
+              <div><b>{month.realized}</b><span>{month.realized === 1 ? 'Sesión hecha' : 'Sesiones hechas'}</span></div>
+              <div><b>{att ? `${month.present} de ${att}` : '—'}</b><span>Clases presentes</span></div>
+              <div><b>{month.absent}</b><span>{month.absent === 1 ? 'Ausencia' : 'Ausencias'}</span></div>
+            </div>
+          )}
+          <div className="actions">
+            {pending > 0 && <button className="btn" onClick={() => detail('revisar')}>{pending} {pending === 1 ? 'punto' : 'puntos'} para revisar</button>}
+            <button className="btn" onClick={() => detail('carga')}>Ver la carga</button>
+            <button className="btn" onClick={() => detail('resumen')}>Más detalle</button>
+          </div>
+        </section>
+      </>
+    );
+  }
 
   return (
     <>
-      <div className="subnav" role="tablist" aria-label="Vistas de progreso">
-        {([['resumen', 'Resumen'], ['ejercicios', 'Ejercicios'], ['carga', 'Carga'], ['evaluaciones', 'Evaluaciones'], ['revisar', 'Revisar']] as Array<[View, string]>).map(([k, l]) => (
+      <div style={{ marginTop: 10 }}><Seg small value={mode} onChange={setMode} options={[['simple', 'Resumen'], ['detalle', 'Detalle']]} /></div>
+      <div className="subnav" role="tablist" aria-label="Vistas de detalle">
+        {([['resumen', 'Adherencia'], ['ejercicios', 'Ejercicios'], ['carga', 'Carga'], ['evaluaciones', 'Evaluaciones'], ['revisar', 'Revisar']] as Array<[View, string]>).map(([k, l]) => (
           <button key={k} role="tab" aria-selected={view === k} onClick={() => setView(k)}>
             {l}{k === 'revisar' && mon?.review.length ? <span className="cnt">{mon.review.length}</span> : null}
           </button>

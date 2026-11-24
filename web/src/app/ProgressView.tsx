@@ -100,7 +100,7 @@ function Spark({ values }: { values: number[] }) {
  * viene entrenando, su mejor marca en lo que más entrena, el resto de sus
  * récords y los niveles que subió. El detalle fino queda en la vista del profe.
  */
-function StudentProgress({ progress, quality }: { progress: Progress; quality: QualityEntry[] }) {
+export function StudentProgress({ progress, quality }: { progress: Progress; quality: QualityEntry[] }) {
   const { stats, exercises, months } = progress;
   const [order, setOrder] = useState<'recientes' | 'az'>('recientes');
   const [all, setAll] = useState(false);

@@ -192,6 +192,16 @@ la primera vez, la última y cuántas veces lo hizo.
 repeticiones). Los ejercicios principales se eligen solos; queda pendiente, si
 Nico lo quiere, que él marque cuáles son los ejercicios clave de cada alumno.
 
-La vista del profe no cambió. Código: `StudentProgress` en
-`web/src/app/ProgressView.tsx`.
+Código: `StudentProgress` en `web/src/app/ProgressView.tsx`.
+
+### El profe ve lo mismo
+
+Progreso en la ficha del alumno abre en **Resumen**: la misma pantalla que ve el
+alumno ("Así lo ve Bruno en su app"), y al final una tarjeta **Para vos** con
+las sesiones, las clases presentes y las ausencias de los últimos 28 días, y
+accesos a los puntos para revisar y a la carga.
+
+Todo lo anterior sigue en **Detalle**, sin cambios: Adherencia (antes
+"Resumen"), Ejercicios, Carga, Evaluaciones y Revisar. La calidad del
+movimiento se sigue registrando en Detalle → Adherencia.
 
