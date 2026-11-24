@@ -40,7 +40,8 @@ export function PlanSession({ students, initialIds, editing, avatar, library, on
   const choose = (id: string) => { setIds([id]); setAdding(false); remember(id); };
   const firstStudent = students.find((s) => s.id === ids[0]);
   const [date, setDate] = useState(editing?.date ?? todayIso());
-  const [status, setStatus] = useState<'planned' | 'done'>(editing?.status ?? 'planned');
+  // Lo habitual es cargar la sesión que acaba de dar: arranca en "Registrar". Al editar, queda como estaba.
+  const [status, setStatus] = useState<'planned' | 'done'>(editing?.status ?? 'done');
   const [title, setTitle] = useState(editing?.title ?? '');
   const [routine, setRoutine] = useState<Routine | null>(editing ? cloneKeepIds(editing.routine) : null);
   const [start, setStart] = useState<Start | null>(editing ? 'prev' : null);
@@ -219,7 +220,7 @@ export function PlanSession({ students, initialIds, editing, avatar, library, on
           <div className="field full">
             <span className="lab">¿Cómo queda?</span>
             <Seg small value={status} onChange={setStatus}
-              options={[['planned', 'Asignar: la hace y la tilda'], ['done', 'Registrar: ya la hicieron']]} />
+              options={[['done', 'Registrar: ya la hicieron'], ['planned', 'Asignar: la hace y la tilda']]} />
           </div>
         </div>
         </>
