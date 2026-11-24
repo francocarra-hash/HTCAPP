@@ -197,7 +197,8 @@ Código: `StudentProgress` en `web/src/app/ProgressView.tsx`.
 ### El profe ve lo mismo
 
 Progreso en la ficha del alumno abre en **Resumen**: la misma pantalla que ve el
-alumno ("Así lo ve Bruno en su app"), y al final una tarjeta **Para vos** con
+alumno, con los textos en tercera persona ("Subió 1 min", "Le faltan 24
+sesiones"), y al final una tarjeta **Para vos** con
 las sesiones, las clases presentes y las ausencias de los últimos 28 días, y
 accesos a los puntos para revisar y a la carga.
 

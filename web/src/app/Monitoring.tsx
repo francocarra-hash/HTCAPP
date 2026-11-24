@@ -44,8 +44,8 @@ export function CoachProgress({ profile, quality, onQualityChanged, toast, onOpe
     return (
       <>
         <div style={{ marginTop: 10 }}><Seg small value={mode} onChange={setMode} options={[['simple', 'Resumen'], ['detalle', 'Detalle']]} /></div>
-        <p className="hint" style={{ margin: '10px 0 0' }}>Así lo ve {firstName(profile.student.name)} en su app.</p>
-        <StudentProgress progress={profile.progress} quality={quality ?? []} />
+        <p className="hint" style={{ margin: '10px 0 0' }}>Lo mismo que ve {firstName(profile.student.name)} en su app.</p>
+        <StudentProgress progress={profile.progress} quality={quality ?? []} coach />
         <section className="card">
           <div className="card-h"><h2>Para vos</h2><span className="mini">últimos 28 días</span></div>
           {err ? <p className="err">No se pudo cargar: {err}</p> : !month ? <Skeleton /> : (

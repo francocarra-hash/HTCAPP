@@ -100,7 +100,12 @@ function Spark({ values }: { values: number[] }) {
  * viene entrenando, su mejor marca en lo que más entrena, el resto de sus
  * récords y los niveles que subió. El detalle fino queda en la vista del profe.
  */
-export function StudentProgress({ progress, quality }: { progress: Progress; quality: QualityEntry[] }) {
+export function StudentProgress({ progress, quality, coach }: {
+  progress: Progress; quality: QualityEntry[];
+  /** La mira el profe: los textos hablan del alumno ("subió", "su mejor marca"). */
+  coach?: boolean;
+}) {
+  const t = (alumno: string, profe: string): string => (coach ? profe : alumno);
   const { stats, exercises, months } = progress;
   const [order, setOrder] = useState<'recientes' | 'az'>('recientes');
   const [all, setAll] = useState(false);
@@ -127,7 +132,7 @@ export function StudentProgress({ progress, quality }: { progress: Progress; qua
     .sort((a, b) => (order === 'az' ? a.ex.name.localeCompare(b.ex.name, 'es') : b.bestDate.localeCompare(a.bestDate) || a.ex.name.localeCompare(b.ex.name, 'es'))),
   [recs, main, order]);
 
-  if (!stats.sessions) return <p className="empty">Cuando completes tus primeras sesiones, acá vas a ver cómo vas mejorando.</p>;
+  if (!stats.sessions) return <p className="empty">{t('Cuando completes tus primeras sesiones, acá vas a ver cómo vas mejorando.', 'Cuando complete sus primeras sesiones, acá vas a ver cómo va mejorando.')}</p>;
 
   const fresh = recs.filter((r) => r.fresh).length;
   const next = MILESTONES.find((m) => m > stats.sessions);
@@ -138,13 +143,13 @@ export function StudentProgress({ progress, quality }: { progress: Progress; qua
 
   return (
     <>
-      <section className="ach" aria-label="Tu constancia">
-        <div className="ach-k">Semana {stats.process_week} de tu proceso</div>
+      <section className="ach" aria-label={t('Tu constancia', 'Su constancia')}>
+        <div className="ach-k">Semana {stats.process_week} de {t('tu', 'su')} proceso</div>
         <div className="ach-big"><b><CountUp to={stats.sessions} /></b><span>{stats.sessions === 1 ? 'sesión hecha' : 'sesiones hechas'}</span></div>
         {next && (
           <div className="ach-goal">
             <div className="ach-bar" role="img" aria-label={`${stats.sessions} de ${next} sesiones`}><i style={{ width: `${Math.max(4, (stats.sessions / next) * 100)}%` }} /></div>
-            <p>{left === 1 ? 'Te falta 1 sesión' : `Te faltan ${left} sesiones`} para llegar a las <b>{next}</b>.</p>
+            <p>{left === 1 ? `${t('Te', 'Le')} falta 1 sesión` : `${t('Te', 'Le')} faltan ${left} sesiones`} para llegar a las <b>{next}</b>.</p>
           </div>
         )}
         <div className="ach-stats">
@@ -161,14 +166,14 @@ export function StudentProgress({ progress, quality }: { progress: Progress; qua
 
       {main.length > 0 && (
         <section className="card">
-          <h2>Lo que más entrenás</h2>
-          <div className="hint">Tu mejor marca en cada uno. Tocá para ver cómo fuiste subiendo.</div>
+          <h2>{t('Lo que más entrenás', 'Lo que más entrena')}</h2>
+          <div className="hint">{t('Tu mejor marca en cada uno. Tocá para ver cómo fuiste subiendo.', 'Su mejor marca en cada uno. Tocá para ver cómo fue subiendo.')}</div>
           <div className="keygrid">
             {main.map((r) => (
               <button key={r.ex.key} className="keycard" onClick={() => setOpen(r)}>
                 <span className="kc-n">{r.ex.name}{r.fresh && <i className="pr">Nueva</i>}</span>
                 <span className="kc-v">{mark(r.best, r.ex.unit)}</span>
-                <span className={`kc-d${r.gain > 0 ? ' up' : ''}`}>{r.gain > 0 ? `▲ Subiste ${mark(r.gain, r.ex.unit)}` : `Desde el ${shortDate(r.firstDate)}`}</span>
+                <span className={`kc-d${r.gain > 0 ? ' up' : ''}`}>{r.gain > 0 ? `▲ ${t('Subiste', 'Subió')} ${mark(r.gain, r.ex.unit)}` : `Desde el ${shortDate(r.firstDate)}`}</span>
                 <Spark values={runningBest(r.ex.points.map((p) => p.value))} />
               </button>
             ))}
@@ -178,8 +183,8 @@ export function StudentProgress({ progress, quality }: { progress: Progress; qua
 
       {others.length > 0 && (
         <section className="card">
-          <div className="card-h"><h2>{main.length ? 'Otros récords' : 'Tus récords'}</h2><span className="mini">{others.length} {others.length === 1 ? 'ejercicio' : 'ejercicios'}</span></div>
-          <div className="hint">Tu mejor marca en cada ejercicio. "Nueva" es una marca de las últimas 4 semanas.</div>
+          <div className="card-h"><h2>{main.length ? 'Otros récords' : t('Tus récords', 'Sus récords')}</h2><span className="mini">{others.length} {others.length === 1 ? 'ejercicio' : 'ejercicios'}</span></div>
+          <div className="hint">{t('Tu', 'Su')} mejor marca en cada ejercicio. "Nueva" es una marca de las últimas 4 semanas.</div>
           <div className="filters" role="group" aria-label="Ordenar">
             <button className="tog" aria-pressed={order === 'recientes'} onClick={() => setOrder('recientes')}>Recientes</button>
             <button className="tog" aria-pressed={order === 'az'} onClick={() => setOrder('az')}>A–Z</button>
@@ -200,13 +205,13 @@ export function StudentProgress({ progress, quality }: { progress: Progress; qua
       )}
 
       {!recs.length && (
-        <section className="card"><p className="hint" style={{ margin: 0 }}>Cuando repitas ejercicios, acá vas a ver tu mejor marca en cada uno.</p></section>
+        <section className="card"><p className="hint" style={{ margin: 0 }}>{t('Cuando repitas ejercicios, acá vas a ver tu mejor marca en cada uno.', 'Cuando repita ejercicios, acá vas a ver su mejor marca en cada uno.')}</p></section>
       )}
 
       {variants.length > 0 && (
         <section className="card">
-          <div className="card-h"><h2>Subiste de nivel</h2><span className="mini">{variants.length}</span></div>
-          <p className="hint" style={{ margin: '4px 0 8px' }}>Pasaste a una versión más difícil del mismo movimiento.</p>
+          <div className="card-h"><h2>{t('Subiste de nivel', 'Subió de nivel')}</h2><span className="mini">{variants.length}</span></div>
+          <p className="hint" style={{ margin: '4px 0 8px' }}>{t('Pasaste', 'Pasó')} a una versión más difícil del mismo movimiento.</p>
           <div className="rows">
             {shownLevels.map((v) => (
               <div key={v.to + v.date} className="vstep" style={{ ['--c' as string]: 'var(--accent)' }}>
@@ -223,23 +228,24 @@ export function StudentProgress({ progress, quality }: { progress: Progress; qua
         </section>
       )}
 
-      <QualitySection progress={progress} quality={quality} capSel={null} you onlyRated />
+      {/* Lo que anotó el profe sobre cómo se mueve: el profe lo ve y lo carga en Detalle. */}
+      {!coach && <QualitySection progress={progress} quality={quality} capSel={null} you onlyRated />}
 
       {months.length > 1 && (
         <section className="card">
-          <h2>Tus sesiones por mes</h2>
-          <div className="hint">{stats.this_month ? `Este mes llevás ${stats.this_month}.` : 'Cada barra es un mes.'}</div>
+          <h2>{t('Tus sesiones por mes', 'Sus sesiones por mes')}</h2>
+          <div className="hint">{stats.this_month ? `Este mes ${t('llevás', 'lleva')} ${stats.this_month}.` : 'Cada barra es un mes.'}</div>
           <MonthBars months={months} />
         </section>
       )}
 
       {open && (
         <Sheet title={open.ex.name} onClose={() => setOpen(null)}>
-          <p className="cls-now"><b>{mark(open.best, open.ex.unit)}</b> · tu mejor marca, el {longDate(open.bestDate)}</p>
+          <p className="cls-now"><b>{mark(open.best, open.ex.unit)}</b> · {t('tu', 'su')} mejor marca, el {longDate(open.bestDate)}</p>
           {open.ex.points.length > 1 && (
             <>
               <LineChart points={recordSteps(open.ex.points)} unit={open.ex.unit} />
-              <p className="hint" style={{ margin: 0, fontSize: 12 }}>Cada punto es una vez que superaste tu marca.</p>
+              <p className="hint" style={{ margin: 0, fontSize: 12 }}>{t('Cada punto es una vez que superaste tu marca.', 'Cada punto es una vez que superó su marca.')}</p>
             </>
           )}
           <div className="stats">
@@ -247,7 +253,7 @@ export function StudentProgress({ progress, quality }: { progress: Progress; qua
             <div className="stat"><div className="v">{mark(open.ex.last, open.ex.unit)}</div><div className="l">La última vez</div></div>
             <div className="stat"><div className="v">{open.ex.points.length}</div><div className="l">{open.ex.points.length === 1 ? 'Vez' : 'Veces'}</div></div>
           </div>
-          {open.gain > 0 && <p className="hint" style={{ margin: 0 }}>Subiste {gainTxt(open.gain, open.ex.unit)} desde que empezaste con este ejercicio.</p>}
+          {open.gain > 0 && <p className="hint" style={{ margin: 0 }}>{t('Subiste', 'Subió')} {gainTxt(open.gain, open.ex.unit)} desde que {t('empezaste', 'empezó')} con este ejercicio.</p>}
         </Sheet>
       )}
     </>
