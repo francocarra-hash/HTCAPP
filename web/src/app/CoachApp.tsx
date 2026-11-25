@@ -16,6 +16,7 @@ import { Avatar, Community, PeopleProvider, PhotoPicker, usePeople, useUnread } 
 import { ExerciseLibrary, useLibrary } from './ExerciseLibrary';
 import { PlanSession } from './Plan';
 import { CoachProgress } from './Monitoring';
+import { BackupSheet } from './Backup';
 import { RecordSheet } from './Record';
 import { HistoryList, RoutineBlocks } from './RoutineView';
 import { lastRealized, NextCard, ProcessTimeline } from './StudentApp';
@@ -78,6 +79,7 @@ function CoachHome({ onLogout, authEnabled }: { onLogout: () => void; authEnable
   const [selected, setSelected] = useState<string | null>(null);
   const [plan, setPlan] = useState<PlanCtx>({ key: 0, ids: [], editing: null });
   const [writing, setWriting] = useState(false);
+  const [backup, setBackup] = useState(false);
   const [evalCtx, setEvalCtx] = useState<EvalCtx | null>(null);
   const [legacy, setLegacy] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -204,6 +206,9 @@ function CoachHome({ onLogout, authEnabled }: { onLogout: () => void; authEnable
                     <button className="menuopt" onClick={() => go('asistencia')}>
                       <span className="ic">{Icon.calendar}</span><span><b>Asistencia</b><small>Registro de presentes y ausencias, por mes y por alumno</small></span>
                     </button>
+                    <button className="menuopt" onClick={() => setBackup(true)}>
+                      <span className="ic">{Icon.copy}</span><span><b>Copia de seguridad</b><small>Descargá todo lo cargado para tenerlo guardado</small></span>
+                    </button>
                     <button className="menuopt" onClick={() => setMenu(true)}>
                       <span className="ic">{Icon.user}</span><span><b>Mi perfil</b><small>Tu nombre y tu foto, como te ven los alumnos</small></span>
                     </button>
@@ -219,6 +224,7 @@ function CoachHome({ onLogout, authEnabled }: { onLogout: () => void; authEnable
                       </button>
                     )}
                   </Enter>
+                  {backup && <BackupSheet onClose={() => setBackup(false)} toast={showToast} />}
                 </>
               )}
               {tab === 'alumnos' && (selected

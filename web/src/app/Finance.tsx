@@ -192,6 +192,7 @@ function Attendance({ fin, day, setDay, onOpen, onAttendance, onMove, onCalendar
   onCalendar: () => void;
 }) {
   const [extra, setExtra] = useState('');
+  const [extraTime, setExtraTime] = useState('');
   const week = weekOf(day);
   const list = fin.programados(day);
   const extras = fin.students.filter((s) => fin.marcaExplicita(s.id, day) && !list.some((x) => x.s.id === s.id))
@@ -205,15 +206,19 @@ function Attendance({ fin, day, setDay, onOpen, onAttendance, onMove, onCalendar
     .sort((a, b) => a.name.localeCompare(b.name));
   const future = day > fin.today;
   // Sumar a alguien: hoy o antes queda presente (y se guarda su sesión); un día que viene, se le agenda la clase.
-  const sumar = async (id: string) => {
-    if (!future) { onAttendance([id], day, 'p'); return; }
+  // Sumar a alguien: le agenda una clase ese día, con su hora, sin marcarle nada. La asistencia se marca después en su fila.
+  const sumar = async (id: string, time: string) => {
     const s = fin.students.find((x) => x.id === id);
     if (!s) return;
     try {
-      await coachApi.updateStudent(id, { schedule: tidy(addClass(s.schedule ?? emptySchedule(), day, null), addDays(fin.today, -60)) });
-      toast(`Clase agendada el ${shortDate(day)}`);
+      await coachApi.updateStudent(id, { schedule: tidy(addClass(s.schedule ?? emptySchedule(), day, time || null), addDays(fin.today, -60)) });
+      toast(`${firstName(s.name)}: clase el ${shortDate(day)}${time ? ` a las ${time}` : ''}`);
       reload();
     } catch (e) { toast((e as ApiError).message); }
+  };
+  const usualTime = (id: string): string => {
+    const s = fin.students.find((x) => x.id === id);
+    return s?.schedule?.weekly.find((w) => w.weekday === parse(day).getDay())?.time ?? s?.schedule?.weekly[0]?.time ?? '';
   };
 
   const undo = async (s: FinanceStudent) => {
@@ -302,12 +307,16 @@ function Attendance({ fin, day, setDay, onOpen, onAttendance, onMove, onCalendar
         ))}
       </div>
       {others.length > 0 && (
-        <div className="addrow" style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-          <select className="search" style={{ marginTop: 0, flex: 1, minWidth: 0 }} value={extra} onChange={(e) => setExtra(e.target.value)} aria-label="Alumno para sumar a este día">
-            <option value="">{future ? 'Agendar a alguien este día…' : 'Sumar a alguien a este día…'}</option>
+        <div className="addrow" style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+          <select className="search" style={{ marginTop: 0, flex: '1 1 180px', minWidth: 0 }} value={extra}
+            onChange={(e) => { setExtra(e.target.value); setExtraTime(e.target.value ? usualTime(e.target.value) : ''); }} aria-label="Alumno para sumar a este día">
+            <option value="">Sumar a alguien a este día…</option>
             {others.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
-          <button className="btn sm" disabled={!extra} onClick={() => { void sumar(extra); setExtra(''); }}>{future ? 'Agendar' : 'Sumar'}</button>
+          <span style={{ display: 'flex', gap: 8, flex: '0 0 auto' }}>
+            <input type="time" className="search" style={{ marginTop: 0, width: 116 }} value={extraTime} onChange={(e) => setExtraTime(e.target.value)} aria-label="Hora de la clase" />
+            <button className="btn sm" disabled={!extra} onClick={() => { void sumar(extra, extraTime); setExtra(''); setExtraTime(''); }}>Sumar</button>
+          </span>
         </div>
       )}
       <p className="hint" style={{ fontSize: 12 }}>Presente guarda la sesión de ese día aunque no la hayas cargado: la que tenía asignada o una copia de la anterior, que después podés editar en su Historial. Ejercicios: faltó y le mandaste los ejercicios para que entrene solo; no cuenta como presente.</p>

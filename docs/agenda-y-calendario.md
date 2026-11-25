@@ -88,8 +88,13 @@ la del 13 nov. Editala si cambió algo".
 - **Cargar la sesión después** desde Planificar ("Registrar") o pegando texto la
   reemplaza: no queda repetida.
 - **Días que todavía no pasaron:** no se puede marcar presente ni "ejercicios"
-  (sí ausente, si avisó). "Sumar a alguien" en un día que viene le agenda la
-  clase en vez de marcarlo presente.
+  (sí ausente, si avisó).
+
+**"Sumar a alguien a este día"** (Hoy → Agenda) le agenda una clase puntual ese
+día, con la hora que se elija (sugiere la de su horario de siempre), sin
+marcarle nada: aparece en la lista con Presente, Ausente y Ejercicios para
+marcar cuando corresponda. Una clase puntual se muestra aunque el alumno esté
+en pausa.
 
 Los presentes que ya estaban marcados antes de este cambio no generan sesiones
 solos: para guardar una, se saca y se vuelve a marcar el presente.
@@ -97,3 +102,20 @@ solos: para guardar una, se saca y se vuelve a marcar el presente.
 Código: `src/training/autosession.ts` (columna `auto_from` en
 `training_sessions`, migración 011) y pruebas en
 `src/__tests__/auto_sessions.test.ts`.
+
+## Copia de seguridad
+
+**Más → Copia de seguridad** descarga todo lo cargado, para guardarlo fuera de
+la app (Drive, iCloud, la compu):
+
+- **Copia completa** (`htc-copia-AAAA-MM-DD.json`): alumnos (sin contraseñas),
+  sesiones con su rutina, asistencia, pagos, períodos, informes, lo realizado,
+  respuestas, calidad del movimiento, biblioteca de ejercicios y registro de
+  cambios. Es la que sirve para recuperar todo.
+- **Rutinas para leer** (`htc-rutinas-AAAA-MM-DD.txt`): las rutinas de cada
+  alumno con el formato de siempre, de la más nueva a la más vieja, para
+  abrirlas sin la app.
+
+La pantalla muestra cuándo se descargó la última copia. Rutas:
+`GET /api/training/backup` y `GET /api/training/backup/last` (profe).
+

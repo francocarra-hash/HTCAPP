@@ -327,7 +327,9 @@ export function makeFin(d: FinanceData): Fin {
   const programados = (f: string) => {
     const out: Array<{ s: FinanceStudent; time: string; from: string | null; planned: boolean }> = [];
     for (const s of d.students) {
-      if (estado(s).estado !== 'activo' || isAsinc(s)) continue;
+      if (isAsinc(s)) continue;
+      // Una clase puntual agendada ese día se muestra aunque el alumno no esté activo (lo sumó el profe a mano).
+      if (estado(s).estado !== 'activo' && !s.schedule?.once.some((o) => o.date === f)) continue;
       const occ = occurrences(s.schedule, f, f);
       const moved = s.schedule?.once.find((o) => o.date === f && o.from) ?? null;
       const planned = s.planned_days.includes(f);

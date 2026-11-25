@@ -413,6 +413,9 @@ export const coachApi = {
   updateStudent: (id: string, body: Partial<Student>) =>
     req<{ student: Student; next_sessions: Occurrence[] }>(`/training/students/${id}`, json('PATCH', body)),
   /** Enlace para suscribir el calendario del teléfono a las clases. */
+  /** Copia de seguridad con todos los datos (y cuándo se bajó la última). */
+  backup: () => req<{ exported_at: string } & Record<string, unknown>>('/training/backup'),
+  backupLast: () => req<{ last: string | null }>('/training/backup/last'),
   calendarLink: () => req<{ path: string; minutes: number }>('/training/calendar-link'),
   resetCalendarLink: () => req<{ path: string; minutes: number }>('/training/calendar-link/reset', json('POST', {})),
   resetPassword: (id: string) =>
