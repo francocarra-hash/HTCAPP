@@ -11,7 +11,7 @@ import {
 import { DateInput, Enter, Icon, Seg, Sheet, Skeleton, TopHeader } from './ui';
 import { Avatar } from './social';
 import { CalendarSheet, ClassSheet } from './Agenda';
-import { dayState } from './agendaOps';
+import { addClass, dayState, tidy } from './agendaOps';
 
 export type OpenStudent = (id: string, tab?: 'rutina' | 'pagos' | 'informes' | 'agenda') => void;
 type Toast = (m: string) => void;
@@ -203,6 +203,18 @@ function Attendance({ fin, day, setDay, onOpen, onAttendance, onMove, onCalendar
   const moved = fin.movidosDesde(day);
   const others = fin.students.filter((s) => fin.estado(s).estado !== 'baja' && !fin.isAsinc(s) && !rows.some((r) => r.s.id === s.id))
     .sort((a, b) => a.name.localeCompare(b.name));
+  const future = day > fin.today;
+  // Sumar a alguien: hoy o antes queda presente (y se guarda su sesión); un día que viene, se le agenda la clase.
+  const sumar = async (id: string) => {
+    if (!future) { onAttendance([id], day, 'p'); return; }
+    const s = fin.students.find((x) => x.id === id);
+    if (!s) return;
+    try {
+      await coachApi.updateStudent(id, { schedule: tidy(addClass(s.schedule ?? emptySchedule(), day, null), addDays(fin.today, -60)) });
+      toast(`Clase agendada el ${shortDate(day)}`);
+      reload();
+    } catch (e) { toast((e as ApiError).message); }
+  };
 
   const undo = async (s: FinanceStudent) => {
     const sc = s.schedule ?? emptySchedule();
@@ -268,7 +280,9 @@ function Attendance({ fin, day, setDay, onOpen, onAttendance, onMove, onCalendar
                 </button>
                 <div className="marks" role="group" aria-label={`Asistencia de ${r.s.name}`}>
                   {(['p', 'a', 'e'] as Mark[]).map((k) => (
-                    <button key={k} className={k} aria-pressed={mk === k} title={k === 'e' ? 'Faltó y le mandaste los ejercicios' : MARKS[k].label}
+                    // Presente y Ejercicios se marcan el día de la clase (presente guarda la sesión); ausente se puede avisar antes.
+                    <button key={k} className={k} aria-pressed={mk === k} disabled={future && k !== 'a' && exp !== k}
+                      title={future && k !== 'a' ? 'Se marca el día de la clase' : k === 'e' ? 'Faltó y le mandaste los ejercicios' : MARKS[k].label}
                       onClick={() => onAttendance([r.s.id], day, exp === k ? null : k)}>{MARKS[k].label}</button>
                   ))}
                 </div>
@@ -290,13 +304,13 @@ function Attendance({ fin, day, setDay, onOpen, onAttendance, onMove, onCalendar
       {others.length > 0 && (
         <div className="addrow" style={{ display: 'flex', gap: 8, marginTop: 10 }}>
           <select className="search" style={{ marginTop: 0, flex: 1, minWidth: 0 }} value={extra} onChange={(e) => setExtra(e.target.value)} aria-label="Alumno para sumar a este día">
-            <option value="">Sumar a alguien a este día…</option>
+            <option value="">{future ? 'Agendar a alguien este día…' : 'Sumar a alguien a este día…'}</option>
             {others.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
-          <button className="btn sm" disabled={!extra} onClick={() => { onAttendance([extra], day, 'p'); setExtra(''); }}>Sumar</button>
+          <button className="btn sm" disabled={!extra} onClick={() => { void sumar(extra); setExtra(''); }}>{future ? 'Agendar' : 'Sumar'}</button>
         </div>
       )}
-      <p className="hint" style={{ fontSize: 12 }}>Ejercicios: faltó y le mandaste los ejercicios para que entrene solo; no cuenta como presente. Una sesión cargada ese día cuenta como presente.</p>
+      <p className="hint" style={{ fontSize: 12 }}>Presente guarda la sesión de ese día aunque no la hayas cargado: la que tenía asignada o una copia de la anterior, que después podés editar en su Historial. Ejercicios: faltó y le mandaste los ejercicios para que entrene solo; no cuenta como presente.</p>
       <button className="btn sm" style={{ marginTop: 10 }} onClick={onCalendar}>{Icon.calendar} Ver las clases en mi calendario</button>
     </section>
   );

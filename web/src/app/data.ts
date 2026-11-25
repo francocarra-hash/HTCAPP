@@ -130,6 +130,14 @@ export interface Session {
   participant_ids: string[];
   routine: Routine;
   completions: Completion[];
+  /** Guardada sola al marcar presente (mientras el profe no la edite): de qué sesión es copia, la misma si era una asignada, o 'none'. */
+  auto_from?: string | null;
+}
+
+/** Lo que pasó con la sesión del día al marcar o sacar el presente. */
+export interface AutoSessions {
+  created: Array<{ student_id: string; session_id: string; kind: 'asignada' | 'copia' | 'vacia'; from_date: string | null }>;
+  removed: number;
 }
 
 export type Unit = 's' | 'reps' | 'kg';
@@ -444,7 +452,7 @@ export const coachApi = {
   resolveCharge: (id: string, body: { action: 'merge'; into: string } | { action: 'opening' } | { action: 'keep' }) =>
     req<{ ok: true }>(`/training/charges/${id}/resolve`, json('POST', body)),
   setAttendance: (student_ids: string[], day: string, mark: Mark | null) =>
-    req<{ ok: true }>('/training/attendance', json('PUT', { student_ids, day, mark })),
+    req<{ ok: true; sessions?: AutoSessions }>('/training/attendance', json('PUT', { student_ids, day, mark })),
   reports: (id: string) =>
     req<{ first_date: string | null; current: Cycle | null; last_complete: Cycle | null; reports: StoredReport[] }>(`/training/students/${id}/reports`),
   reportPreview: (id: string, start: string) => req<{ report: ReportData }>(`/training/students/${id}/reports/preview?start=${start}`),

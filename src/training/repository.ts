@@ -46,6 +46,12 @@ export interface NewSession {
   /** null = se deriva del texto. */
   routine: Routine | null;
   participant_ids: string[];
+  /**
+   * Guardada sola al marcar presente, mientras el profe no la toque: id de la
+   * sesión copiada, el id de la misma sesión si era una asignada que pasó a
+   * hecha, o 'none' si no había ninguna anterior para copiar.
+   */
+  auto_from?: string | null;
 }
 
 export interface StoredSession extends NewSession {
@@ -355,7 +361,7 @@ export class InMemoryTrainingRepository implements TrainingRepository {
   }
   async createSessions(list: NewSession[]): Promise<StoredSession[]> {
     const now = new Date().toISOString();
-    const out = list.map((n) => ({ ...clone(n), id: randomUUID(), created_at: now }));
+    const out = list.map((n) => ({ ...clone(n), auto_from: n.auto_from ?? null, id: randomUUID(), created_at: now }));
     for (const s of out) this.sessions.set(s.id, s);
     return out.map((s) => clone(s));
   }
@@ -705,6 +711,7 @@ const toSession = (r: any): StoredSession => ({
   routine: r.routine ?? null,
   created_at: ts(r.created_at)!,
   participant_ids: (r.participant_ids ?? []) as string[],
+  auto_from: r.auto_from ?? null,
 });
 
 const toCompletion = (r: any): Completion => ({
@@ -735,7 +742,7 @@ const REPORT_COLS = `id::text AS id, student_id::text AS student_id, to_char(per
   to_char(period_end, 'YYYY-MM-DD') AS period_end, data, message, next_goal, published_at, seen_at`;
 const SESSION_SELECT = `
   SELECT s.id, to_char(s.session_date, 'YYYY-MM-DD') AS date, s.date_raw, s.date_note, s.title, s.body, s.seq,
-         s.status, s.routine, s.created_at,
+         s.status, s.routine, s.created_at, s.auto_from,
          COALESCE(array_agg(p.student_id::text) FILTER (WHERE p.student_id IS NOT NULL), '{}') AS participant_ids
     FROM training_sessions s
     LEFT JOIN training_session_participants p ON p.session_id = s.id`;
@@ -873,9 +880,9 @@ export class PgTrainingRepository implements TrainingRepository {
       for (const n of list) {
         const id = randomUUID();
         await q(
-          `INSERT INTO training_sessions (id, session_date, date_raw, date_note, title, body, seq, status, routine)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-          [id, n.date, n.date_raw, n.date_note, n.title, n.body, n.seq, n.status, json(n.routine)],
+          `INSERT INTO training_sessions (id, session_date, date_raw, date_note, title, body, seq, status, routine, auto_from)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          [id, n.date, n.date_raw, n.date_note, n.title, n.body, n.seq, n.status, json(n.routine), n.auto_from ?? null],
         );
         for (const sid of n.participant_ids) {
           await q('INSERT INTO training_session_participants (session_id, student_id) VALUES ($1,$2)', [id, sid]);
@@ -890,7 +897,7 @@ export class PgTrainingRepository implements TrainingRepository {
   async updateSession(id: string, patch: Partial<NewSession>): Promise<StoredSession | undefined> {
     const map: Record<string, string> = {
       date: 'session_date', date_raw: 'date_raw', date_note: 'date_note', title: 'title', body: 'body', seq: 'seq',
-      status: 'status', routine: 'routine',
+      status: 'status', routine: 'routine', auto_from: 'auto_from',
     };
     const keys = Object.keys(map).filter((k) => k in patch) as Array<keyof NewSession>;
     const value = (k: keyof NewSession) => (k === 'routine' ? json(patch.routine) : patch[k] ?? null);

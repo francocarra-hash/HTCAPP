@@ -103,8 +103,21 @@ function CoachHome({ onLogout, authEnabled }: { onLogout: () => void; authEnable
         ...(mark ? ids.map((student_id) => ({ student_id, day, mark })) : []),
       ],
     });
-    coachApi.setAttendance(ids, day, mark).catch(() => { showToast('No se pudo guardar la asistencia'); loadFin(); });
-  }, [loadFin]); // eslint-disable-line react-hooks/exhaustive-deps
+    coachApi.setAttendance(ids, day, mark).then((r) => {
+      // Presente un día sin sesión cargada: la app la guardó sola. Se avisa y se actualiza todo.
+      const c = r.sessions?.created ?? [];
+      const n = new Set(c.map((x) => x.session_id)).size;
+      if (c.length) {
+        const one = n === 1 ? c[0]! : null;
+        showToast(one
+          ? one.kind === 'asignada' ? 'Presente · la rutina asignada quedó como hecha'
+            : one.kind === 'copia' ? `Presente · se guardó la sesión (igual a la del ${shortDate(one.from_date!)}). Si cambió algo, editala en Historial`
+              : 'Presente · se guardó la sesión vacía: cargale la rutina en Historial'
+          : `Presentes · se guardaron ${n} sesiones. Si cambió algo, editalas en Historial`);
+      }
+      if (c.length || r.sessions?.removed) { loadFin(); refresh(); }
+    }).catch(() => { showToast('No se pudo guardar la asistencia'); loadFin(); });
+  }, [loadFin, refresh]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Actividad de los alumnos (sesiones terminadas): se consulta cada minuto y al volver a la app.
   const loadActivity = useCallback(() => { coachApi.activity().then(setActivity).catch(() => undefined); }, []);

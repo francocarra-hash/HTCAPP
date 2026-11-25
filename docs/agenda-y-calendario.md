@@ -68,3 +68,32 @@ Rutas: `GET /api/training/calendar-link`, `POST /api/training/calendar-link/rese
 Con el plan gratuito de Render el servidor se duerme si nadie lo usa; el
 primer pedido del calendario lo despierta y puede fallar por demora. El
 calendario vuelve a intentar en su próxima actualización.
+
+## Presente guarda la sesión
+
+Si Nico marca **presente** a un alumno un día que ya pasó (o hoy) y ese día no
+tiene sesión cargada, la app la guarda sola para que la clase no se pierda:
+
+- si tenía una rutina **asignada** para ese día, pasa a hecha;
+- si no, se guarda una **copia de su sesión anterior** (mismo título y rutina);
+- si nunca tuvo una sesión, se guarda una vacía para que la clase figure.
+
+Los compañeros de una clase compartida quedan en la misma sesión nueva. En el
+Historial la sesión lleva el aviso "Se guardó sola al marcar presente: igual a
+la del 13 nov. Editala si cambió algo".
+
+- **Sacar el presente** (o pasarlo a ausente o "ejercicios") la deshace, salvo
+  que alguien la haya tocado: si Nico la editó o corrigió lo realizado, o el
+  alumno la respondió, queda.
+- **Cargar la sesión después** desde Planificar ("Registrar") o pegando texto la
+  reemplaza: no queda repetida.
+- **Días que todavía no pasaron:** no se puede marcar presente ni "ejercicios"
+  (sí ausente, si avisó). "Sumar a alguien" en un día que viene le agenda la
+  clase en vez de marcarlo presente.
+
+Los presentes que ya estaban marcados antes de este cambio no generan sesiones
+solos: para guardar una, se saca y se vuelve a marcar el presente.
+
+Código: `src/training/autosession.ts` (columna `auto_from` en
+`training_sessions`, migración 011) y pruebas en
+`src/__tests__/auto_sessions.test.ts`.

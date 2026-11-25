@@ -1,7 +1,7 @@
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CAP_LABEL, capacityMix, checkableItems, Completion, firstName, fold, groupLabels, itemText, KIND_LABEL, longDate,
-  Routine, RoutineBlock, RoutineItem, routineSummary, Session, studentApi, timeAgo, cap, emptyResponse,
+  Routine, RoutineBlock, RoutineItem, routineSummary, Session, shortDate, studentApi, timeAgo, cap, emptyResponse,
 } from './data';
 import { Celebration } from './Celebration';
 import { RecordSheet } from './Record';
@@ -359,6 +359,12 @@ export function HistoryList({ sessions, viewer, studentId, names, onEdit, onDele
                 {who ? ` · ${who}` : ''}
                 {names && s.completions.some((c) => Object.values(c.notes).some((v) => v.trim())) ? ' · 💬 notas' : ''}
                 {names && s.date_note ? <><br /><span className="flag">⚠ {s.date_note}</span></> : null}
+                {names && s.auto_from && s.auto_from !== s.id ? (
+                  <><br /><span className="flag">⚠ Se guardó sola al marcar presente{(() => {
+                    const src = sessions.find((x) => x.id === s.auto_from);
+                    return src ? `: igual a la del ${shortDate(src.date)}` : s.auto_from === 'none' ? ', sin rutina' : '';
+                  })()}. Editala si cambió algo.</span></>
+                ) : null}
               </span>
             </summary>
             {openIds.has(s.id) && (

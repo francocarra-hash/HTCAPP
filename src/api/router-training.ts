@@ -30,6 +30,7 @@ import {
 import { buildMonitoring, responseContext, routineDiff } from '../training/monitoring';
 import { buildReport, cycleOf, CYCLE_DAYS, ReportInput } from '../training/report';
 import { calendarFeed } from './router-calendar';
+import { replaceAutoCopies, syncAutoSessions } from '../training/autosession';
 import { classMinutes } from '../training/calendar';
 
 export interface RoutineItemView extends RoutineItem { capacity: CapacityId | null; video: string | null }
@@ -661,6 +662,8 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
       fail(res, 400, 'NOTHING_TO_SAVE', `Las ${skipped} sesiones ya estaban cargadas.`);
       return;
     }
+    // La sesión de verdad reemplaza a la que se guardó sola al marcar presente.
+    for (const d of fresh) await replaceAutoCopies(repo, d.participant_ids, d.date);
     const saved = await repo.createSessions(fresh);
     res.status(201).json({ sessions: await sessionViews(repo, saved), skipped, warnings: r.warnings });
   }));
@@ -673,6 +676,8 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
       fail(res, 400, 'INVALID_INPUT', 'Hay alumnos inexistentes en la sesión.');
       return;
     }
+    // La sesión de verdad reemplaza a la que se guardó sola al marcar presente.
+    if (input.status === 'done') await replaceAutoCopies(repo, input.participant_ids, input.date);
     const [saved] = await repo.createSessions([{
       date: input.date, date_raw: null, date_note: null, title: input.title ?? null, body: '', seq: 0,
       status: input.status, routine: input.routine as Routine, participant_ids: input.participant_ids,
@@ -698,7 +703,8 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
     const beforeRoutine = routineOf(prevSession, students);
     const { change_category, change_reason, ...rest } = patch;
     // Si el coach corrige la fecha, la nota de "fecha fuera de orden" ya no aplica.
-    const update = { ...rest, routine: rest.routine as Routine | undefined, ...(rest.date ? { date_note: null } : {}) };
+    // La editó el profe: deja de ser la sesión que se guardó sola (ya no se deshace al sacar el presente).
+    const update = { ...rest, routine: rest.routine as Routine | undefined, ...(rest.date ? { date_note: null } : {}), auto_from: null };
     if (update.routine === undefined) delete update.routine;
     const session = await repo.updateSession(req.params.id!, update);
     if (!session) {
@@ -990,7 +996,9 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
   router.put('/attendance', handle(async (req, res) => {
     const a = AttendanceInput.parse(req.body);
     await repo.setAttendance(a.student_ids, a.day, a.mark);
-    res.json({ ok: true });
+    // Presente: si ese día no tiene sesión cargada, se guarda sola (y se deshace si se saca el presente).
+    const sessions = await syncAutoSessions(repo, a.student_ids, a.day, a.mark, localNow().date);
+    res.json({ ok: true, sessions });
   }));
 
   // ── informes de 4 semanas ──
