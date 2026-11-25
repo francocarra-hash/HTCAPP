@@ -134,6 +134,13 @@ export interface Session {
   auto_from?: string | null;
 }
 
+/** Envío automático de la copia de seguridad por mail (los viernes). */
+export interface BackupAuto {
+  configured: boolean;
+  to: string | null;
+  status: { at: string | null; ok: boolean | null; error: string | null; week: string | null } | null;
+}
+
 /** Lo que pasó con la sesión del día al marcar o sacar el presente. */
 export interface AutoSessions {
   created: Array<{ student_id: string; session_id: string; kind: 'asignada' | 'copia' | 'vacia'; from_date: string | null }>;
@@ -415,7 +422,8 @@ export const coachApi = {
   /** Enlace para suscribir el calendario del teléfono a las clases. */
   /** Copia de seguridad con todos los datos (y cuándo se bajó la última). */
   backup: () => req<{ exported_at: string } & Record<string, unknown>>('/training/backup'),
-  backupLast: () => req<{ last: string | null }>('/training/backup/last'),
+  backupLast: () => req<{ last: string | null; auto: BackupAuto }>('/training/backup/last'),
+  sendBackup: () => req<{ status: NonNullable<BackupAuto['status']> }>('/training/backup/send', json('POST', {})),
   calendarLink: () => req<{ path: string; minutes: number }>('/training/calendar-link'),
   resetCalendarLink: () => req<{ path: string; minutes: number }>('/training/calendar-link/reset', json('POST', {})),
   resetPassword: (id: string) =>

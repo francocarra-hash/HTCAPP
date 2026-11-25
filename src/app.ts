@@ -19,6 +19,7 @@ import { authEnabled } from './api/auth';
 import { createAuthRouter, createStudentRouter, createTrainingRouter } from './api/router-training';
 import { createSocialRouter } from './api/router-social';
 import { createCalendarRouter } from './api/router-calendar';
+import { scheduleBackups } from './training/backup';
 import { InMemoryTrainingRepository, PgTrainingRepository } from './training/repository';
 
 const CANONICAL_DIR = process.env.HTC_CANONICAL_DIR ?? path.join(__dirname, '..', 'canonical');
@@ -77,6 +78,8 @@ async function main(): Promise<void> {
   app.use('/api/social', createSocialRouter(trainingRepo));
   // Sin login: lo abre el calendario del teléfono con la clave del enlace.
   app.use('/api/calendar', createCalendarRouter(trainingRepo));
+  // Copia de seguridad por mail todos los viernes (si está configurado el envío).
+  scheduleBackups(trainingRepo);
 
   // Single mount point: everything under /api (auth middleware guards it).
   app.use('/api', createRouter(compiled, repo));

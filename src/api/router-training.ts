@@ -31,6 +31,7 @@ import { buildMonitoring, responseContext, routineDiff } from '../training/monit
 import { buildReport, cycleOf, CYCLE_DAYS, ReportInput } from '../training/report';
 import { calendarFeed } from './router-calendar';
 import { replaceAutoCopies, syncAutoSessions } from '../training/autosession';
+import { autoStatus, buildBackup, mailConfig, sendBackup } from '../training/backup';
 import { classMinutes } from '../training/calendar';
 
 export interface RoutineItemView extends RoutineItem { capacity: CapacityId | null; video: string | null }
@@ -1133,23 +1134,27 @@ export function createTrainingRouter(repo: TrainingRepository): Router {
    * asistencia, pagos, períodos, informes, lo realizado y el registro de cambios). Sin contraseñas.
    */
   router.get('/backup', handle(async (_req, res) => {
-    const [students, sessions, completions, attendance, payments, charges, reports, executions, responses, changes, exercises] = await Promise.all([
-      repo.listStudents(), repo.listSessions(), repo.listCompletions({}), repo.listAttendance(), repo.listPayments(), repo.listCharges(),
-      repo.listReports(), repo.listExecutions({}), repo.listResponses({}), repo.listChanges({}), repo.listExerciseMeta(),
-    ]);
-    const byId = new Map(students.map((x) => [x.id, x]));
-    const quality = (await Promise.all(students.map((x) => repo.listQuality(x.id)))).flat();
-    const exported_at = new Date().toISOString();
-    await repo.setSetting('last_backup', exported_at);
+    const b = await buildBackup(repo);
+    await repo.setSetting('last_backup', b.exported_at);
     res.set('Cache-Control', 'no-store');
+    res.json(b);
+  }));
+  /** Cuándo se bajó la última copia y cómo anda el envío automático de los viernes. */
+  router.get('/backup/last', handle(async (_req, res) => {
+    const cfg = mailConfig();
     res.json({
-      app: 'HTC', format: 1, exported_at,
-      students, sessions: sessions.map((x) => ({ ...x, routine: routineOf(x, byId) })),
-      completions, attendance, payments, charges, reports, executions, responses, quality, exercises, changes,
+      last: (await repo.getSetting<string>('last_backup')) ?? null,
+      auto: { configured: Boolean(cfg), to: cfg?.to ?? null, status: await autoStatus(repo) },
     });
   }));
-  router.get('/backup/last', handle(async (_req, res) => {
-    res.json({ last: (await repo.getSetting<string>('last_backup')) ?? null });
+  /** Mandar la copia por mail ahora (para probar que el envío funciona). */
+  router.post('/backup/send', handle(async (_req, res) => {
+    const cfg = mailConfig();
+    if (!cfg) {
+      fail(res, 400, 'NOT_CONFIGURED', 'El envío por mail no está configurado.');
+      return;
+    }
+    res.json({ status: await sendBackup(repo, cfg) });
   }));
 
   /** Enlace para ver las clases en el calendario del teléfono (suscripción, un solo sentido). */

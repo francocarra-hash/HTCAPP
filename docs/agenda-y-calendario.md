@@ -119,3 +119,29 @@ la app (Drive, iCloud, la compu):
 La pantalla muestra cuándo se descargó la última copia. Rutas:
 `GET /api/training/backup` y `GET /api/training/backup/last` (profe).
 
+
+### Copia automática por mail (los viernes)
+
+El servidor manda solo, todos los viernes desde las 8 (hora de Buenos Aires),
+un mail con la copia completa (`htc-copia-AAAA-MM-DD.json.gz`) y las rutinas en
+texto (`htc-rutinas-AAAA-MM-DD.txt`). Si el viernes no pudo, lo reintenta cada
+media hora hasta el domingo. Manda una sola por semana.
+
+Se activa con variables de entorno en Render (servicio `htc-platform` →
+Environment):
+
+| Variable | Qué va |
+|---|---|
+| `HTC_SMTP_USER` | la cuenta de Gmail que manda el mail |
+| `HTC_SMTP_PASS` | una **contraseña de aplicación** de esa cuenta (no la normal) |
+| `HTC_BACKUP_TO` | opcional: a quién se manda (por defecto, a la misma cuenta) |
+| `HTC_SMTP_HOST` / `HTC_SMTP_PORT` | opcional: otro servidor de mail (por defecto smtp.gmail.com, 465) |
+
+La contraseña de aplicación se crea en la cuenta de Google → Seguridad →
+Verificación en 2 pasos (tiene que estar activada) → Contraseñas de
+aplicaciones. Sin `HTC_SMTP_USER` y `HTC_SMTP_PASS` no se manda nada y la app lo
+dice en Más → Copia de seguridad, donde también está "Mandar una ahora" para
+probar. El servidor tiene que estar prendido (instancia paga de Render): en la
+gratuita se duerme y además no deja mandar mails.
+
+Código: `src/training/backup.ts`; pruebas en `src/__tests__/backup.test.ts`.
